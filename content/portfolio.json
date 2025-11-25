@@ -1,7 +1,7 @@
 {
   "projects": [
     {
-      "imageSrc": "https://picsum.photos/seed/stoutly/600/400",
+      "imageSrc": "/images/uploads/stoutly.jpg",
       "title": "Stoutly",
       "category": "Web & Android App",
       "description": "A comprehensive platform with both a web app and native Android app.",
@@ -24,7 +24,7 @@
       }
     },
     {
-      "imageSrc": "https://picsum.photos/seed/project2/600/400",
+      "imageSrc": "/images/uploads/flow-commerce.jpg",
       "title": "Flow Commerce",
       "category": "E-commerce Platform",
       "description": "An intuitive e-commerce site with seamless checkout.",
@@ -44,7 +44,7 @@
       }
     },
     {
-      "imageSrc": "https://picsum.photos/seed/project3/600/400",
+      "imageSrc": "/images/uploads/artisan-cafe.jpg",
       "title": "Artisan Cafe",
       "category": "Local Business Site",
       "description": "A charming website showcasing a local cafe's menu and story.",
@@ -64,7 +64,7 @@
       }
     },
     {
-      "imageSrc": "https://picsum.photos/seed/project4/600/400",
+      "imageSrc": "/images/uploads/connect-app.jpg",
       "title": "ConnectApp",
       "category": "iOS & Android App",
       "description": "A vibrant social app to connect with like-minded people.",
@@ -88,7 +88,7 @@
       }
     },
     {
-      "imageSrc": "https://picsum.photos/seed/project5/600/400",
+      "imageSrc": "/images/uploads/data-visualize.jpg",
       "title": "DataVisualize",
       "category": "Data Dashboard",
       "description": "An interactive dashboard for complex data analysis.",
@@ -105,7 +105,7 @@
       ]
     },
     {
-      "imageSrc": "https://picsum.photos/seed/project6/600/400",
+      "imageSrc": "/images/uploads/nomad-blog.jpg",
       "title": "Nomad Blog",
       "category": "Personal Blog",
       "description": "A clean and fast blog platform for a travel writer.",

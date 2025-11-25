@@ -1,9 +1,10 @@
 backend:
-  name: git-gateway
-  branch: main # or master
+  name: github
+  repo: your-github-username/your-repo-name # IMPORTANT: Replace with your GitHub repo path
+  branch: main
 
-media_folder: "images/uploads" # Location where files will be stored
-public_folder: "/images/uploads" # The src attribute for uploaded media
+media_folder: "images/uploads"
+public_folder: "/images/uploads"
 
 collections:
   - name: "portfolio"
