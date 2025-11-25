@@ -1,0 +1,33 @@
+backend:
+  name: git-gateway
+  branch: main # or master
+
+media_folder: "images/uploads" # Location where files will be stored
+public_folder: "/images/uploads" # The src attribute for uploaded media
+
+collections:
+  - name: "portfolio"
+    label: "Portfolio"
+    label_singular: "Project"
+    folder: "content"
+    create: false
+    slug: "{{slug}}"
+    fields:
+      - name: "projects"
+        label: "Projects"
+        widget: "list"
+        fields:
+          - { label: "Title", name: "title", widget: "string" }
+          - { label: "Image", name: "imageSrc", widget: "image" }
+          - { label: "Category", name: "category", widget: "string" }
+          - { label: "Short Description", name: "description", widget: "text" }
+          - { label: "Detailed Description", name: "detailedDescription", widget: "markdown" }
+          - { label: "Technologies Used", name: "technologies", widget: "list" }
+          - { label: "Platform Tags", name: "tags", widget: "list", hint: "e.g. Web App, Android App, iOS App" }
+          - label: "Links"
+            name: "links"
+            widget: "object"
+            fields:
+              - { label: "Web App URL", name: "webapp", widget: "string", required: false }
+              - { label: "Android App URL", name: "android", widget: "string", required: false }
+              - { label: "iOS App URL", name: "ios", widget: "string", required: false }
