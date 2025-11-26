@@ -1,0 +1,12 @@
+# This file configures how Netlify builds and deploys your site.
+
+[build]
+  # The publish directory is the root of your project where index.html is located.
+  publish = "/"
+
+# This redirect rule is essential for single-page applications (SPAs) like React.
+# It ensures that direct links to your app's routes (e.g., /dashboard, /login) work correctly.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

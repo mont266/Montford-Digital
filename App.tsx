@@ -1,26 +1,27 @@
-
 import React from 'react';
-import Header from './components/Header';
-import Hero from './components/Hero';
-import About from './components/About';
-import Services from './components/Services';
-import Portfolio from './components/Portfolio';
-import QuoteForm from './components/QuoteForm';
-import Footer from './components/Footer';
+import { Routes, Route } from 'react-router-dom';
+
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import InvoicePublicPage from './pages/InvoicePublicPage';
+import ProtectedRoute from './components/ProtectedRoute';
 
 const App: React.FC = () => {
   return (
-    <div className="bg-slate-900 text-slate-300 font-sans leading-relaxed">
-      <Header />
-      <main>
-        <Hero />
-        <About />
-        <Services />
-        <Portfolio />
-        <QuoteForm />
-      </main>
-      <Footer />
-    </div>
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/invoice/:id" element={<InvoicePublicPage />} />
+      <Route 
+        path="/dashboard/*" 
+        element={
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        } 
+      />
+    </Routes>
   );
 };
 
