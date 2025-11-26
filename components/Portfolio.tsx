@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import PortfolioModal from './PortfolioModal';
 
 // Expanded project interface for more detailed information
@@ -16,6 +16,135 @@ interface Project {
     ios?: string;
   };
 }
+
+// Data is now hardcoded in the component for easy manual updates.
+const projects: Project[] = [
+  {
+    "imageSrc": "/images/uploads/stoutly.jpg",
+    "title": "Stoutly",
+    "category": "Web & Android App",
+    "description": "A comprehensive platform with both a web app and native Android app.",
+    "detailedDescription": "Stoutly required a robust, dual-platform solution to serve their users both on the web and on the go. We developed a high-performance web application and a feature-rich native Android app, both powered by a unified backend. This ensures a seamless user experience, consistent data, and broad accessibility across devices.",
+    "technologies": [
+      "React",
+      "Next.js",
+      "TypeScript",
+      "PostgreSQL",
+      "Kotlin",
+      "Jetpack Compose"
+    ],
+    "tags": [
+      "Web App",
+      "Android App"
+    ],
+    "links": {
+      "webapp": "https://www.stoutly.co.uk",
+      "android": "#"
+    }
+  },
+  {
+    "imageSrc": "/images/uploads/flow-commerce.jpg",
+    "title": "Flow Commerce",
+    "category": "E-commerce Platform",
+    "description": "An intuitive e-commerce site with seamless checkout.",
+    "detailedDescription": "For Flow Commerce, we built a custom e-commerce solution from the ground up. The platform supports thousands of products, features a streamlined multi-step checkout process, and integrates with major payment gateways. Advanced features include personalized recommendations and a powerful admin dashboard for inventory management.",
+    "technologies": [
+      "Shopify Plus",
+      "React",
+      "GraphQL",
+      "Node.js",
+      "Styled Components"
+    ],
+    "tags": [
+      "Web App"
+    ],
+    "links": {
+      "webapp": "https://example.com"
+    }
+  },
+  {
+    "imageSrc": "/images/uploads/artisan-cafe.jpg",
+    "title": "Artisan Cafe",
+    "category": "Local Business Site",
+    "description": "A charming website showcasing a local cafe's menu and story.",
+    "detailedDescription": "We helped Artisan Cafe brew up a new online presence. The website features a warm, inviting design that reflects their brand, a dynamic menu that's easy to update, and an integrated online ordering system that helped increase their takeaway sales by 40%.",
+    "technologies": [
+      "Gatsby",
+      "Contentful",
+      "Netlify",
+      "Snipcart",
+      "GSAP"
+    ],
+    "tags": [
+      "Web App"
+    ],
+    "links": {
+      "webapp": "https://example.com"
+    }
+  },
+  {
+    "imageSrc": "/images/uploads/connect-app.jpg",
+    "title": "ConnectApp",
+    "category": "iOS & Android App",
+    "description": "A vibrant social app to connect with like-minded people.",
+    "detailedDescription": "ConnectApp is a social networking platform designed to connect people with shared interests and hobbies. We developed native iOS and Android applications with a focus on a fluid user interface, real-time chat, and an intelligent recommendation engine. The launch was supported by a high-converting landing page.",
+    "technologies": [
+      "SwiftUI",
+      "Kotlin",
+      "Firebase",
+      "Node.js",
+      "React"
+    ],
+    "tags": [
+      "iOS App",
+      "Android App",
+      "Web App"
+    ],
+    "links": {
+      "webapp": "#",
+      "ios": "#",
+      "android": "#"
+    }
+  },
+  {
+    "imageSrc": "/images/uploads/data-visualize.jpg",
+    "title": "DataVisualize",
+    "category": "Data Dashboard",
+    "description": "An interactive dashboard for complex data analysis.",
+    "detailedDescription": "DataVisualize provides a powerful B2B service for data analysis. We built a highly interactive and performant dashboard application that allows users to connect various data sources, create custom visualizations, and generate insightful reports in real-time.",
+    "technologies": [
+      "React",
+      "D3.js",
+      "TypeScript",
+      "Redux",
+      "AWS"
+    ],
+    "tags": [
+      "Web App"
+    ]
+  },
+  {
+    "imageSrc": "/images/uploads/nomad-blog.jpg",
+    "title": "Nomad Blog",
+    "category": "Personal Blog",
+    "description": "A clean and fast blog platform for a travel writer.",
+    "detailedDescription": "We created a lightning-fast, SEO-optimized blog for a renowned travel writer. The site is built on a modern Jamstack architecture, ensuring excellent performance and security. It features a clean, reader-focused design, an easy-to-use CMS for publishing content, and an interactive map to document their travels.",
+    "technologies": [
+      "Next.js",
+      "Markdown",
+      "Prismic",
+      "Tailwind CSS",
+      "Vercel"
+    ],
+    "tags": [
+      "Web App"
+    ],
+    "links": {
+      "webapp": "https://example.com"
+    }
+  }
+];
+
 
 interface PortfolioItemProps {
   project: Project;
@@ -37,28 +166,6 @@ const PortfolioItem: React.FC<PortfolioItemProps> = ({ project, onSelect }) => (
 
 const Portfolio: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchProjects = async () => {
-      try {
-        const response = await fetch('/content/portfolio.json');
-        if (!response.ok) {
-          throw new Error('Failed to fetch portfolio data');
-        }
-        const data = await response.json();
-        setProjects(data.projects);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProjects();
-  }, []);
 
   return (
     <>
@@ -69,19 +176,15 @@ const Portfolio: React.FC = () => {
             <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto">We take pride in our work. Here are some of our recent projects.</p>
             <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
           </div>
-          {loading && <p className="text-center text-cyan-400">Loading projects...</p>}
-          {error && <p className="text-center text-red-400">Error: {error}</p>}
-          {!loading && !error && (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {projects.map((project, index) => (
-                <PortfolioItem 
-                  key={index} 
-                  project={project}
-                  onSelect={() => setSelectedProject(project)} 
-                />
-              ))}
-            </div>
-          )}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {projects.map((project, index) => (
+              <PortfolioItem 
+                key={index} 
+                project={project}
+                onSelect={() => setSelectedProject(project)} 
+              />
+            ))}
+          </div>
         </div>
       </section>
       {selectedProject && (

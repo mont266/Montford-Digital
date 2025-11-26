@@ -18,11 +18,18 @@ const QuoteForm: React.FC = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // In a real app, you would handle form submission here (e.g., API call)
-    console.log('Form data:', formData);
-    setSubmitted(true);
+    const form = e.target as HTMLFormElement;
+    const data = new FormData(form);
+
+    fetch("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(data as any).toString()
+    })
+      .then(() => setSubmitted(true))
+      .catch(error => alert(error));
   };
 
   if (submitted) {
@@ -44,7 +51,23 @@ const QuoteForm: React.FC = () => {
           <p className="mt-4 text-lg text-slate-400">Let's turn your idea into a reality. Fill out the form below to get started.</p>
           <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
         </div>
-        <form onSubmit={handleSubmit} className="mt-12 max-w-xl mx-auto">
+        <form 
+          name="quote"
+          method="POST"
+          data-netlify="true"
+          data-netlify-honeypot="bot-field"
+          data-netlify-recaptcha="true"
+          onSubmit={handleSubmit} 
+          className="mt-12 max-w-xl mx-auto"
+        >
+          {/* Hidden inputs for Netlify */}
+          <input type="hidden" name="form-name" value="quote" />
+          <div className="hidden">
+            <label>
+              Don’t fill this out if you’re human: <input name="bot-field" />
+            </label>
+          </div>
+          
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-slate-300">Full Name</label>
@@ -62,6 +85,9 @@ const QuoteForm: React.FC = () => {
           <div className="mt-6">
             <label htmlFor="details" className="block text-sm font-medium text-slate-300">Project Details</label>
             <textarea id="details" name="details" rows={5} required value={formData.details} onChange={handleChange} className="mt-1 block w-full bg-slate-800 border border-slate-700 rounded-md shadow-sm py-3 px-4 text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500"></textarea>
+          </div>
+          <div className="mt-6">
+            <div data-netlify-recaptcha="true"></div>
           </div>
           <div className="mt-8 text-center">
             <button type="submit" className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-12 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
