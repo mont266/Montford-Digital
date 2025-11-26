@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
@@ -9,6 +9,14 @@ interface Project {
   client_name: string;
   client_email?: string;
 }
+
+interface InvoiceItem {
+  id?: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+}
+
 interface Invoice {
   id: string;
   project_id: string;
@@ -18,6 +26,7 @@ interface Invoice {
   amount: number;
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: { name: string } | null;
+  invoice_items: InvoiceItem[];
 }
 interface Expense {
   id: string;
@@ -39,8 +48,8 @@ const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }
 );
 
 const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string }> = ({ children, onClose, title }) => (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={onClose}>
-        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-start p-4 overflow-y-auto" onClick={onClose}>
+        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-2xl my-8 p-6" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-white">{title}</h3>
                 <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
@@ -56,8 +65,8 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { styl
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
     const totalRevenue = invoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
     const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
-    const overdueAmount = invoices.filter(inv => ['overdue', 'sent'].includes(inv.status) && new Date(inv.due_date) < new Date()).reduce((acc, inv) => acc + inv.amount, 0);
-    const netProfit = totalRevenue - totalExpenses;
+    const outstandingAmount = invoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
+    const overdueAmount = invoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
     
     return (
         <div>
@@ -65,7 +74,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
                 <StatCard title="Total Expenses" value={formatCurrency(totalExpenses)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5 6.5h.01" /></svg>} />
-                <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
+                <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
             </div>
         </div>
@@ -92,7 +101,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; }> 
     };
 
     const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this project? This will not delete its invoices.")) {
+        if (window.confirm("Are you sure you want to delete this project? This will also delete all associated invoices.")) {
             const { error } = await supabase.from('projects').delete().eq('id', id);
             if (error) console.error("Error deleting project:", error);
             else refreshData();
@@ -177,7 +186,8 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.due_date}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : invoice.status === 'overdue' ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
+                                {/* FIX: Removed redundant `invoice.status !== 'paid'` check. This condition is unnecessary because the outer ternary `invoice.status === 'paid' ? ...` already ensures the status is not 'paid' in this branch of the logic, resolving a TypeScript warning about comparing non-overlapping types. */}
+                                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : new Date(invoice.due_date) < new Date() ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                     {invoice.status !== 'paid' && <button onClick={() => handleUpdateStatus(invoice.id, 'paid')} className="text-green-400 hover:text-green-300">Mark Paid</button>}
                                     <button onClick={() => handleDelete(invoice.id)} className="text-red-400 hover:text-red-300">Delete</button>
@@ -244,35 +254,99 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
 
 // --- FORMS ---
 const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; }> = ({ projects, onClose, refreshData, onAddNewProject }) => {
-    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', amount: 0, status: 'draft' });
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
+    const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const totalAmount = useMemo(() => items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0), [items]);
+
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    
+    const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
+        const newItems = [...items];
+        (newItems[index] as any)[field] = value;
+        setItems(newItems);
+    };
+
+    const addItem = () => setItems([...items, { description: '', quantity: 1, unit_price: 0 }]);
+    const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index));
+    
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { error } = await supabase.from('invoices').insert([formData]);
-        if (error) console.error("Error creating invoice:", error);
-        else {
+        setIsSubmitting(true);
+
+        const invoiceData = { ...formData, amount: totalAmount };
+
+        // 1. Insert the main invoice record
+        const { data: newInvoice, error: invoiceError } = await supabase
+            .from('invoices')
+            .insert(invoiceData)
+            .select()
+            .single();
+
+        if (invoiceError || !newInvoice) {
+            console.error("Error creating invoice:", invoiceError);
+            setIsSubmitting(false);
+            return;
+        }
+
+        // 2. Prepare and insert the line items
+        const itemsToInsert = items.map(item => ({
+            ...item,
+            invoice_id: newInvoice.id,
+        }));
+
+        const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+
+        if (itemsError) {
+            console.error("Error creating invoice items:", itemsError);
+            // Optional: Delete the invoice if items fail to be created for data consistency
+            await supabase.from('invoices').delete().eq('id', newInvoice.id);
+        } else {
             refreshData();
             onClose();
         }
+        setIsSubmitting(false);
     };
+
     return (
         <Modal onClose={onClose} title="Create New Invoice">
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
                         <label className="block text-sm font-medium text-slate-300">Project</label>
-                        <select name="project_id" value={formData.project_id} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
+                        <select name="project_id" value={formData.project_id} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
                             <option value="">Select a project</option>
                             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     </div>
                     <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
                 </div>
-                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Amount (£)</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Invoice</button>
+                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                
+                {/* Itemized Breakdown */}
+                <div className="border-t border-b border-slate-700 py-4 space-y-3">
+                    <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
+                    {items.map((item, index) => (
+                        <div key={index} className="grid grid-cols-12 gap-2 items-center">
+                            <input type="text" placeholder="Description" value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} required className="col-span-6 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
+                            <input type="number" placeholder="Qty" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)} required className="col-span-2 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
+                            <input type="number" step="0.01" placeholder="Price" value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', parseFloat(e.target.value) || 0)} required className="col-span-3 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
+                            <button type="button" onClick={() => removeItem(index)} className="col-span-1 text-red-400 hover:text-red-300 text-2xl">&times;</button>
+                        </div>
+                    ))}
+                    <button type="button" onClick={addItem} className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold">+ Add Item</button>
+                </div>
+                
+                <div className="text-right text-xl font-bold text-white">
+                    Total: {formatCurrency(totalAmount)}
+                </div>
+
+                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md" disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : 'Save Invoice'}
+                </button>
             </form>
         </Modal>
     );
@@ -281,7 +355,8 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
 const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => void; refreshData: () => void; }> = ({ projectToEdit, onClose, refreshData }) => {
     const [formData, setFormData] = useState({ 
         name: projectToEdit?.name || '', 
-        client_name: projectToEdit?.client_name || '' 
+        client_name: projectToEdit?.client_name || '',
+        client_email: projectToEdit?.client_email || ''
     });
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -290,10 +365,8 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
         e.preventDefault();
         let error;
         if (projectToEdit) {
-            // Update existing project
             ({ error } = await supabase.from('projects').update(formData).eq('id', projectToEdit.id));
         } else {
-            // Insert new project
             ({ error } = await supabase.from('projects').insert([formData]));
         }
 
@@ -308,6 +381,7 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-300">Project Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Client Name</label><input type="text" name="client_name" value={formData.client_name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                 <div><label className="block text-sm font-medium text-slate-300">Client Email</label><input type="email" name="client_email" value={formData.client_email} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Project</button>
             </form>
         </Modal>
@@ -354,7 +428,7 @@ const DashboardPage: React.FC = () => {
         setError(null);
         try {
             const projectsPromise = supabase.from('projects').select('*').order('name');
-            const invoicesPromise = supabase.from('invoices').select('*, projects(name)').order('issue_date', { ascending: false });
+            const invoicesPromise = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
             const expensesPromise = supabase.from('expenses').select('*').order('expense_date', { ascending: false });
             
             const [{ data: projectsData, error: projectsError }, { data: invoicesData, error: invoicesError }, { data: expensesData, error: expensesError }] = await Promise.all([projectsPromise, invoicesPromise, expensesPromise]);

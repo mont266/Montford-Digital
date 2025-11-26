@@ -4,6 +4,13 @@ import { supabase } from '../lib/supabaseClient';
 import Logo from '../components/Logo';
 
 // Define the structure of an invoice
+interface InvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+}
+
 interface Invoice {
   id: string;
   invoice_number: string;
@@ -15,6 +22,7 @@ interface Invoice {
     name: string;
     client_name: string;
   } | null;
+  invoice_items: InvoiceItem[];
 }
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
@@ -34,20 +42,12 @@ const InvoicePublicPage: React.FC = () => {
       }
 
       try {
-        // Fetch the specific invoice and its related project details
         const { data, error } = await supabase
           .from('invoices')
           .select(`
-            id,
-            invoice_number,
-            issue_date,
-            due_date,
-            amount,
-            status,
-            projects (
-              name,
-              client_name
-            )
+            *,
+            projects ( name, client_name ),
+            invoice_items ( * )
           `)
           .eq('id', id)
           .single();
@@ -55,10 +55,7 @@ const InvoicePublicPage: React.FC = () => {
         if (error) throw error;
 
         if (data) {
-          // FIX: Cast to 'unknown' first to handle a potential type inference mismatch from Supabase
-          // where a to-one relationship is incorrectly typed as an array. The application logic
-          // correctly expects `projects` to be an object.
-          setInvoice(data as unknown as Invoice);
+          setInvoice(data as Invoice);
         } else {
             setError("Invoice not found.");
         }
@@ -74,30 +71,20 @@ const InvoicePublicPage: React.FC = () => {
   }, [id]);
 
   const handlePayment = () => {
-      // In a real application, this would call a Supabase Edge Function
-      // to create a Stripe Checkout session.
-      // Example:
-      // const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      //     body: { invoiceId: invoice?.id }
-      // });
-      // if (data?.checkoutUrl) {
-      //     window.location.href = data.checkoutUrl;
-      // }
       alert("Payment processing would be initiated here!");
   };
 
-  const getStatusChip = (status: string) => {
-    switch (status) {
-        case 'paid': return 'bg-green-500/20 text-green-300 border-green-500/30';
-        case 'overdue': return 'bg-red-500/20 text-red-300 border-red-500/30';
-        case 'sent': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-        default: return 'bg-slate-700 text-slate-300 border-slate-600';
-    }
+  const getStatusChip = (status: string, dueDate: string) => {
+    const isOverdue = new Date(dueDate) < new Date() && status !== 'paid';
+    if (status === 'paid') return 'bg-green-500/20 text-green-300 border-green-500/30';
+    if (isOverdue) return 'bg-red-500/20 text-red-300 border-red-500/30';
+    if (status === 'sent') return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+    return 'bg-slate-700 text-slate-300 border-slate-600';
   }
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
-      <div className="w-full max-w-3xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden">
+      <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden">
         <header className="bg-slate-900 p-8 flex justify-between items-start">
             <div>
                 <Logo className="h-9 w-auto" />
@@ -132,18 +119,42 @@ const InvoicePublicPage: React.FC = () => {
                     </div>
 
                     <div className="border-t border-slate-700 pt-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">Invoice Details</h3>
-                        <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-md">
-                            <span className="text-slate-300">{invoice.projects?.name || 'Project Work'}</span>
-                            <span className="font-bold text-white">{formatCurrency(invoice.amount)}</span>
+                        <h3 className="text-lg font-semibold text-white mb-4">Itemized Breakdown</h3>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="border-b border-slate-700 text-sm text-slate-400">
+                                        <th className="p-2">Description</th>
+                                        <th className="p-2 text-center">Qty</th>
+                                        <th className="p-2 text-right">Unit Price</th>
+                                        <th className="p-2 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {invoice.invoice_items.map(item => (
+                                        <tr key={item.id} className="border-b border-slate-700/50">
+                                            <td className="p-2 text-white font-medium">{item.description}</td>
+                                            <td className="p-2 text-center">{item.quantity}</td>
+                                            <td className="p-2 text-right">{formatCurrency(item.unit_price)}</td>
+                                            <td className="p-2 text-right">{formatCurrency(item.quantity * item.unit_price)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="text-white font-bold">
+                                        <td colSpan={3} className="p-2 text-right">Grand Total</td>
+                                        <td className="p-2 text-right">{formatCurrency(invoice.amount)}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
                     </div>
                     
                     <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center">
                         <div className="flex items-center mb-4 sm:mb-0">
                            <span className="text-slate-400 mr-2">Status:</span>
-                           <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status)}`}>
-                                {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                           <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
+                                {new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'Overdue' : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                            </span>
                         </div>
 
