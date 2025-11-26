@@ -17,6 +17,8 @@ interface Invoice {
   } | null;
 }
 
+const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+
 const InvoicePublicPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
@@ -103,7 +105,7 @@ const InvoicePublicPage: React.FC = () => {
             </div>
             {invoice && (
                 <div className="text-right">
-                    <h2 className="text-3xl font-bold text-white">${invoice.amount.toFixed(2)}</h2>
+                    <h2 className="text-3xl font-bold text-white">{formatCurrency(invoice.amount)}</h2>
                     <p className="text-slate-400">Due on {new Date(invoice.due_date).toLocaleDateString()}</p>
                 </div>
             )}
@@ -133,7 +135,7 @@ const InvoicePublicPage: React.FC = () => {
                         <h3 className="text-lg font-semibold text-white mb-4">Invoice Details</h3>
                         <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-md">
                             <span className="text-slate-300">{invoice.projects?.name || 'Project Work'}</span>
-                            <span className="font-bold text-white">${invoice.amount.toFixed(2)}</span>
+                            <span className="font-bold text-white">{formatCurrency(invoice.amount)}</span>
                         </div>
                     </div>
                     

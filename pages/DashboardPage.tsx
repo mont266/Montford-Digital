@@ -7,6 +7,7 @@ interface Project {
   id: string;
   name: string;
   client_name: string;
+  client_email?: string;
 }
 interface Invoice {
   id: string;
@@ -38,26 +39,25 @@ const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }
 );
 
 const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string }> = ({ children, onClose, title }) => (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={onClose}>
         <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-white">{title}</h3>
-                <button onClick={onClose} className="text-slate-400 hover:text-white">&times;</button>
+                <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
             </div>
             {children}
         </div>
     </div>
 );
 
+const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
 
 // --- Page Components ---
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
     const totalRevenue = invoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
     const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
-    const overdueAmount = invoices.filter(inv => inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
+    const overdueAmount = invoices.filter(inv => ['overdue', 'sent'].includes(inv.status) && new Date(inv.due_date) < new Date()).reduce((acc, inv) => acc + inv.amount, 0);
     const netProfit = totalRevenue - totalExpenses;
-
-    const formatCurrency = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     
     return (
         <div>
@@ -71,6 +71,68 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
         </div>
     );
 };
+
+const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; }> = ({ projects, refreshData }) => {
+    const [showModal, setShowModal] = useState(false);
+    const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+    const handleEdit = (project: Project) => {
+        setEditingProject(project);
+        setShowModal(true);
+    };
+
+    const handleAddNew = () => {
+        setEditingProject(null);
+        setShowModal(true);
+    };
+
+    const handleCloseModal = () => {
+        setShowModal(false);
+        setEditingProject(null);
+    };
+
+    const handleDelete = async (id: string) => {
+        if (window.confirm("Are you sure you want to delete this project? This will not delete its invoices.")) {
+            const { error } = await supabase.from('projects').delete().eq('id', id);
+            if (error) console.error("Error deleting project:", error);
+            else refreshData();
+        }
+    };
+    
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">Projects</h2>
+                <button onClick={handleAddNew} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Project</button>
+            </div>
+            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-700">
+                    <thead className="bg-slate-900/50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Project Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Client Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                        {projects.map(project => (
+                            <tr key={project.id}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{project.client_name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
+                                    <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
+                                    <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {showModal && <ProjectForm projectToEdit={editingProject} onClose={handleCloseModal} refreshData={refreshData} />}
+        </div>
+    );
+};
+
 
 const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; }> = ({ invoices, projects, refreshData }) => {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -113,7 +175,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             <tr key={invoice.id} className="hover:bg-slate-800/50">
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${invoice.amount.toFixed(2)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.due_date}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : invoice.status === 'overdue' ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
@@ -165,7 +227,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{exp.expense_date}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{exp.description}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{exp.category}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${exp.amount.toFixed(2)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                     <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-300">Delete</button>
                                 </td>
@@ -199,40 +261,53 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
                         <label className="block text-sm font-medium text-slate-300">Project</label>
-                        <select name="project_id" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
+                        <select name="project_id" value={formData.project_id} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
                             <option value="">Select a project</option>
                             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     </div>
                     <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
                 </div>
-                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Amount</label><input type="number" step="0.01" name="amount" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Amount (£)</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Invoice</button>
             </form>
         </Modal>
     );
 };
 
-const ProjectForm: React.FC<{ onClose: () => void; refreshData: () => void; }> = ({ onClose, refreshData }) => {
-    const [formData, setFormData] = useState({ name: '', client_name: '' });
+const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => void; refreshData: () => void; }> = ({ projectToEdit, onClose, refreshData }) => {
+    const [formData, setFormData] = useState({ 
+        name: projectToEdit?.name || '', 
+        client_name: projectToEdit?.client_name || '' 
+    });
+    
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { error } = await supabase.from('projects').insert([formData]);
-        if (error) console.error("Error creating project:", error);
+        let error;
+        if (projectToEdit) {
+            // Update existing project
+            ({ error } = await supabase.from('projects').update(formData).eq('id', projectToEdit.id));
+        } else {
+            // Insert new project
+            ({ error } = await supabase.from('projects').insert([formData]));
+        }
+
+        if (error) console.error("Error saving project:", error);
         else {
             refreshData();
             onClose();
         }
     };
      return (
-        <Modal onClose={onClose} title="Create New Project">
+        <Modal onClose={onClose} title={projectToEdit ? "Edit Project" : "Create New Project"}>
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-300">Project Name</label><input type="text" name="name" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Client Name</label><input type="text" name="client_name" onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Project Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Client Name</label><input type="text" name="client_name" value={formData.client_name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Project</button>
             </form>
         </Modal>
@@ -255,7 +330,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; }> =
         <Modal onClose={onClose} title="Add New Expense">
              <form onSubmit={handleSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-300">Description</label><input type="text" name="description" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Amount</label><input type="number" step="0.01" name="amount" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Amount (£)</label><input type="number" step="0.01" name="amount" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Category</label><input type="text" name="category" onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Expense Date</label><input type="date" name="expense_date" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Expense</button>
@@ -278,9 +353,9 @@ const DashboardPage: React.FC = () => {
         setLoading(true);
         setError(null);
         try {
-            const projectsPromise = supabase.from('projects').select('*');
-            const invoicesPromise = supabase.from('invoices').select('*, projects(name)');
-            const expensesPromise = supabase.from('expenses').select('*');
+            const projectsPromise = supabase.from('projects').select('*').order('name');
+            const invoicesPromise = supabase.from('invoices').select('*, projects(name)').order('issue_date', { ascending: false });
+            const expensesPromise = supabase.from('expenses').select('*').order('expense_date', { ascending: false });
             
             const [{ data: projectsData, error: projectsError }, { data: invoicesData, error: invoicesError }, { data: expensesData, error: expensesError }] = await Promise.all([projectsPromise, invoicesPromise, expensesPromise]);
 
@@ -289,7 +364,7 @@ const DashboardPage: React.FC = () => {
             if (expensesError) throw expensesError;
 
             setProjects(projectsData || []);
-            setInvoices(invoicesData || []);
+            setInvoices(invoicesData as Invoice[] || []);
             setExpenses(expensesData || []);
         } catch (err: any) {
             setError(err.message);
@@ -309,6 +384,7 @@ const DashboardPage: React.FC = () => {
 
     const navItems = [
         { path: "/dashboard", label: "Overview" },
+        { path: "/dashboard/projects", label: "Projects" },
         { path: "/dashboard/invoices", label: "Invoices" },
         { path: "/dashboard/expenses", label: "Expenses" },
     ];
@@ -339,6 +415,7 @@ const DashboardPage: React.FC = () => {
                  {!loading && !error && (
                     <Routes>
                         <Route path="/" element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
+                        <Route path="/projects" element={<ProjectsPage projects={projects} refreshData={fetchData} />} />
                         <Route path="/invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} />} />
                         <Route path="/expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} />} />
                     </Routes>
