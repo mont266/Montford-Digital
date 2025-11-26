@@ -37,6 +37,8 @@ interface Expense {
   expense_date: string;
 }
 
+type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
+
 // --- Reusable Components ---
 const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
   <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex items-center space-x-4">
@@ -66,15 +68,62 @@ const formatDate = (dateString: string) => new Date(dateString).toLocaleDateStri
 
 // --- Page Components ---
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
-    const totalRevenue = invoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
-    const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
+    const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
+
+    const filteredData = useMemo(() => {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let startDate: Date | null = null;
+
+        switch (timeSpan) {
+            case '7d':
+                startDate = new Date(today);
+                startDate.setDate(today.getDate() - 7);
+                break;
+            case 'mtd':
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                break;
+            case 'ytd':
+                startDate = new Date(today.getFullYear(), 0, 1);
+                break;
+            case 'all':
+            default:
+                break;
+        }
+
+        const filteredInvoices = startDate
+            ? invoices.filter(inv => new Date(inv.issue_date) >= startDate!)
+            : invoices;
+        
+        const filteredExpenses = startDate
+            ? expenses.filter(exp => new Date(exp.expense_date) >= startDate!)
+            : expenses;
+
+        return { filteredInvoices, filteredExpenses };
+
+    }, [timeSpan, invoices, expenses]);
+
+
+    const { filteredInvoices, filteredExpenses } = filteredData;
+    
+    const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
+    const totalExpenses = filteredExpenses.reduce((acc, exp) => acc + exp.amount, 0);
     const netProfit = totalRevenue - totalExpenses;
-    const outstandingAmount = invoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
-    const overdueAmount = invoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
+    const outstandingAmount = filteredInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
+    const overdueAmount = filteredInvoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
     
     return (
         <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Overview</h2>
+            <div className="flex justify-between items-center mb-6">
+                 <h2 className="text-2xl font-bold text-white">Overview</h2>
+                 <div className="flex space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
+                     {(['7d', 'mtd', 'ytd', 'all'] as const).map(span => (
+                         <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
+                            {span === '7d' ? 'Last 7 Days' : span === 'mtd' ? 'MTD' : span === 'ytd' ? 'YTD' : 'All Time'}
+                         </button>
+                     ))}
+                 </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
                 <StatCard title="Total Expenses" value={formatCurrency(totalExpenses)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5 6.5h.01" /></svg>} />
@@ -194,6 +243,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                 <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                     <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">View</Link>
+                                    {invoice.status === 'draft' && <button onClick={() => handleUpdateStatus(invoice.id, 'sent')} className="text-blue-400 hover:text-blue-300">Mark Sent</button>}
                                     {invoice.status !== 'paid' && <button onClick={() => handleUpdateStatus(invoice.id, 'paid')} className="text-green-400 hover:text-green-300">Mark Paid</button>}
                                     <button onClick={() => handleDelete(invoice.id)} className="text-red-400 hover:text-red-300">Delete</button>
                                 </td>
@@ -371,6 +421,11 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                 
                 <div className="border-t border-b border-slate-700 py-4 space-y-3">
                     <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
+                     <div className="grid grid-cols-12 gap-2 items-center text-xs text-slate-400 font-medium px-2">
+                        <div className="col-span-6">Description</div>
+                        <div className="col-span-2">Qty</div>
+                        <div className="col-span-3">Unit Price</div>
+                    </div>
                     {items.map((item, index) => (
                         <div key={index} className="grid grid-cols-12 gap-2 items-center">
                             <input type="text" placeholder="Description" value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} required className="col-span-6 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
