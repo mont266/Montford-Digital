@@ -53,7 +53,10 @@ const InvoicePublicPage: React.FC = () => {
         if (error) throw error;
 
         if (data) {
-          setInvoice(data as Invoice);
+          // FIX: Cast to 'unknown' first to handle a potential type inference mismatch from Supabase
+          // where a to-one relationship is incorrectly typed as an array. The application logic
+          // correctly expects `projects` to be an object.
+          setInvoice(data as unknown as Invoice);
         } else {
             setError("Invoice not found.");
         }
