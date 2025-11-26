@@ -7,7 +7,6 @@ interface Project {
   title: string;
   category: string;
   detailedDescription: string;
-  technologies: string[];
   tags: string[];
   links?: {
     webapp?: string;
@@ -73,21 +72,14 @@ const PortfolioModal: React.FC<PortfolioModalProps> = ({ project, onClose }) => 
                     <p className="text-cyan-400 font-semibold mb-4">{project.category}</p>
                     <p className="text-slate-300 mb-6">{project.detailedDescription}</p>
                     
-                    <h3 className="text-xl font-semibold text-white mb-3">Platforms</h3>
+                    <h3 className="text-xl font-semibold text-white mb-3">Key Features & Type</h3>
                     <div className="flex flex-wrap gap-2 mb-6">
                         {project.tags.map(tag => (
                             <span key={tag} className="bg-slate-900 text-cyan-300 text-sm font-medium px-3 py-1 rounded-full border border-slate-700">{tag}</span>
                         ))}
                     </div>
 
-                    <h3 className="text-xl font-semibold text-white mb-3">Technologies Used</h3>
-                    <div className="flex flex-wrap gap-2 mb-8">
-                        {project.technologies.map(tech => (
-                            <span key={tech} className="bg-slate-700 text-slate-300 text-sm font-medium px-3 py-1 rounded-full">{tech}</span>
-                        ))}
-                    </div>
-
-                    <div className="flex flex-wrap gap-4 items-center">
+                    <div className="flex flex-wrap gap-4 items-center mt-8">
                         {project.links?.webapp && (
                             <a 
                                 href={project.links.webapp} 

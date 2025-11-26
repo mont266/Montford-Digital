@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import PortfolioModal from './PortfolioModal';
 
@@ -8,7 +9,6 @@ interface Project {
   category: string;
   description: string;
   detailedDescription: string;
-  technologies: string[];
   tags: string[];
   links?: {
     webapp?: string;
@@ -20,22 +20,15 @@ interface Project {
 // Data is now hardcoded in the component for easy manual updates.
 const projects: Project[] = [
   {
-    "imageSrc": "/images/uploads/stoutly.jpg",
+    "imageSrc": "https://picsum.photos/seed/stoutly/600/400",
     "title": "Stoutly",
     "category": "Web & Android App",
     "description": "A comprehensive platform with both a web app and native Android app.",
-    "detailedDescription": "Stoutly required a robust, dual-platform solution to serve their users both on the web and on the go. We developed a high-performance web application and a feature-rich native Android app, both powered by a unified backend. This ensures a seamless user experience, consistent data, and broad accessibility across devices.",
-    "technologies": [
-      "React",
-      "Next.js",
-      "TypeScript",
-      "PostgreSQL",
-      "Kotlin",
-      "Jetpack Compose"
-    ],
+    "detailedDescription": "Stoutly is a personal passion project built from the ground up. It is a dedicated social network for Guinness enthusiasts, allowing users to rate pints of Guinness around the world. The platform fosters community engagement by letting users comment on ratings and share their experiences. A key feature is the location-based discovery engine, enabling users to instantly find the best and cheapest pints of Guinness nearby, no matter where they are in the world.",
     "tags": [
-      "Web App",
-      "Android App"
+      "Social Network",
+      "Location Based",
+      "Community"
     ],
     "links": {
       "webapp": "https://www.stoutly.co.uk",
@@ -43,62 +36,45 @@ const projects: Project[] = [
     }
   },
   {
-    "imageSrc": "/images/uploads/flow-commerce.jpg",
+    "imageSrc": "https://picsum.photos/seed/flow-commerce/600/400",
     "title": "Flow Commerce",
     "category": "E-commerce Platform",
     "description": "An intuitive e-commerce site with seamless checkout.",
     "detailedDescription": "For Flow Commerce, we built a custom e-commerce solution from the ground up. The platform supports thousands of products, features a streamlined multi-step checkout process, and integrates with major payment gateways. Advanced features include personalized recommendations and a powerful admin dashboard for inventory management.",
-    "technologies": [
-      "Shopify Plus",
-      "React",
-      "GraphQL",
-      "Node.js",
-      "Styled Components"
-    ],
     "tags": [
-      "Web App"
+      "E-commerce",
+      "Retail",
+      "Inventory Management"
     ],
     "links": {
       "webapp": "https://example.com"
     }
   },
   {
-    "imageSrc": "/images/uploads/artisan-cafe.jpg",
+    "imageSrc": "https://picsum.photos/seed/artisan-cafe/600/400",
     "title": "Artisan Cafe",
     "category": "Local Business Site",
     "description": "A charming website showcasing a local cafe's menu and story.",
     "detailedDescription": "We helped Artisan Cafe brew up a new online presence. The website features a warm, inviting design that reflects their brand, a dynamic menu that's easy to update, and an integrated online ordering system that helped increase their takeaway sales by 40%.",
-    "technologies": [
-      "Gatsby",
-      "Contentful",
-      "Netlify",
-      "Snipcart",
-      "GSAP"
-    ],
     "tags": [
-      "Web App"
+      "Hospitality",
+      "Local Business",
+      "Online Ordering"
     ],
     "links": {
       "webapp": "https://example.com"
     }
   },
   {
-    "imageSrc": "/images/uploads/connect-app.jpg",
+    "imageSrc": "https://picsum.photos/seed/connect-app/600/400",
     "title": "ConnectApp",
     "category": "iOS & Android App",
     "description": "A vibrant social app to connect with like-minded people.",
     "detailedDescription": "ConnectApp is a social networking platform designed to connect people with shared interests and hobbies. We developed native iOS and Android applications with a focus on a fluid user interface, real-time chat, and an intelligent recommendation engine. The launch was supported by a high-converting landing page.",
-    "technologies": [
-      "SwiftUI",
-      "Kotlin",
-      "Firebase",
-      "Node.js",
-      "React"
-    ],
     "tags": [
-      "iOS App",
-      "Android App",
-      "Web App"
+      "Social Media",
+      "Real-time Chat",
+      "Mobile App"
     ],
     "links": {
       "webapp": "#",
@@ -107,37 +83,27 @@ const projects: Project[] = [
     }
   },
   {
-    "imageSrc": "/images/uploads/data-visualize.jpg",
+    "imageSrc": "https://picsum.photos/seed/data-visualize/600/400",
     "title": "DataVisualize",
     "category": "Data Dashboard",
     "description": "An interactive dashboard for complex data analysis.",
     "detailedDescription": "DataVisualize provides a powerful B2B service for data analysis. We built a highly interactive and performant dashboard application that allows users to connect various data sources, create custom visualizations, and generate insightful reports in real-time.",
-    "technologies": [
-      "React",
-      "D3.js",
-      "TypeScript",
-      "Redux",
-      "AWS"
-    ],
     "tags": [
-      "Web App"
+      "SaaS",
+      "Analytics",
+      "B2B"
     ]
   },
   {
-    "imageSrc": "/images/uploads/nomad-blog.jpg",
+    "imageSrc": "https://picsum.photos/seed/nomad-blog/600/400",
     "title": "Nomad Blog",
     "category": "Personal Blog",
     "description": "A clean and fast blog platform for a travel writer.",
     "detailedDescription": "We created a lightning-fast, SEO-optimized blog for a renowned travel writer. The site is built on a modern Jamstack architecture, ensuring excellent performance and security. It features a clean, reader-focused design, an easy-to-use CMS for publishing content, and an interactive map to document their travels.",
-    "technologies": [
-      "Next.js",
-      "Markdown",
-      "Prismic",
-      "Tailwind CSS",
-      "Vercel"
-    ],
     "tags": [
-      "Web App"
+      "Blog",
+      "Travel",
+      "Content Platform"
     ],
     "links": {
       "webapp": "https://example.com"

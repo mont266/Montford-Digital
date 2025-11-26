@@ -8,7 +8,7 @@ const Logo: React.FC<LogoProps> = ({ className = 'h-8 w-auto' }) => {
   return (
     <svg 
       className={className} 
-      viewBox="0 0 255 40" 
+      viewBox="0 0 285 40" 
       xmlns="http://www.w3.org/2000/svg" 
       aria-label="Montford Digital Logo"
     >
