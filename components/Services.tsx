@@ -49,7 +49,7 @@ const Services: React.FC = () => {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white">Our Expertise</h2>
-          <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto">We specialize in building unique digital systems. Here is how we can help you.</p>
+          <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto">We specialise in building unique digital systems. Here is how we can help you.</p>
            <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">

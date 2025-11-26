@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -26,6 +27,8 @@ interface Invoice {
 }
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB');
+
 
 const InvoicePublicPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -93,7 +96,7 @@ const InvoicePublicPage: React.FC = () => {
             {invoice && (
                 <div className="text-right">
                     <h2 className="text-3xl font-bold text-white">{formatCurrency(invoice.amount)}</h2>
-                    <p className="text-slate-400">Due on {new Date(invoice.due_date).toLocaleDateString()}</p>
+                    <p className="text-slate-400">Due on {formatDate(invoice.due_date)}</p>
                 </div>
             )}
         </header>
@@ -114,12 +117,12 @@ const InvoicePublicPage: React.FC = () => {
                         </div>
                         <div>
                             <p className="text-sm text-slate-400 mb-1">Issue Date</p>
-                            <p className="font-semibold text-white">{new Date(invoice.issue_date).toLocaleDateString()}</p>
+                            <p className="font-semibold text-white">{formatDate(invoice.issue_date)}</p>
                         </div>
                     </div>
 
                     <div className="border-t border-slate-700 pt-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">Itemized Breakdown</h3>
+                        <h3 className="text-lg font-semibold text-white mb-4">Itemised Breakdown</h3>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead>

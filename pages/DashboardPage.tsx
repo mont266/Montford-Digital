@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -60,6 +61,8 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: s
 );
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB');
+
 
 // --- Page Components ---
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
@@ -75,7 +78,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
                 <StatCard title="Total Expenses" value={formatCurrency(totalExpenses)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5 6.5h.01" /></svg>} />
-                <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
+                <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
             </div>
@@ -187,7 +190,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.due_date)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                     <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">View</Link>
@@ -236,7 +239,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
                     <tbody className="divide-y divide-slate-700">
                         {expenses.map(exp => (
                             <tr key={exp.id}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(exp.expense_date).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.expense_date)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{exp.description}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{exp.category}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount)}</td>
@@ -259,6 +262,18 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
     const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const groupedProjects = useMemo(() => {
+        return projects.reduce((acc, project) => {
+            const clientName = project.client_name || 'No Client';
+            if (!acc[clientName]) {
+                acc[clientName] = [];
+            }
+            acc[clientName].push(project);
+            return acc;
+        }, {} as Record<string, Project[]>);
+    }, [projects]);
+
 
     useEffect(() => {
         const generateNextInvoiceNumber = async () => {
@@ -339,7 +354,13 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                         <label className="block text-sm font-medium text-slate-300">Project</label>
                         <select name="project_id" value={formData.project_id} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
                             <option value="">Select a project</option>
-                            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                             {Object.entries(groupedProjects).map(([clientName, clientProjects]) => (
+                                <optgroup label={clientName} key={clientName}>
+                                    {clientProjects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </optgroup>
+                            ))}
                         </select>
                     </div>
                     <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
