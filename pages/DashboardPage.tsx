@@ -65,15 +65,17 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { styl
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
     const totalRevenue = invoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
     const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
+    const netProfit = totalRevenue - totalExpenses;
     const outstandingAmount = invoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
     const overdueAmount = invoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
     
     return (
         <div>
             <h2 className="text-2xl font-bold text-white mb-6">Overview</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
                 <StatCard title="Total Expenses" value={formatCurrency(totalExpenses)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5 6.5h.01" /></svg>} />
+                <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
             </div>
@@ -185,10 +187,10 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.due_date}</td>
-                                {/* FIX: Removed redundant `invoice.status !== 'paid'` check. This condition is unnecessary because the outer ternary `invoice.status === 'paid' ? ...` already ensures the status is not 'paid' in this branch of the logic, resolving a TypeScript warning about comparing non-overlapping types. */}
-                                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : new Date(invoice.due_date) < new Date() ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                    <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">View</Link>
                                     {invoice.status !== 'paid' && <button onClick={() => handleUpdateStatus(invoice.id, 'paid')} className="text-green-400 hover:text-green-300">Mark Paid</button>}
                                     <button onClick={() => handleDelete(invoice.id)} className="text-red-400 hover:text-red-300">Delete</button>
                                 </td>
@@ -234,7 +236,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
                     <tbody className="divide-y divide-slate-700">
                         {expenses.map(exp => (
                             <tr key={exp.id}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{exp.expense_date}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(exp.expense_date).toLocaleDateString()}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{exp.description}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{exp.category}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount)}</td>
@@ -258,6 +260,29 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    useEffect(() => {
+        const generateNextInvoiceNumber = async () => {
+            const { data, error } = await supabase
+                .from('invoices')
+                .select('invoice_number')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+            
+            let nextNumber = 'MD-001';
+            if (data && data.invoice_number) {
+                const parts = data.invoice_number.split('-');
+                const lastNum = parseInt(parts[1], 10);
+                if (!isNaN(lastNum)) {
+                    const newNum = (lastNum + 1).toString().padStart(3, '0');
+                    nextNumber = `MD-${newNum}`;
+                }
+            }
+            setFormData(prev => ({ ...prev, invoice_number: nextNumber }));
+        };
+        generateNextInvoiceNumber();
+    }, []);
+
     const totalAmount = useMemo(() => items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0), [items]);
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -277,7 +302,6 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
 
         const invoiceData = { ...formData, amount: totalAmount };
 
-        // 1. Insert the main invoice record
         const { data: newInvoice, error: invoiceError } = await supabase
             .from('invoices')
             .insert(invoiceData)
@@ -290,7 +314,6 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
             return;
         }
 
-        // 2. Prepare and insert the line items
         const itemsToInsert = items.map(item => ({
             ...item,
             invoice_id: newInvoice.id,
@@ -300,7 +323,6 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
 
         if (itemsError) {
             console.error("Error creating invoice items:", itemsError);
-            // Optional: Delete the invoice if items fail to be created for data consistency
             await supabase.from('invoices').delete().eq('id', newInvoice.id);
         } else {
             refreshData();
@@ -322,11 +344,10 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                     </div>
                     <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
                 </div>
-                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} readOnly className="mt-1 w-full bg-slate-900 border-slate-700 rounded-md p-2 text-slate-400 cursor-not-allowed" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 
-                {/* Itemized Breakdown */}
                 <div className="border-t border-b border-slate-700 py-4 space-y-3">
                     <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
                     {items.map((item, index) => (
