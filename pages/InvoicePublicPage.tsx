@@ -99,7 +99,7 @@ const InvoicePublicPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
-      <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden">
+      <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden invoice-card">
         <header className="bg-slate-900 p-8 flex justify-between items-start">
             <div>
                 <Logo className="h-9 w-auto" />
@@ -177,21 +177,29 @@ const InvoicePublicPage: React.FC = () => {
                     </div>
                     
                     <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center">
-                        <div className="flex items-center mb-4 sm:mb-0">
+                        <div className="flex items-center mb-4 sm:mb-0 print-hide">
                            <span className="text-slate-400 mr-2">Status:</span>
                            <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
                                 {new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'Overdue' : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                            </span>
                         </div>
-
-                        {invoice.status !== 'paid' && (
-                             <button
-                                onClick={handlePayment}
-                                className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
+                        
+                        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto print-hide">
+                            <button
+                                onClick={() => window.print()}
+                                className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300"
                             >
-                                Pay Invoice with Stripe
+                                Print Invoice
                             </button>
-                        )}
+                            {invoice.status !== 'paid' && (
+                                 <button
+                                    onClick={handlePayment}
+                                    className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
+                                >
+                                    Pay Invoice with Stripe
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

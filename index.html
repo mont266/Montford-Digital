@@ -11,6 +11,33 @@
         scroll-behavior: smooth;
       }
     </style>
+    <style>
+      @media print {
+        body {
+          background-color: #fff !important;
+        }
+        .print-hide {
+          display: none !important;
+        }
+        .invoice-card {
+          box-shadow: none !important;
+          border: none !important;
+          background-color: #fff !important;
+        }
+        .invoice-card * {
+          color: #000 !important;
+          background-color: transparent !important;
+          border-color: #ccc !important;
+        }
+        .invoice-card header,
+        .invoice-card footer {
+           background-color: #f9fafb !important;
+        }
+        .invoice-card a {
+            text-decoration: none;
+        }
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {
