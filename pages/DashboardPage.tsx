@@ -217,6 +217,21 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; }> 
 const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; }> = ({ invoices, projects, refreshData }) => {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const handleDocumentClick = (e: MouseEvent) => {
+            if (!(e.target as HTMLElement).closest('.actions-dropdown-container')) {
+                setOpenDropdownId(null);
+            }
+        };
+        if (openDropdownId) {
+            document.addEventListener('click', handleDocumentClick);
+        }
+        return () => {
+            document.removeEventListener('click', handleDocumentClick);
+        };
+    }, [openDropdownId]);
 
     const handleUpdateStatus = async (id: string, status: Invoice['status']) => {
         const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
@@ -248,7 +263,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Due Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Financials</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
@@ -272,11 +287,29 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                             <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">View</Link>
-                                        {invoice.status === 'draft' && <button onClick={() => handleUpdateStatus(invoice.id, 'sent')} className="text-blue-400 hover:text-blue-300">Mark Sent</button>}
-                                        {invoice.status !== 'paid' && <button onClick={() => handleUpdateStatus(invoice.id, 'paid')} className="text-green-400 hover:text-green-300">Mark Paid</button>}
-                                        <button onClick={() => handleDelete(invoice.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
+                                        <div className="relative inline-block text-left actions-dropdown-container">
+                                            <button
+                                                onClick={() => setOpenDropdownId(openDropdownId === invoice.id ? null : invoice.id)}
+                                                className="inline-flex justify-center w-full rounded-full p-2 text-sm font-medium text-slate-400 hover:bg-slate-700 focus:outline-none"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                                                </svg>
+                                            </button>
+
+                                            {openDropdownId === invoice.id && (
+                                                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
+                                                    <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
+                                                        {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
+                                                        {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
+                                                        <div className="border-t border-slate-700 my-1"></div>
+                                                        <button onClick={() => { handleDelete(invoice.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             )
