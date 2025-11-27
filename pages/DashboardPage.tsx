@@ -25,8 +25,9 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
-  amount: number;
+  amount: number; // This is the GRAND TOTAL (inclusive of VAT)
   status: 'draft' | 'sent' | 'paid' | 'overdue';
+  vat_rate: number; // VAT rate as a percentage, e.g., 20
   projects: { name: string } | null;
   invoice_items: InvoiceItem[];
 }
@@ -38,7 +39,7 @@ interface Expense {
   expense_date: string;
   expense_type: 'one-time' | 'subscription';
   billing_cycle?: 'monthly' | 'annually';
-  is_active: boolean; // Added for subscription management
+  is_active: boolean;
 }
 
 type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
@@ -110,7 +111,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
 
     const { filteredInvoices, filteredExpenses } = filteredData;
     
-    const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
+    const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + (inv.amount / (1 + inv.vat_rate / 100)), 0);
     const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount, 0);
     const netProfit = totalRevenue - totalExpensesInPeriod;
     
@@ -140,7 +141,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
                  </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
+                <StatCard title="Total Revenue (VAT Ex.)" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
                 <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
@@ -377,7 +378,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
 
 // --- FORMS ---
 const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; }> = ({ projects, onClose, refreshData, onAddNewProject }) => {
-    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
+    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft', vat_rate: 20 });
     const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -416,9 +417,17 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
         generateNextInvoiceNumber();
     }, []);
 
-    const totalAmount = useMemo(() => items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0), [items]);
+    const { subtotal, vatAmount, grandTotal } = useMemo(() => {
+        const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+        const vatAmount = subtotal * (formData.vat_rate / 100);
+        const grandTotal = subtotal + vatAmount;
+        return { subtotal, vatAmount, grandTotal };
+    }, [items, formData.vat_rate]);
 
-    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData({ ...formData, [name]: name === 'vat_rate' ? parseFloat(value) : value });
+    };
     
     const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
         const newItems = [...items];
@@ -433,7 +442,7 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
         e.preventDefault();
         setIsSubmitting(true);
 
-        const invoiceData = { ...formData, amount: totalAmount };
+        const invoiceData = { ...formData, amount: grandTotal };
 
         const { data: newInvoice, error: invoiceError } = await supabase
             .from('invoices')
@@ -467,25 +476,27 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     return (
         <Modal onClose={onClose} title="Create New Invoice">
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="flex items-end space-x-2">
-                    <div className="flex-grow">
-                        <label className="block text-sm font-medium text-slate-300">Project</label>
-                        <select name="project_id" value={formData.project_id} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
-                            <option value="">Select a project</option>
-                             {Object.entries(groupedProjects).map(([clientName, clientProjects]) => (
-                                <optgroup label={clientName} key={clientName}>
-                                    {clientProjects.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </optgroup>
-                            ))}
-                        </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-end space-x-2">
+                        <div className="flex-grow">
+                            <label className="block text-sm font-medium text-slate-300">Project</label>
+                            <select name="project_id" value={formData.project_id} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
+                                <option value="">Select a project</option>
+                                {Object.entries(groupedProjects).map(([clientName, clientProjects]) => (
+                                    <optgroup label={clientName} key={clientName}>
+                                        {clientProjects.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </optgroup>
+                                ))}
+                            </select>
+                        </div>
+                        <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
                     </div>
-                    <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
+                    <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} readOnly className="mt-1 w-full bg-slate-900 border-slate-700 rounded-md p-2 text-slate-400 cursor-not-allowed" /></div>
+                    <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                    <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 </div>
-                 <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} readOnly className="mt-1 w-full bg-slate-900 border-slate-700 rounded-md p-2 text-slate-400 cursor-not-allowed" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 
                 <div className="border-t border-b border-slate-700 py-4 space-y-3">
                     <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
@@ -505,11 +516,19 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                     <button type="button" onClick={addItem} className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold">+ Add Item</button>
                 </div>
                 
-                <div className="text-right text-xl font-bold text-white">
-                    Total: {formatCurrency(totalAmount)}
+                <div className="grid grid-cols-2 gap-4 items-start">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300">VAT Rate (%)</label>
+                        <input type="number" step="0.01" name="vat_rate" value={formData.vat_rate} onChange={handleFormChange} className="mt-1 w-full max-w-[120px] bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
+                    </div>
+                    <div className="text-right space-y-1 text-slate-300">
+                        <p>Subtotal: <span className="font-semibold text-white">{formatCurrency(subtotal)}</span></p>
+                        <p>VAT ({formData.vat_rate}%): <span className="font-semibold text-white">{formatCurrency(vatAmount)}</span></p>
+                        <p className="text-xl font-bold text-white border-t border-slate-600 pt-2 mt-2">Grand Total: <span className="">{formatCurrency(grandTotal)}</span></p>
+                    </div>
                 </div>
 
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md" disabled={isSubmitting}>
+                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md mt-6" disabled={isSubmitting}>
                     {isSubmitting ? 'Saving...' : 'Save Invoice'}
                 </button>
             </form>
@@ -568,7 +587,6 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; }> =
         setFormData(prev => ({
             ...prev,
             [name]: value,
-            // Reset billing cycle if type is changed to one-time
             billing_cycle: name === 'expense_type' && value === 'one-time' ? null : prev.billing_cycle
         }));
     };

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -17,7 +18,8 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
-  amount: number;
+  amount: number; // This is the GRAND TOTAL
+  vat_rate: number; // VAT rate as a percentage, e.g., 20
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: {
     name: string;
@@ -72,6 +74,16 @@ const InvoicePublicPage: React.FC = () => {
 
     fetchInvoice();
   }, [id]);
+  
+  const { subtotal, vatAmount } = React.useMemo(() => {
+    if (!invoice) return { subtotal: 0, vatAmount: 0 };
+    const grandTotal = invoice.amount;
+    const vatRate = invoice.vat_rate;
+    const sub = grandTotal / (1 + vatRate / 100);
+    const vat = grandTotal - sub;
+    return { subtotal: sub, vatAmount: vat };
+  }, [invoice]);
+
 
   const handlePayment = () => {
       alert("Payment processing would be initiated here!");
@@ -143,9 +155,20 @@ const InvoicePublicPage: React.FC = () => {
                                         </tr>
                                     ))}
                                 </tbody>
-                                <tfoot>
-                                    <tr className="text-white font-bold">
-                                        <td colSpan={3} className="p-2 text-right">Grand Total</td>
+                                <tfoot className="text-slate-300">
+                                    <tr >
+                                        <td colSpan={2}></td>
+                                        <td className="p-2 text-right font-medium">Subtotal</td>
+                                        <td className="p-2 text-right">{formatCurrency(subtotal)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colSpan={2}></td>
+                                        <td className="p-2 text-right font-medium">VAT ({invoice.vat_rate}%)</td>
+                                        <td className="p-2 text-right">{formatCurrency(vatAmount)}</td>
+                                    </tr>
+                                    <tr className="text-white font-bold text-lg border-t-2 border-slate-600">
+                                        <td colSpan={2}></td>
+                                        <td className="p-2 text-right">Grand Total</td>
                                         <td className="p-2 text-right">{formatCurrency(invoice.amount)}</td>
                                     </tr>
                                 </tfoot>
