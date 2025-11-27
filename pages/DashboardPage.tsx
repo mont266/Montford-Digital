@@ -247,25 +247,40 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Due Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Financials</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
-                        {invoices.map(invoice => (
-                            <tr key={invoice.id} className="hover:bg-slate-800/50">
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.due_date)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                    <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">View</Link>
-                                    {invoice.status === 'draft' && <button onClick={() => handleUpdateStatus(invoice.id, 'sent')} className="text-blue-400 hover:text-blue-300">Mark Sent</button>}
-                                    {invoice.status !== 'paid' && <button onClick={() => handleUpdateStatus(invoice.id, 'paid')} className="text-green-400 hover:text-green-300">Mark Paid</button>}
-                                    <button onClick={() => handleDelete(invoice.id)} className="text-red-400 hover:text-red-300">Delete</button>
-                                </td>
-                            </tr>
-                        ))}
+                        {invoices.map(invoice => {
+                            const subtotal = invoice.amount / (1 + invoice.vat_rate / 100);
+                            const vatAmount = invoice.amount - subtotal;
+                            const stripeFee = (invoice.amount * 0.025) + 0.20; // 2.5% + 20p estimate
+                            const takeHome = subtotal - stripeFee;
+
+                            return (
+                                <tr key={invoice.id} className="hover:bg-slate-800/50">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.due_date)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
+                                        <div className="flex flex-col">
+                                            <span>VAT: <span className="font-medium text-slate-300">{formatCurrency(vatAmount)}</span></span>
+                                            <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(stripeFee)}</span></span>
+                                            <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">View</Link>
+                                        {invoice.status === 'draft' && <button onClick={() => handleUpdateStatus(invoice.id, 'sent')} className="text-blue-400 hover:text-blue-300">Mark Sent</button>}
+                                        {invoice.status !== 'paid' && <button onClick={() => handleUpdateStatus(invoice.id, 'paid')} className="text-green-400 hover:text-green-300">Mark Paid</button>}
+                                        <button onClick={() => handleDelete(invoice.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
