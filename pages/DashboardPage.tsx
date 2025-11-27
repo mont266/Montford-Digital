@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -37,6 +38,7 @@ interface Expense {
   expense_date: string;
   expense_type: 'one-time' | 'subscription';
   billing_cycle?: 'monthly' | 'annually';
+  is_active: boolean; // Added for subscription management
 }
 
 type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
@@ -114,7 +116,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     
     const oneTimePayments = filteredExpenses.filter(e => e.expense_type === 'one-time').reduce((sum, e) => sum + e.amount, 0);
     const monthlySubscriptions = expenses
-        .filter(e => e.expense_type === 'subscription')
+        .filter(e => e.expense_type === 'subscription' && e.is_active)
         .reduce((sum, e) => {
             if (e.billing_cycle === 'annually') {
                 return sum + (e.amount / 12);
@@ -276,18 +278,57 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
     const [showModal, setShowModal] = useState(false);
     
     const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this expense?")) {
+        if (window.confirm("Are you sure you want to delete this expense record permanently?")) {
             const { error } = await supabase.from('expenses').delete().eq('id', id);
             if (error) console.error("Error deleting expense:", error);
             else refreshData();
         }
     };
     
+    const handleToggleSubscription = async (id: string, currentStatus: boolean) => {
+        const { error } = await supabase.from('expenses').update({ is_active: !currentStatus }).eq('id', id);
+        if (error) console.error("Error updating subscription status:", error);
+        else refreshData();
+    };
+
+    const expectedThisMonth = useMemo(() => {
+        return expenses
+            .filter(e => e.expense_type === 'subscription' && e.is_active)
+            .reduce((sum, e) => {
+                if (e.billing_cycle === 'annually') {
+                    return sum + (e.amount / 12);
+                }
+                return sum + e.amount;
+            }, 0);
+    }, [expenses]);
+    
+    const paidThisMonth = useMemo(() => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return expenses
+            .filter(e => {
+                const expenseDate = new Date(e.expense_date);
+                return expenseDate >= startOfMonth && expenseDate <= endOfMonth;
+            })
+            .reduce((sum, e) => sum + e.amount, 0);
+    }, [expenses]);
+
     return (
          <div>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white">Expenses</h2>
                 <button onClick={() => setShowModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                    <p className="text-sm text-slate-400">Expected This Month (Active Subs)</p>
+                    <p className="text-2xl font-bold text-white">{formatCurrency(expectedThisMonth)}</p>
+                </div>
+                 <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                    <p className="text-sm text-slate-400">Paid This Month</p>
+                    <p className="text-2xl font-bold text-white">{formatCurrency(paidThisMonth)}</p>
+                </div>
             </div>
              <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-700">
@@ -302,16 +343,25 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
                     </thead>
                     <tbody className="divide-y divide-slate-700">
                         {expenses.map(exp => (
-                            <tr key={exp.id}>
+                            <tr key={exp.id} className={`${exp.expense_type === 'subscription' && !exp.is_active ? 'opacity-50' : ''}`}>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.expense_date)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{exp.description}</td>
+                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.expense_type === 'subscription' && !exp.is_active ? 'line-through' : ''}`}>{exp.description}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${exp.expense_type === 'subscription' ? 'bg-purple-500/20 text-purple-300' : 'bg-gray-500/20 text-gray-300'}`}>
-                                      {exp.expense_type}
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        exp.expense_type === 'subscription' 
+                                            ? (exp.is_active ? 'bg-purple-500/20 text-purple-300' : 'bg-gray-600/20 text-gray-400')
+                                            : 'bg-slate-700 text-slate-300'
+                                    }`}>
+                                      {exp.expense_type === 'subscription' && !exp.is_active ? 'Canceled' : exp.expense_type}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
+                                    {exp.expense_type === 'subscription' && (
+                                        exp.is_active 
+                                            ? <button onClick={() => handleToggleSubscription(exp.id, exp.is_active)} className="text-yellow-400 hover:text-yellow-300">Cancel</button>
+                                            : <button onClick={() => handleToggleSubscription(exp.id, exp.is_active)} className="text-green-400 hover:text-green-300">Reactivate</button>
+                                    )}
                                     <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-300">Delete</button>
                                 </td>
                             </tr>
@@ -525,7 +575,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; }> =
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { error } = await supabase.from('expenses').insert([formData]);
+        const { error } = await supabase.from('expenses').insert([{...formData, is_active: true}]);
         if (error) console.error("Error creating expense:", error);
         else {
             refreshData();
