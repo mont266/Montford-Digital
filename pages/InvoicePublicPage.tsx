@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -18,6 +17,7 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
+  created_at: string; // Added created date
   amount: number;
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: {
@@ -107,7 +107,7 @@ const InvoicePublicPage: React.FC = () => {
             {error && <p className="text-center text-red-400">{error}</p>}
             {invoice && (
                 <div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mb-8">
                         <div>
                             <p className="text-sm text-slate-400 mb-1">Billed To</p>
                             <p className="font-semibold text-white">{invoice.projects?.client_name || 'N/A'}</p>
@@ -115,6 +115,10 @@ const InvoicePublicPage: React.FC = () => {
                          <div>
                             <p className="text-sm text-slate-400 mb-1">Invoice Number</p>
                             <p className="font-semibold text-white">{invoice.invoice_number}</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-slate-400 mb-1">Created Date</p>
+                            <p className="font-semibold text-white">{formatDate(invoice.created_at)}</p>
                         </div>
                         <div>
                             <p className="text-sm text-slate-400 mb-1">Issue Date</p>

@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -25,6 +24,7 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
+  created_at: string; // Added created date
   amount: number; 
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: { name: string } | null;
@@ -317,13 +317,14 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                 <h2 className="text-2xl font-bold text-white">Invoices</h2>
                 <button onClick={() => setShowInvoiceModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Invoice</button>
             </div>
-            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
+            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto pb-12">
                 <table className="min-w-full divide-y divide-slate-700">
                     <thead className="bg-slate-900/50">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Number</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Project</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Due Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider relative group">
@@ -354,6 +355,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.created_at)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.due_date)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
