@@ -317,7 +317,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                 <h2 className="text-2xl font-bold text-white">Invoices</h2>
                 <button onClick={() => setShowInvoiceModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Invoice</button>
             </div>
-            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto pb-12">
+            <div className={`bg-slate-800 border border-slate-700 rounded-lg ${openDropdownId ? 'overflow-visible' : 'overflow-x-auto'}`}>
                 <table className="min-w-full divide-y divide-slate-700">
                     <thead className="bg-slate-900/50">
                         <tr>
