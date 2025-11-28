@@ -25,9 +25,8 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
-  amount: number; // This is the GRAND TOTAL (inclusive of VAT)
+  amount: number; 
   status: 'draft' | 'sent' | 'paid' | 'overdue';
-  vat_rate: number; // VAT rate as a percentage, e.g., 20
   projects: { name: string } | null;
   invoice_items: InvoiceItem[];
 }
@@ -111,7 +110,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
 
     const { filteredInvoices, filteredExpenses } = filteredData;
     
-    const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + (inv.amount / (1 + inv.vat_rate / 100)), 0);
+    const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
     const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount, 0);
     const netProfit = totalRevenue - totalExpensesInPeriod;
     
@@ -141,7 +140,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
                  </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <StatCard title="Total Revenue (VAT Ex.)" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
+                <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
                 <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
@@ -219,6 +218,66 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
+    // --- Tax Calculation Logic ---
+    const BASE_SALARY = 43000 + (43000 * 0.08); // 46440
+    const TAX_YEAR_START = useMemo(() => new Date('2024-04-06'), []);
+
+    // Tax Bands (England 2024/2025)
+    const PA_THRESHOLD = 12570;
+    const BASIC_RATE_THRESHOLD = 50270;
+    const HIGHER_RATE_THRESHOLD = 125140;
+    const BASIC_RATE = 0.20;
+    const HIGHER_RATE = 0.40;
+    const ADDITIONAL_RATE = 0.45;
+
+    // NI Class 4 Bands (2024/2025)
+    const NI_LOWER_THRESHOLD = 12570;
+    const NI_UPPER_THRESHOLD = 50270;
+    const NI_LOWER_RATE = 0.06;
+    const NI_HIGHER_RATE = 0.02;
+
+    const calculateTaxForInvoice = useCallback((invoiceAmount: number, baseIncome: number, alreadyEarnedThisYear: number) => {
+        let incomeTax = 0;
+        let nationalInsurance = 0;
+        const startingIncome = baseIncome + alreadyEarnedThisYear;
+
+        // A simplified marginal tax calculation, iterating pound by pound
+        for (let i = 1; i <= Math.floor(invoiceAmount); i++) {
+            const currentTotalIncome = startingIncome + i;
+            
+            // Income Tax Calculation for this pound
+            if (currentTotalIncome > HIGHER_RATE_THRESHOLD) {
+                incomeTax += ADDITIONAL_RATE;
+            } else if (currentTotalIncome > BASIC_RATE_THRESHOLD) {
+                incomeTax += HIGHER_RATE;
+            } else if (currentTotalIncome > PA_THRESHOLD) {
+                incomeTax += BASIC_RATE;
+            }
+
+            // National Insurance Calculation for this pound
+            if (currentTotalIncome > NI_UPPER_THRESHOLD) {
+                nationalInsurance += NI_HIGHER_RATE;
+            } else if (currentTotalIncome > NI_LOWER_THRESHOLD) {
+                nationalInsurance += NI_LOWER_RATE;
+            }
+        }
+        
+        return {
+            incomeTax,
+            nationalInsurance,
+            totalTax: incomeTax + nationalInsurance
+        };
+    }, []);
+
+    const totalPaidInvoicesThisYear = useMemo(() => {
+        return invoices
+            .filter(inv => inv.status === 'paid' && new Date(inv.issue_date) >= TAX_YEAR_START)
+            .reduce((acc, inv) => acc + inv.amount, 0);
+    }, [invoices, TAX_YEAR_START]);
+    
+    // --- End Tax Calculation Logic ---
+
+
     useEffect(() => {
         const handleDocumentClick = (e: MouseEvent) => {
             if (!(e.target as HTMLElement).closest('.actions-dropdown-container')) {
@@ -246,6 +305,11 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
             else refreshData();
         }
     };
+    
+    // We need to sort paid invoices by date to correctly calculate running total
+    const sortedInvoices = useMemo(() => [...invoices].sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime()), [invoices]);
+    
+    let runningPaidTotalThisYear = 0;
 
     return (
         <div>
@@ -262,16 +326,28 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Due Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Financials</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider relative group">
+                                Financials
+                                <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 p-2 bg-slate-900 text-slate-300 text-xs rounded-md border border-slate-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                    Client-side estimate for planning purposes only. Based on 2024/25 England tax bands with a £46,440 base salary. Not financial advice.
+                                </span>
+                            </th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
-                        {invoices.map(invoice => {
-                            const subtotal = invoice.amount / (1 + invoice.vat_rate / 100);
-                            const vatAmount = invoice.amount - subtotal;
-                            const stripeFee = (invoice.amount * 0.025) + 0.20; // 2.5% + 20p estimate
-                            const takeHome = subtotal - stripeFee;
+                        {sortedInvoices.map(invoice => {
+                            const isPaidThisYear = invoice.status === 'paid' && new Date(invoice.issue_date) >= TAX_YEAR_START;
+                            
+                            const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
+
+                            const stripeFee = (invoice.amount * 0.025) + 0.20;
+                            const totalTax = taxCalculation.totalTax;
+                            const takeHome = invoice.amount - stripeFee - totalTax;
+                            
+                            if (isPaidThisYear) {
+                                runningPaidTotalThisYear += invoice.amount;
+                            }
 
                             return (
                                 <tr key={invoice.id} className="hover:bg-slate-800/50">
@@ -282,8 +358,8 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                     <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
                                         <div className="flex flex-col">
-                                            <span>VAT: <span className="font-medium text-slate-300">{formatCurrency(vatAmount)}</span></span>
                                             <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(stripeFee)}</span></span>
+                                            <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
                                             <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
                                         </div>
                                     </td>
@@ -426,7 +502,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
 
 // --- FORMS ---
 const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; }> = ({ projects, onClose, refreshData, onAddNewProject }) => {
-    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft', vat_rate: 20 });
+    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
     const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -465,16 +541,13 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
         generateNextInvoiceNumber();
     }, []);
 
-    const { subtotal, vatAmount, grandTotal } = useMemo(() => {
-        const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-        const vatAmount = subtotal * (formData.vat_rate / 100);
-        const grandTotal = subtotal + vatAmount;
-        return { subtotal, vatAmount, grandTotal };
-    }, [items, formData.vat_rate]);
+    const totalAmount = useMemo(() => {
+        return items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+    }, [items]);
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormData({ ...formData, [name]: name === 'vat_rate' ? parseFloat(value) : value });
+        setFormData({ ...formData, [name]: value });
     };
     
     const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
@@ -490,7 +563,7 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
         e.preventDefault();
         setIsSubmitting(true);
 
-        const invoiceData = { ...formData, amount: grandTotal };
+        const invoiceData = { ...formData, amount: totalAmount };
 
         const { data: newInvoice, error: invoiceError } = await supabase
             .from('invoices')
@@ -564,16 +637,8 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                     <button type="button" onClick={addItem} className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold">+ Add Item</button>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4 items-start">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300">VAT Rate (%)</label>
-                        <input type="number" step="0.01" name="vat_rate" value={formData.vat_rate} onChange={handleFormChange} className="mt-1 w-full max-w-[120px] bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
-                    </div>
-                    <div className="text-right space-y-1 text-slate-300">
-                        <p>Subtotal: <span className="font-semibold text-white">{formatCurrency(subtotal)}</span></p>
-                        <p>VAT ({formData.vat_rate}%): <span className="font-semibold text-white">{formatCurrency(vatAmount)}</span></p>
-                        <p className="text-xl font-bold text-white border-t border-slate-600 pt-2 mt-2">Grand Total: <span className="">{formatCurrency(grandTotal)}</span></p>
-                    </div>
+                <div className="text-right space-y-1 text-slate-300">
+                    <p className="text-xl font-bold text-white border-t border-slate-600 pt-2 mt-2">Total: <span className="">{formatCurrency(totalAmount)}</span></p>
                 </div>
 
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md mt-6" disabled={isSubmitting}>
