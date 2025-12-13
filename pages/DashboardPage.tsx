@@ -906,10 +906,10 @@ const DashboardPage: React.FC = () => {
                  {error && <div className="text-center text-red-400">Error: {error}</div>}
                  {!loading && !error && (
                     <Routes>
-                        <Route path="/" element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
-                        <Route path="/projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="/invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="/expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route index element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
+                        <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route path="expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                     </Routes>
                  )}
             </main>
