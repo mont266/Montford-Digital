@@ -4,11 +4,19 @@ import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient';
 
 // --- Types ---
+interface TradingIdentity {
+  id: string;
+  name: string;
+  slug: string;
+  color_theme: string;
+}
+
 interface Project {
   id: string;
   name: string;
   client_name: string;
   client_email?: string;
+  entity_id: string;
 }
 
 interface InvoiceItem {
@@ -24,12 +32,14 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
-  created_at: string; // Added created date
+  created_at: string;
   amount: number; 
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: { name: string } | null;
   invoice_items: InvoiceItem[];
+  entity_id: string;
 }
+
 interface Expense {
   id: string;
   description: string;
@@ -39,6 +49,7 @@ interface Expense {
   expense_type: 'one-time' | 'subscription';
   billing_cycle?: 'monthly' | 'annually';
   is_active: boolean;
+  entity_id: string;
 }
 
 type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
@@ -151,7 +162,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     );
 };
 
-const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; }> = ({ projects, refreshData }) => {
+const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; selectedEntityId: string }> = ({ projects, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
 
@@ -207,13 +218,13 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; }> 
                     </tbody>
                 </table>
             </div>
-            {showModal && <ProjectForm projectToEdit={editingProject} onClose={handleCloseModal} refreshData={refreshData} />}
+            {showModal && <ProjectForm projectToEdit={editingProject} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
 };
 
 
-const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; }> = ({ invoices, projects, refreshData }) => {
+const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; selectedEntityId: string }> = ({ invoices, projects, refreshData, selectedEntityId }) => {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
@@ -395,13 +406,13 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                     </tbody>
                 </table>
             </div>
-            {showInvoiceModal && <InvoiceForm projects={projects} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} />}
-            {showProjectModal && <ProjectForm onClose={() => setShowProjectModal(false)} refreshData={refreshData} />}
+            {showInvoiceModal && <InvoiceForm projects={projects} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} selectedEntityId={selectedEntityId} />}
+            {showProjectModal && <ProjectForm onClose={() => setShowProjectModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
 };
 
-const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> = ({ expenses, refreshData }) => {
+const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string }> = ({ expenses, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
     
     const handleDelete = async (id: string) => {
@@ -496,14 +507,14 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; }> 
                     </tbody>
                 </table>
             </div>
-            {showModal && <ExpenseForm onClose={() => setShowModal(false)} refreshData={refreshData} />}
+            {showModal && <ExpenseForm onClose={() => setShowModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
 };
 
 
 // --- FORMS ---
-const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; }> = ({ projects, onClose, refreshData, onAddNewProject }) => {
+const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; selectedEntityId: string }> = ({ projects, onClose, refreshData, onAddNewProject, selectedEntityId }) => {
     const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
     const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -564,8 +575,18 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
+        
+        // Find entity from selected project if available, otherwise use global selected or error
+        const selectedProject = projects.find(p => p.id === formData.project_id);
+        const entityIdToUse = selectedProject ? selectedProject.entity_id : (selectedEntityId !== 'all' ? selectedEntityId : null);
 
-        const invoiceData = { ...formData, amount: totalAmount };
+        if (!entityIdToUse) {
+            alert("Please select a valid project associated with a trading entity.");
+            setIsSubmitting(false);
+            return;
+        }
+
+        const invoiceData = { ...formData, amount: totalAmount, entity_id: entityIdToUse };
 
         const { data: newInvoice, error: invoiceError } = await supabase
             .from('invoices')
@@ -605,7 +626,7 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                             <label className="block text-sm font-medium text-slate-300">Project</label>
                             <select name="project_id" value={formData.project_id} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
                                 <option value="">Select a project</option>
-                                {Object.entries(groupedProjects).map(([clientName, clientProjects]) => (
+                                {(Object.entries(groupedProjects) as [string, Project[]][]).map(([clientName, clientProjects]) => (
                                     <optgroup label={clientName} key={clientName}>
                                         {clientProjects.map(p => (
                                             <option key={p.id} value={p.id}>{p.name}</option>
@@ -651,7 +672,7 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     );
 };
 
-const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => void; refreshData: () => void; }> = ({ projectToEdit, onClose, refreshData }) => {
+const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ projectToEdit, onClose, refreshData, selectedEntityId }) => {
     const [formData, setFormData] = useState({ 
         name: projectToEdit?.name || '', 
         client_name: projectToEdit?.client_name || '',
@@ -662,11 +683,19 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // If creating new and no entity selected, show error
+        if (!projectToEdit && selectedEntityId === 'all') {
+            alert("Please select a specific Trading Identity (e.g., Montford Digital) from the sidebar before creating a project.");
+            return;
+        }
+
         let error;
         if (projectToEdit) {
             ({ error } = await supabase.from('projects').update(formData).eq('id', projectToEdit.id));
         } else {
-            ({ error } = await supabase.from('projects').insert([formData]));
+            // Include entity_id for new records
+            ({ error } = await supabase.from('projects').insert([{...formData, entity_id: selectedEntityId }]));
         }
 
         if (error) console.error("Error saving project:", error);
@@ -687,8 +716,15 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
     );
 };
 
-const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; }> = ({ onClose, refreshData }) => {
-    const [formData, setFormData] = useState({ 
+const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ onClose, refreshData, selectedEntityId }) => {
+    const [formData, setFormData] = useState<{
+        description: string;
+        amount: number;
+        category: string;
+        expense_date: string;
+        expense_type: string;
+        billing_cycle: string | null;
+    }>({ 
         description: '', 
         amount: 0, 
         category: '', 
@@ -708,7 +744,13 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; }> =
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { error } = await supabase.from('expenses').insert([{...formData, is_active: true}]);
+        
+        if (selectedEntityId === 'all') {
+            alert("Please select a specific Trading Identity (e.g., Montford Digital) from the sidebar before adding expenses.");
+            return;
+        }
+
+        const { error } = await supabase.from('expenses').insert([{...formData, is_active: true, entity_id: selectedEntityId}]);
         if (error) console.error("Error creating expense:", error);
         else {
             refreshData();
@@ -750,21 +792,43 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; }> =
 const DashboardPage: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    
+    // Identity State
+    const [identities, setIdentities] = useState<TradingIdentity[]>([]);
+    const [selectedEntityId, setSelectedEntityId] = useState<string>('all');
+    
     const [projects, setProjects] = useState<Project[]>([]);
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Fetch initial identities
+    useEffect(() => {
+        const fetchIdentities = async () => {
+            const { data } = await supabase.from('trading_identities').select('*');
+            if (data) setIdentities(data);
+        };
+        fetchIdentities();
+    }, []);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const projectsPromise = supabase.from('projects').select('*').order('name');
-            const invoicesPromise = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
-            const expensesPromise = supabase.from('expenses').select('*').order('expense_date', { ascending: false });
+            // Construct queries based on selection
+            let projectsQuery = supabase.from('projects').select('*').order('name');
+            let invoicesQuery = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
+            let expensesQuery = supabase.from('expenses').select('*').order('expense_date', { ascending: false });
+
+            // Apply filters if specific entity selected
+            if (selectedEntityId !== 'all') {
+                projectsQuery = projectsQuery.eq('entity_id', selectedEntityId);
+                invoicesQuery = invoicesQuery.eq('entity_id', selectedEntityId);
+                expensesQuery = expensesQuery.eq('entity_id', selectedEntityId);
+            }
             
-            const [{ data: projectsData, error: projectsError }, { data: invoicesData, error: invoicesError }, { data: expensesData, error: expensesError }] = await Promise.all([projectsPromise, invoicesPromise, expensesPromise]);
+            const [{ data: projectsData, error: projectsError }, { data: invoicesData, error: invoicesError }, { data: expensesData, error: expensesError }] = await Promise.all([projectsQuery, invoicesQuery, expensesQuery]);
 
             if (projectsError) throw projectsError;
             if (invoicesError) throw invoicesError;
@@ -778,7 +842,7 @@ const DashboardPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [selectedEntityId]);
 
     useEffect(() => {
         fetchData();
@@ -800,6 +864,27 @@ const DashboardPage: React.FC = () => {
         <div className="min-h-screen bg-slate-900 text-slate-300 flex">
             <aside className="w-64 bg-slate-800 p-6 border-r border-slate-700 flex-col hidden md:flex">
                 <h1 className="text-xl font-bold text-white mb-8">Admin Dashboard</h1>
+                
+                {/* Identity Switcher */}
+                <div className="mb-8">
+                    <label className="block text-xs uppercase text-slate-500 font-semibold mb-2">View Data For</label>
+                    <div className="relative">
+                        <select 
+                            value={selectedEntityId} 
+                            onChange={(e) => setSelectedEntityId(e.target.value)}
+                            className="w-full appearance-none bg-slate-900 border border-slate-600 hover:border-cyan-500 text-white py-2 px-3 rounded leading-tight focus:outline-none focus:shadow-outline transition-colors cursor-pointer"
+                        >
+                            <option value="all">All Group Data</option>
+                            {(identities as TradingIdentity[]).map(id => (
+                                <option key={id.id} value={id.id}>{id.name}</option>
+                            ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
                 <nav className="flex-grow">
                     <ul>
                         {navItems.map(item => (
@@ -822,9 +907,9 @@ const DashboardPage: React.FC = () => {
                  {!loading && !error && (
                     <Routes>
                         <Route path="/" element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
-                        <Route path="/projects" element={<ProjectsPage projects={projects} refreshData={fetchData} />} />
-                        <Route path="/invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} />} />
-                        <Route path="/expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} />} />
+                        <Route path="/projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route path="/invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route path="/expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                     </Routes>
                  )}
             </main>
