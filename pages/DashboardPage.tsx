@@ -42,14 +42,16 @@ interface Invoice {
 
 interface Expense {
   id: string;
-  description: string;
-  amount: number;
+  name: string; // Corresponds to 'name' in CSV, was 'description'
+  amount_gbp: number; // Corresponds to 'amount_gbp' in CSV, was 'amount'
   category: string;
-  expense_date: string;
-  expense_type: 'one-time' | 'subscription';
+  start_date: string; // Corresponds to 'start_date' in CSV, was 'expense_date'
+  type: 'one-time' | 'subscription'; // Corresponds to 'type' in CSV, was 'expense_type'
   billing_cycle?: 'monthly' | 'annually';
-  is_active: boolean;
+  status: string; // Corresponds to 'status' in CSV, was 'is_active' (boolean)
   entity_id: string;
+  currency?: string; // Optional field from CSV
+  end_date?: string; // Optional field from CSV
 }
 
 type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
@@ -111,7 +113,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
             : invoices;
         
         const filteredExpenses = startDate
-            ? expenses.filter(exp => new Date(exp.expense_date) >= startDate!)
+            ? expenses.filter(exp => new Date(exp.start_date) >= startDate!)
             : expenses;
 
         return { filteredInvoices, filteredExpenses };
@@ -122,17 +124,17 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     const { filteredInvoices, filteredExpenses } = filteredData;
     
     const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
-    const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount, 0);
+    const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount_gbp, 0);
     const netProfit = totalRevenue - totalExpensesInPeriod;
     
-    const oneTimePayments = filteredExpenses.filter(e => e.expense_type === 'one-time').reduce((sum, e) => sum + e.amount, 0);
+    const oneTimePayments = filteredExpenses.filter(e => e.type === 'one-time').reduce((sum, e) => sum + e.amount_gbp, 0);
     const monthlySubscriptions = expenses
-        .filter(e => e.expense_type === 'subscription' && e.is_active)
+        .filter(e => e.type === 'subscription' && e.status === 'active')
         .reduce((sum, e) => {
             if (e.billing_cycle === 'annually') {
-                return sum + (e.amount / 12);
+                return sum + (e.amount_gbp / 12);
             }
-            return sum + e.amount;
+            return sum + e.amount_gbp;
         }, 0);
     
     const outstandingAmount = filteredInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
@@ -423,20 +425,21 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         }
     };
     
-    const handleToggleSubscription = async (id: string, currentStatus: boolean) => {
-        const { error } = await supabase.from('expenses').update({ is_active: !currentStatus }).eq('id', id);
+    const handleToggleSubscription = async (id: string, currentStatus: string) => {
+        const newStatus = currentStatus === 'active' ? 'canceled' : 'active';
+        const { error } = await supabase.from('expenses').update({ status: newStatus }).eq('id', id);
         if (error) console.error("Error updating subscription status:", error);
         else refreshData();
     };
 
     const expectedThisMonth = useMemo(() => {
         return expenses
-            .filter(e => e.expense_type === 'subscription' && e.is_active)
+            .filter(e => e.type === 'subscription' && e.status === 'active')
             .reduce((sum, e) => {
                 if (e.billing_cycle === 'annually') {
-                    return sum + (e.amount / 12);
+                    return sum + (e.amount_gbp / 12);
                 }
-                return sum + e.amount;
+                return sum + e.amount_gbp;
             }, 0);
     }, [expenses]);
     
@@ -446,10 +449,10 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         return expenses
             .filter(e => {
-                const expenseDate = new Date(e.expense_date);
+                const expenseDate = new Date(e.start_date);
                 return expenseDate >= startOfMonth && expenseDate <= endOfMonth;
             })
-            .reduce((sum, e) => sum + e.amount, 0);
+            .reduce((sum, e) => sum + e.amount_gbp, 0);
     }, [expenses]);
 
     return (
@@ -481,24 +484,24 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                     </thead>
                     <tbody className="divide-y divide-slate-700">
                         {expenses.map(exp => (
-                            <tr key={exp.id} className={`${exp.expense_type === 'subscription' && !exp.is_active ? 'opacity-50' : ''}`}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.expense_date)}</td>
-                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.expense_type === 'subscription' && !exp.is_active ? 'line-through' : ''}`}>{exp.description}</td>
+                            <tr key={exp.id} className={`${exp.type === 'subscription' && exp.status !== 'active' ? 'opacity-50' : ''}`}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.start_date)}</td>
+                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.type === 'subscription' && exp.status !== 'active' ? 'line-through' : ''}`}>{exp.name}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                        exp.expense_type === 'subscription' 
-                                            ? (exp.is_active ? 'bg-purple-500/20 text-purple-300' : 'bg-gray-600/20 text-gray-400')
+                                        exp.type === 'subscription' 
+                                            ? (exp.status === 'active' ? 'bg-purple-500/20 text-purple-300' : 'bg-gray-600/20 text-gray-400')
                                             : 'bg-slate-700 text-slate-300'
                                     }`}>
-                                      {exp.expense_type === 'subscription' && !exp.is_active ? 'Canceled' : exp.expense_type}
+                                      {exp.type === 'subscription' && exp.status !== 'active' ? 'Canceled' : exp.type}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount_gbp)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
-                                    {exp.expense_type === 'subscription' && (
-                                        exp.is_active 
-                                            ? <button onClick={() => handleToggleSubscription(exp.id, exp.is_active)} className="text-yellow-400 hover:text-yellow-300">Cancel</button>
-                                            : <button onClick={() => handleToggleSubscription(exp.id, exp.is_active)} className="text-green-400 hover:text-green-300">Reactivate</button>
+                                    {exp.type === 'subscription' && (
+                                        exp.status === 'active'
+                                            ? <button onClick={() => handleToggleSubscription(exp.id, exp.status)} className="text-yellow-400 hover:text-yellow-300">Cancel</button>
+                                            : <button onClick={() => handleToggleSubscription(exp.id, exp.status)} className="text-green-400 hover:text-green-300">Reactivate</button>
                                     )}
                                     <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-300">Delete</button>
                                 </td>
@@ -718,27 +721,27 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
 
 const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ onClose, refreshData, selectedEntityId }) => {
     const [formData, setFormData] = useState<{
-        description: string;
-        amount: number;
+        name: string;
+        amount_gbp: number | string;
         category: string;
-        expense_date: string;
-        expense_type: string;
+        start_date: string;
+        type: string;
         billing_cycle: string | null;
     }>({ 
-        description: '', 
-        amount: 0, 
+        name: '', 
+        amount_gbp: 0, 
         category: '', 
-        expense_date: '',
-        expense_type: 'one-time',
+        start_date: '',
+        type: 'one-time',
         billing_cycle: null
     });
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
+        const { name, value, type } = e.target;
         setFormData(prev => ({
             ...prev,
-            [name]: value,
-            billing_cycle: name === 'expense_type' && value === 'one-time' ? null : prev.billing_cycle
+            [name]: type === 'number' ? parseFloat(value) || 0 : value,
+            billing_cycle: name === 'type' && value === 'one-time' ? null : prev.billing_cycle
         }));
     };
     
@@ -750,7 +753,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
             return;
         }
 
-        const { error } = await supabase.from('expenses').insert([{...formData, is_active: true, entity_id: selectedEntityId}]);
+        const { error } = await supabase.from('expenses').insert([{...formData, status: 'active', entity_id: selectedEntityId}]);
         if (error) console.error("Error creating expense:", error);
         else {
             refreshData();
@@ -761,17 +764,17 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
     return (
         <Modal onClose={onClose} title="Add New Expense">
              <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-300">Description</label><input type="text" name="description" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Amount (£)</label><input type="number" step="0.01" name="amount" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Expense Date</label><input type="date" name="expense_date" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Description</label><input type="text" name="name" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Amount (£)</label><input type="number" step="0.01" name="amount_gbp" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div><label className="block text-sm font-medium text-slate-300">Expense Date</label><input type="date" name="start_date" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div>
                     <label className="block text-sm font-medium text-slate-300">Expense Type</label>
-                    <select name="expense_type" value={formData.expense_type} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
+                    <select name="type" value={formData.type} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
                         <option value="one-time">One-Time</option>
                         <option value="subscription">Subscription</option>
                     </select>
                 </div>
-                {formData.expense_type === 'subscription' && (
+                {formData.type === 'subscription' && (
                     <div>
                         <label className="block text-sm font-medium text-slate-300">Billing Cycle</label>
                         <select name="billing_cycle" onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
@@ -819,7 +822,7 @@ const DashboardPage: React.FC = () => {
             // Construct queries based on selection
             let projectsQuery = supabase.from('projects').select('*').order('name');
             let invoicesQuery = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
-            let expensesQuery = supabase.from('expenses').select('*').order('expense_date', { ascending: false });
+            let expensesQuery = supabase.from('expenses').select('*').order('start_date', { ascending: false });
 
             // Apply filters if specific entity selected
             if (selectedEntityId !== 'all') {
