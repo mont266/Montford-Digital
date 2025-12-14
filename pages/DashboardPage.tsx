@@ -421,6 +421,54 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
     );
 };
 
+const calculateTotalSpend = (expense: Expense): number => {
+    if (expense.type !== 'subscription' || !expense.billing_cycle || !expense.start_date) {
+        return 0;
+    }
+    
+    const today = new Date();
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const startDateParts = expense.start_date.split('-').map(Number);
+    const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
+    
+    if (startDate > todayDateOnly) {
+        return 0;
+    }
+
+    const theoreticalEndDate = expense.end_date ? (() => {
+        const endDateParts = expense.end_date.split('-').map(Number);
+        return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+    })() : todayDateOnly;
+
+    const calcEndDate = theoreticalEndDate > todayDateOnly ? todayDateOnly : theoreticalEndDate;
+
+    if (startDate > calcEndDate) return 0;
+
+    let cycles = 0;
+    
+    if (expense.billing_cycle === 'monthly') {
+        let months = (calcEndDate.getFullYear() - startDate.getFullYear()) * 12;
+        months += calcEndDate.getMonth() - startDate.getMonth();
+        
+        if (calcEndDate.getDate() < startDate.getDate()) {
+            months--;
+        }
+        cycles = Math.max(0, months + 1);
+
+    } else if (expense.billing_cycle === 'annually') {
+        let years = calcEndDate.getFullYear() - startDate.getFullYear();
+        
+        if (calcEndDate.getMonth() < startDate.getMonth() || 
+           (calcEndDate.getMonth() === startDate.getMonth() && calcEndDate.getDate() < startDate.getDate())) {
+            years--;
+        }
+        cycles = Math.max(0, years + 1);
+    }
+
+    return cycles * expense.amount_gbp;
+};
+
 const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string }> = ({ expenses, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -487,46 +535,61 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
     
     const expectedPaymentsThisMonth = useMemo(() => {
         const today = new Date();
+        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const currentYear = today.getFullYear();
         const currentMonth = today.getMonth();
-        const startOfMonth = new Date(currentYear, currentMonth, 1);
         const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
 
         type ExpectedPayment = Expense & { dueDate: Date };
         
         const dueThisMonth = expenses.reduce((acc, exp) => {
-            const startDate = new Date(exp.start_date);
+            if (!exp.start_date) return acc;
+            const startDateParts = exp.start_date.split('-').map(Number);
+            const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
             
-            // Filter out expenses that are not relevant for this month
+            const endDate = exp.end_date ? (() => {
+                const endDateParts = exp.end_date.split('-').map(Number);
+                return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+            })() : null;
+
+            // Basic filtering to reduce computation
             if (exp.status === 'inactive') return acc;
-            if (startDate > endOfMonth) return acc; // Hasn't started yet
-            if (exp.end_date && new Date(exp.end_date) < startOfMonth) return acc; // Already ended
+            if (startDate > endOfMonth) return acc; // Subscription/manual hasn't started yet
+            if (endDate && endDate < todayDateOnly) return acc; // Already ended
 
             if (exp.type === 'manual') {
-                if (startDate >= startOfMonth) {
+                // Include if due date is within the remainder of this month.
+                if (startDate >= todayDateOnly && startDate <= endOfMonth) {
                     acc.push({ ...exp, dueDate: startDate });
                 }
             } else if (exp.type === 'subscription') {
                 if (exp.billing_cycle === 'monthly') {
                     let paymentDate = new Date(startDate);
-                    while (paymentDate <= endOfMonth) {
-                        if (paymentDate >= startOfMonth) {
-                            acc.push({ ...exp, dueDate: paymentDate });
-                            break; // Add only one payment per subscription per month
-                        }
+                    // Find the first potential payment date that is on or after the start of this month.
+                    while (paymentDate.getFullYear() < currentYear || (paymentDate.getFullYear() === currentYear && paymentDate.getMonth() < currentMonth)) {
                         paymentDate.setMonth(paymentDate.getMonth() + 1);
                     }
+                    
+                    // If that payment date is this month and is upcoming, add it.
+                    if (paymentDate.getMonth() === currentMonth && paymentDate.getFullYear() === currentYear && paymentDate >= todayDateOnly) {
+                        acc.push({ ...exp, dueDate: paymentDate });
+                    }
+
                 } else if (exp.billing_cycle === 'annually') {
+                    // Check if the anniversary month is the current month
                     if (startDate.getMonth() === currentMonth && startDate.getFullYear() <= currentYear) {
                         const dueDateInCurrentYear = new Date(currentYear, currentMonth, startDate.getDate());
-                        acc.push({ ...exp, dueDate: dueDateInCurrentYear });
+                        // If the anniversary is upcoming this month, add it
+                        if (dueDateInCurrentYear >= todayDateOnly && dueDateInCurrentYear <= endOfMonth) {
+                            acc.push({ ...exp, dueDate: dueDateInCurrentYear });
+                        }
                     }
                 }
             }
             return acc;
         }, [] as ExpectedPayment[]);
 
-        return dueThisMonth.sort((a, b) => a.dueDate.getDate() - b.dueDate.getDate());
+        return dueThisMonth.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
     }, [expenses]);
     
     const subscriptionOutgoings = useMemo(() => expenses.filter(e => e.type === 'subscription'), [expenses]);
@@ -566,15 +629,24 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         document.body.removeChild(link);
     };
     
-    const CostDisplay: React.FC<{expense: Expense}> = ({expense}) => (
-        <div className="flex flex-col text-right">
-            <span className="font-semibold text-white">
-                 {expense.currency !== 'GBP' ? formatCurrency(expense.amount, expense.currency) : formatCurrency(expense.amount_gbp)}
-                 {expense.billing_cycle === 'monthly' ? ' / mo' : expense.billing_cycle === 'annually' ? ' / yr' : ''}
-            </span>
-            {expense.currency !== 'GBP' && <span className="text-xs text-slate-400">(≈ {formatCurrency(expense.amount_gbp)})</span>}
-        </div>
-    );
+    const CostDisplay: React.FC<{expense: Expense}> = ({expense}) => {
+        const totalSpend = useMemo(() => calculateTotalSpend(expense), [expense]);
+
+        return (
+            <div className="flex flex-col text-right">
+                <span className="font-semibold text-white">
+                     {expense.currency !== 'GBP' ? formatCurrency(expense.amount, expense.currency) : formatCurrency(expense.amount_gbp)}
+                     {expense.billing_cycle === 'monthly' ? ' / mo' : expense.billing_cycle === 'annually' ? ' / yr' : ''}
+                </span>
+                {expense.currency !== 'GBP' && <span className="text-xs text-slate-400">(≈ {formatCurrency(expense.amount_gbp)})</span>}
+                {expense.type === 'subscription' && totalSpend > 0 && 
+                    <span className="text-xs text-slate-400" title={`Estimated total spend since ${formatDate(expense.start_date)}`}>
+                        Total: {formatCurrency(totalSpend)}
+                    </span>
+                }
+            </div>
+        );
+    };
     
     return (
          <div className="space-y-8">
