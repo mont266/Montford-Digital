@@ -86,6 +86,9 @@ const InvoicePublicPage: React.FC = () => {
     return 'bg-slate-700 text-slate-300 border-slate-600';
   }
 
+  const stripeFee = invoice ? (invoice.amount * 0.025) + 0.20 : 0;
+  const showBankTransfer = invoice ? stripeFee > 50 : false;
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
       <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden invoice-card">
@@ -159,7 +162,7 @@ const InvoicePublicPage: React.FC = () => {
                         </div>
                     </div>
                     
-                    <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center">
+                    <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
                         <div className="flex items-center mb-4 sm:mb-0 print-hide">
                            <span className="text-slate-400 mr-2">Status:</span>
                            <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
@@ -175,12 +178,24 @@ const InvoicePublicPage: React.FC = () => {
                                 Print Invoice
                             </button>
                             {invoice.status !== 'paid' && (
-                                 <button
-                                    onClick={handlePayment}
-                                    className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
-                                >
-                                    Pay Invoice with Stripe
-                                </button>
+                                showBankTransfer ? (
+                                    <div className="border border-slate-600 rounded-lg p-4 bg-slate-900/50 w-full sm:max-w-md">
+                                        <h4 className="font-semibold text-white mb-2">Pay via Bank Transfer</h4>
+                                        <p className="text-sm text-slate-400 mb-3">To avoid high processing fees, please use the details below. Use your invoice number as the reference.</p>
+                                        <div className="text-sm space-y-1">
+                                            <p><span className="text-slate-400">Account Name:</span> <span className="text-white font-mono">Scott Montford</span></p>
+                                            <p><span className="text-slate-400">Sort Code:</span> <span className="text-white font-mono">04-00-75</span></p>
+                                            <p><span className="text-slate-400">Account Number:</span> <span className="text-white font-mono">41017137</span></p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={handlePayment}
+                                        className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
+                                    >
+                                        Pay Invoice with Stripe
+                                    </button>
+                                )
                             )}
                         </div>
                     </div>
