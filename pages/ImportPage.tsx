@@ -128,11 +128,21 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                     expense.type = expense.type === 'subscription' ? 'subscription' : 'manual';
 
                     let calculatedStatus: ExpenseStatus;
+                    const today = new Date();
+
                     if (expense.type === 'subscription') {
-                        const hasEnded = expense.end_date && new Date(expense.end_date) < new Date();
-                        calculatedStatus = hasEnded ? 'inactive' : 'active';
+                        const startDate = expense.start_date ? new Date(expense.start_date) : null;
+                        const endDate = expense.end_date ? new Date(expense.end_date) : null;
+
+                        if (endDate && endDate < today) {
+                            calculatedStatus = 'inactive';
+                        } else if (startDate && startDate > today) {
+                            calculatedStatus = 'upcoming';
+                        } else {
+                            calculatedStatus = 'active';
+                        }
                     } else {
-                        const isCompleted = expense.start_date && new Date(expense.start_date) <= new Date();
+                        const isCompleted = expense.start_date && new Date(expense.start_date) <= today;
                         calculatedStatus = isCompleted ? 'completed' : 'upcoming';
                     }
 
@@ -172,14 +182,21 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         if (field === 'type' && value === 'manual') {
             currentExpense.billing_cycle = null;
         }
-
-        // Fix: Cast `field` to string to satisfy Array.prototype.includes which expects a string.
+        
         if (['type', 'start_date', 'end_date'].includes(field as string)) {
+            const today = new Date();
             if (currentExpense.type === 'subscription') {
-                const hasEnded = currentExpense.end_date && new Date(currentExpense.end_date) < new Date();
-                currentExpense.status = hasEnded ? 'inactive' : 'active';
+                const startDate = currentExpense.start_date ? new Date(currentExpense.start_date) : null;
+                const endDate = currentExpense.end_date ? new Date(currentExpense.end_date) : null;
+                if (endDate && endDate < today) {
+                    currentExpense.status = 'inactive';
+                } else if (startDate && startDate > today) {
+                    currentExpense.status = 'upcoming';
+                } else {
+                    currentExpense.status = 'active';
+                }
             } else { // manual
-                const isPast = currentExpense.start_date && new Date(currentExpense.start_date) <= new Date();
+                const isPast = currentExpense.start_date && new Date(currentExpense.start_date) <= today;
                 currentExpense.status = isPast ? 'completed' : 'upcoming';
             }
         }

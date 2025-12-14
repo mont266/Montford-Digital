@@ -473,7 +473,10 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 if (e.billing_cycle === 'annually') {
                     return sum + (e.amount_gbp / 12);
                 }
-                return sum + e.amount_gbp;
+                if (e.billing_cycle === 'monthly') {
+                    return sum + e.amount_gbp;
+                }
+                return sum;
             }, 0);
             
         const projectedAnnualCost = recurringMonthlyCost * 12;
@@ -932,11 +935,22 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
         e.preventDefault();
 
         let status: ExpenseStatus;
+        const today = new Date();
+
         if (formData.type === 'subscription') {
-            const hasEnded = formData.end_date && new Date(formData.end_date) < new Date();
-            status = hasEnded ? 'inactive' : 'active';
+            // Ensure dates are correctly parsed for comparison
+            const startDate = new Date(formData.start_date);
+            const endDate = formData.end_date ? new Date(formData.end_date) : null;
+            
+            if (endDate && endDate < today) {
+                status = 'inactive';
+            } else if (startDate > today) {
+                status = 'upcoming';
+            } else {
+                status = 'active';
+            }
         } else { // manual
-            const isCompleted = formData.start_date && new Date(formData.start_date) <= new Date();
+            const isCompleted = new Date(formData.start_date) <= today;
             status = isCompleted ? 'completed' : 'upcoming';
         }
         
