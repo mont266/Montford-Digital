@@ -86,7 +86,7 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: s
 );
 
 const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
-const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
 
 // --- Page Components ---
@@ -486,28 +486,46 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
     
     const expectedPaymentsThisMonth = useMemo(() => {
         const today = new Date();
-        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth();
+        const startOfMonth = new Date(currentYear, currentMonth, 1);
+        const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+
+        type ExpectedPayment = Expense & { dueDate: Date };
         
-        return expenses.filter(exp => {
-            if (exp.status === 'inactive') return false;
-
+        const dueThisMonth = expenses.reduce((acc, exp) => {
             const startDate = new Date(exp.start_date);
-            if (exp.type === 'manual') {
-                return startDate >= startOfMonth && startDate <= endOfMonth;
-            }
-            if (exp.type === 'subscription') {
-                let dueDate = new Date(startDate);
-                if (exp.billing_cycle === 'monthly') {
-                    dueDate.setMonth(today.getMonth());
-                    dueDate.setFullYear(today.getFullYear());
-                }
-                // For annual, it's only due if the month matches
-                return dueDate.getMonth() === today.getMonth();
-            }
-            return false;
-        }).sort((a,b) => new Date(a.start_date).getDate() - new Date(b.start_date).getDate());
+            
+            // Filter out expenses that are not relevant for this month
+            if (exp.status === 'inactive') return acc;
+            if (startDate > endOfMonth) return acc; // Hasn't started yet
+            if (exp.end_date && new Date(exp.end_date) < startOfMonth) return acc; // Already ended
 
+            if (exp.type === 'manual') {
+                if (startDate >= startOfMonth) {
+                    acc.push({ ...exp, dueDate: startDate });
+                }
+            } else if (exp.type === 'subscription') {
+                if (exp.billing_cycle === 'monthly') {
+                    let paymentDate = new Date(startDate);
+                    while (paymentDate <= endOfMonth) {
+                        if (paymentDate >= startOfMonth) {
+                            acc.push({ ...exp, dueDate: paymentDate });
+                            break; // Add only one payment per subscription per month
+                        }
+                        paymentDate.setMonth(paymentDate.getMonth() + 1);
+                    }
+                } else if (exp.billing_cycle === 'annually') {
+                    if (startDate.getMonth() === currentMonth && startDate.getFullYear() <= currentYear) {
+                        const dueDateInCurrentYear = new Date(currentYear, currentMonth, startDate.getDate());
+                        acc.push({ ...exp, dueDate: dueDateInCurrentYear });
+                    }
+                }
+            }
+            return acc;
+        }, [] as ExpectedPayment[]);
+
+        return dueThisMonth.sort((a, b) => a.dueDate.getDate() - b.dueDate.getDate());
     }, [expenses]);
     
     const subscriptionOutgoings = useMemo(() => expenses.filter(e => e.type === 'subscription'), [expenses]);
@@ -622,7 +640,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                 <tr key={exp.id} className="hover:bg-slate-700/50">
                                     <td className="p-2 text-white font-semibold">{exp.name || exp.description}</td>
                                     <td className="p-2"><span className="bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full text-xs capitalize">{exp.type}</span></td>
-                                    <td className="p-2">{formatDate(exp.start_date)}</td>
+                                    <td className="p-2">{formatDate(exp.dueDate)}</td>
                                     <td className="p-2"><CostDisplay expense={exp} /></td>
                                 </tr>
                             ))}
@@ -935,22 +953,21 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
         e.preventDefault();
 
         let status: ExpenseStatus;
-        const today = new Date();
+        const todayString = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD' format
 
         if (formData.type === 'subscription') {
-            // Ensure dates are correctly parsed for comparison
-            const startDate = new Date(formData.start_date);
-            const endDate = formData.end_date ? new Date(formData.end_date) : null;
+            const startDateString = formData.start_date;
+            const endDateString = formData.end_date;
             
-            if (endDate && endDate < today) {
+            if (endDateString && endDateString < todayString) {
                 status = 'inactive';
-            } else if (startDate > today) {
+            } else if (startDateString > todayString) {
                 status = 'upcoming';
             } else {
                 status = 'active';
             }
         } else { // manual
-            const isCompleted = new Date(formData.start_date) <= today;
+            const isCompleted = formData.start_date <= todayString;
             status = isCompleted ? 'completed' : 'upcoming';
         }
         
