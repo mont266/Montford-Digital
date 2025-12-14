@@ -1,6 +1,8 @@
 
 
 
+
+// Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -61,7 +63,6 @@ interface Expense {
   entity_id: string;
 }
 
-type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
 type OutgoingTimeSpan = '7d' | '30d' | '90d' | '1y' | 'all';
 
 // --- Reusable Components ---
@@ -90,39 +91,107 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: s
 const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
+// --- Tax Calculation Logic ---
+const BASE_SALARY = 43000 + (43000 * 0.08); // 46440
+// Tax Bands (England 2024/2025)
+const PA_THRESHOLD = 12570;
+const BASIC_RATE_THRESHOLD = 50270;
+const HIGHER_RATE_THRESHOLD = 125140;
+const BASIC_RATE = 0.20;
+const HIGHER_RATE = 0.40;
+const ADDITIONAL_RATE = 0.45;
+// NI Class 4 Bands (2024/2025)
+const NI_LOWER_THRESHOLD = 12570;
+const NI_UPPER_THRESHOLD = 50270;
+const NI_LOWER_RATE = 0.06;
+const NI_HIGHER_RATE = 0.02;
+
+const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alreadyEarnedThisYear: number) => {
+    let incomeTax = 0;
+    let nationalInsurance = 0;
+    const startingIncome = baseIncome + alreadyEarnedThisYear;
+    // A simplified marginal tax calculation, iterating pound by pound
+    for (let i = 1; i <= Math.floor(invoiceAmount); i++) {
+        const currentTotalIncome = startingIncome + i;
+        // Income Tax Calculation for this pound
+        if (currentTotalIncome > HIGHER_RATE_THRESHOLD) {
+            incomeTax += ADDITIONAL_RATE;
+        } else if (currentTotalIncome > BASIC_RATE_THRESHOLD) {
+            incomeTax += HIGHER_RATE;
+        } else if (currentTotalIncome > PA_THRESHOLD) {
+            incomeTax += BASIC_RATE;
+        }
+        // National Insurance Calculation for this pound
+        if (currentTotalIncome > NI_UPPER_THRESHOLD) {
+            nationalInsurance += NI_HIGHER_RATE;
+        } else if (currentTotalIncome > NI_LOWER_THRESHOLD) {
+            nationalInsurance += NI_LOWER_RATE;
+        }
+    }
+    return {
+        incomeTax,
+        nationalInsurance,
+        totalTax: incomeTax + nationalInsurance
+    };
+};
 
 // --- Page Components ---
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
+    type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
 
     const filteredData = useMemo(() => {
+        const getUKFinancialYear = (date: Date) => {
+            const year = date.getFullYear();
+            const month = date.getMonth(); // 0 = Jan, 3 = Apr
+            const day = date.getDate();
+            const startYear = (month > 3) || (month === 3 && day >= 6) ? year : year - 1;
+            return {
+                start: new Date(startYear, 3, 6),
+                end: new Date(startYear + 1, 3, 5),
+            };
+        };
+
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         let startDate: Date | null = null;
+        let endDate: Date | null = null;
 
         switch (timeSpan) {
             case '7d':
                 startDate = new Date(today);
                 startDate.setDate(today.getDate() - 7);
+                endDate = now;
                 break;
             case 'mtd':
                 startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                endDate = now;
                 break;
-            case 'ytd':
-                startDate = new Date(today.getFullYear(), 0, 1);
+            case 'tfy': {
+                const currentFY = getUKFinancialYear(today);
+                startDate = currentFY.start;
+                endDate = now;
                 break;
+            }
+            case 'lfy': {
+                const currentFY = getUKFinancialYear(today);
+                startDate = new Date(currentFY.start.getFullYear() - 1, 3, 6);
+                endDate = new Date(currentFY.end.getFullYear() - 1, 3, 5);
+                break;
+            }
             case 'all':
             default:
                 break;
         }
-
-        const filteredInvoices = startDate
-            ? invoices.filter(inv => new Date(inv.issue_date) >= startDate!)
-            : invoices;
         
-        const filteredExpenses = startDate
-            ? expenses.filter(exp => new Date(exp.start_date) >= startDate!)
-            : expenses;
+        const filterByDate = (date: Date) => {
+             if (startDate && date < startDate) return false;
+             if (endDate && date > endDate) return false;
+             return true;
+        }
+
+        const filteredInvoices = invoices.filter(inv => filterByDate(new Date(inv.issue_date)));
+        const filteredExpenses = expenses.filter(exp => filterByDate(new Date(exp.start_date)));
 
         return { filteredInvoices, filteredExpenses };
 
@@ -132,8 +201,41 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     const { filteredInvoices, filteredExpenses } = filteredData;
     
     const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
+
+    const invoiceTaxMap = useMemo(() => {
+        const getFinancialYearStartYear = (date: Date) => {
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const day = date.getDate();
+            return (month > 3 || (month === 3 && day >= 6)) ? year : year - 1;
+        };
+
+        const paidInvoicesByFY: { [key: number]: Invoice[] } = {};
+        invoices.filter(i => i.status === 'paid').forEach(inv => {
+            const fyStartYear = getFinancialYearStartYear(new Date(inv.issue_date));
+            if (!paidInvoicesByFY[fyStartYear]) paidInvoicesByFY[fyStartYear] = [];
+            paidInvoicesByFY[fyStartYear].push(inv);
+        });
+
+        const taxMap = new Map<string, number>();
+        Object.values(paidInvoicesByFY).forEach(fyInvoices => {
+            fyInvoices.sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime());
+            let runningTotal = 0;
+            fyInvoices.forEach(inv => {
+                const taxInfo = calculateTaxForInvoice(inv.amount, BASE_SALARY, runningTotal);
+                taxMap.set(inv.id, taxInfo.totalTax);
+                runningTotal += inv.amount;
+            });
+        });
+        return taxMap;
+    }, [invoices]);
+    
+    const totalTaxPaid = filteredInvoices
+        .filter(inv => inv.status === 'paid')
+        .reduce((sum, inv) => sum + (invoiceTaxMap.get(inv.id) || 0), 0);
+    
     const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount_gbp, 0);
-    const netProfit = totalRevenue - totalExpensesInPeriod;
+    const netProfit = totalRevenue - totalExpensesInPeriod - totalTaxPaid;
     
     const oneTimePayments = filteredExpenses.filter(e => e.type === 'manual').reduce((sum, e) => sum + e.amount_gbp, 0);
     const monthlySubscriptions = expenses
@@ -148,20 +250,29 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     const outstandingAmount = filteredInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
     const overdueAmount = filteredInvoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
     
+    const timeSpanLabels: Record<TimeSpan, string> = {
+        '7d': '7 Days',
+        'mtd': 'MTD',
+        'tfy': 'This Fin. Year',
+        'lfy': 'Last Fin. Year',
+        'all': 'All Time'
+    };
+    
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
                  <h2 className="text-2xl font-bold text-white">Overview</h2>
                  <div className="flex space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
-                     {(['7d', 'mtd', 'ytd', 'all'] as const).map(span => (
+                     {(['7d', 'mtd', 'tfy', 'lfy', 'all'] as const).map(span => (
                          <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
-                            {span === '7d' ? 'Last 7 Days' : span === 'mtd' ? 'MTD' : span === 'ytd' ? 'YTD' : 'All Time'}
+                            {timeSpanLabels[span]}
                          </button>
                      ))}
                  </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
+                <StatCard title="Est. Tax Paid" value={formatCurrency(totalTaxPaid)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 001.414 0l2.414-2.414a1 1 0 01.707-.293H15v5" /></svg>} />
                 <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
@@ -238,66 +349,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-
-    // --- Tax Calculation Logic ---
-    const BASE_SALARY = 43000 + (43000 * 0.08); // 46440
     const TAX_YEAR_START = useMemo(() => new Date('2024-04-06'), []);
-
-    // Tax Bands (England 2024/2025)
-    const PA_THRESHOLD = 12570;
-    const BASIC_RATE_THRESHOLD = 50270;
-    const HIGHER_RATE_THRESHOLD = 125140;
-    const BASIC_RATE = 0.20;
-    const HIGHER_RATE = 0.40;
-    const ADDITIONAL_RATE = 0.45;
-
-    // NI Class 4 Bands (2024/2025)
-    const NI_LOWER_THRESHOLD = 12570;
-    const NI_UPPER_THRESHOLD = 50270;
-    const NI_LOWER_RATE = 0.06;
-    const NI_HIGHER_RATE = 0.02;
-
-    const calculateTaxForInvoice = useCallback((invoiceAmount: number, baseIncome: number, alreadyEarnedThisYear: number) => {
-        let incomeTax = 0;
-        let nationalInsurance = 0;
-        const startingIncome = baseIncome + alreadyEarnedThisYear;
-
-        // A simplified marginal tax calculation, iterating pound by pound
-        for (let i = 1; i <= Math.floor(invoiceAmount); i++) {
-            const currentTotalIncome = startingIncome + i;
-            
-            // Income Tax Calculation for this pound
-            if (currentTotalIncome > HIGHER_RATE_THRESHOLD) {
-                incomeTax += ADDITIONAL_RATE;
-            } else if (currentTotalIncome > BASIC_RATE_THRESHOLD) {
-                incomeTax += HIGHER_RATE;
-            } else if (currentTotalIncome > PA_THRESHOLD) {
-                incomeTax += BASIC_RATE;
-            }
-
-            // National Insurance Calculation for this pound
-            if (currentTotalIncome > NI_UPPER_THRESHOLD) {
-                nationalInsurance += NI_HIGHER_RATE;
-            } else if (currentTotalIncome > NI_LOWER_THRESHOLD) {
-                nationalInsurance += NI_LOWER_RATE;
-            }
-        }
-        
-        return {
-            incomeTax,
-            nationalInsurance,
-            totalTax: incomeTax + nationalInsurance
-        };
-    }, []);
-
-    const totalPaidInvoicesThisYear = useMemo(() => {
-        return invoices
-            .filter(inv => inv.status === 'paid' && new Date(inv.issue_date) >= TAX_YEAR_START)
-            .reduce((acc, inv) => acc + inv.amount, 0);
-    }, [invoices, TAX_YEAR_START]);
-    
-    // --- End Tax Calculation Logic ---
-
 
     useEffect(() => {
         const handleDocumentClick = (e: MouseEvent) => {
