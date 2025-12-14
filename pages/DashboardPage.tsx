@@ -421,6 +421,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
 
 const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string }> = ({ expenses, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
+    const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
@@ -434,18 +435,27 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         return () => { document.removeEventListener('click', handleDocumentClick); };
     }, [openDropdownId]);
 
+    const handleEdit = (expense: Expense) => {
+        setEditingExpense(expense);
+        setShowModal(true);
+    };
+
+    const handleAddNew = () => {
+        setEditingExpense(null);
+        setShowModal(true);
+    };
+
+    const handleCloseModal = () => {
+        setShowModal(false);
+        setEditingExpense(null);
+    };
+
     const handleDelete = async (id: string) => {
         if (window.confirm("Are you sure you want to delete this expense record permanently?")) {
             const { error } = await supabase.from('expenses').delete().eq('id', id);
             if (error) console.error("Error deleting expense:", error);
             else refreshData();
         }
-    };
-    
-    const handleStatusChange = async (id: string, status: ExpenseStatus) => {
-        const { error } = await supabase.from('expenses').update({ status }).eq('id', id);
-        if (error) console.error("Error updating expense status:", error);
-        else refreshData();
     };
 
     const expectedThisMonth = useMemo(() => {
@@ -484,7 +494,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 <h2 className="text-2xl font-bold text-white">Expenses</h2>
                  <div className="flex space-x-2">
                     <button onClick={() => setShowImportModal(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Import Expenses</button>
-                    <button onClick={() => setShowModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
+                    <button onClick={handleAddNew} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
                 </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -527,18 +537,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                          {openDropdownId === exp.id && (
                                             <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
                                                 <div className="py-1" role="menu">
-                                                    <span className="block px-4 pt-2 pb-1 text-xs text-slate-500">Change Status</span>
-                                                    {exp.type === 'subscription' ? (
-                                                        <>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'active'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Active</button>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'inactive'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Inactive</button>
-                                                        </>
-                                                    ) : (
-                                                         <>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'upcoming'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Upcoming</button>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'completed'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Completed</button>
-                                                        </>
-                                                    )}
+                                                    <button onClick={() => { handleEdit(exp); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Edit</button>
                                                     <div className="border-t border-slate-700 my-1"></div>
                                                     <button onClick={() => { handleDelete(exp.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300">Delete</button>
                                                 </div>
@@ -560,7 +559,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                     />
                 </Modal>
             )}
-            {showModal && <ExpenseForm onClose={() => setShowModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {showModal && <ExpenseForm expenseToEdit={editingExpense} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
 };
@@ -769,27 +768,17 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
     );
 };
 
-const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ onClose, refreshData, selectedEntityId }) => {
-    const [formData, setFormData] = useState<{
-        name: string;
-        description: string;
-        amount: number | string;
-        currency: string;
-        category: string;
-        start_date: string;
-        end_date: string;
-        type: 'manual' | 'subscription';
-        billing_cycle: string | null;
-    }>({ 
-        name: '',
-        description: '', 
-        amount: '',
-        currency: 'GBP',
-        category: '', 
-        start_date: '',
-        end_date: '',
-        type: 'manual',
-        billing_cycle: null
+const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ expenseToEdit, onClose, refreshData, selectedEntityId }) => {
+    const [formData, setFormData] = useState({
+        name: expenseToEdit?.name || '',
+        description: expenseToEdit?.description || '', 
+        amount: expenseToEdit?.amount || '',
+        currency: expenseToEdit?.currency || 'GBP',
+        category: expenseToEdit?.category || '', 
+        start_date: expenseToEdit?.start_date ? new Date(expenseToEdit.start_date).toISOString().split('T')[0] : '',
+        end_date: expenseToEdit?.end_date ? new Date(expenseToEdit.end_date).toISOString().split('T')[0] : '',
+        type: expenseToEdit?.type || 'manual',
+        billing_cycle: expenseToEdit?.billing_cycle || null
     });
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -803,42 +792,51 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        
-        if (selectedEntityId === 'all') {
-            alert("Please select a specific Trading Identity from the sidebar before adding expenses.");
-            return;
-        }
 
-        // Determine default status
-        let status: ExpenseStatus = 'upcoming';
+        let status: ExpenseStatus;
         if (formData.type === 'subscription') {
-            status = 'active';
-        } else if (formData.start_date && new Date(formData.start_date) <= new Date()) {
-            status = 'completed';
+            const hasEnded = formData.end_date && new Date(formData.end_date) < new Date();
+            status = hasEnded ? 'inactive' : 'active';
+        } else { // manual
+            const isCompleted = formData.start_date && new Date(formData.start_date) <= new Date();
+            status = isCompleted ? 'completed' : 'upcoming';
         }
         
-        const submissionData = {
-            ...formData,
-            status,
+        const expenseData = {
+            name: formData.name,
+            description: formData.description,
+            amount: formData.amount,
             currency: formData.currency.toUpperCase(),
+            category: formData.category,
+            start_date: formData.start_date,
             end_date: formData.end_date || null,
-            entity_id: selectedEntityId,
-            billing_cycle: formData.billing_cycle || null,
+            type: formData.type,
+            billing_cycle: formData.type === 'subscription' ? formData.billing_cycle : null,
+            status,
         };
-
-        const { error } = await supabase.from('expenses').insert([submissionData]);
-        if (error) {
-            console.error("Error creating expense:", error);
-            alert(`Error: ${error.message}`);
+        
+        let error;
+        if (expenseToEdit) {
+            ({ error } = await supabase.from('expenses').update(expenseData).eq('id', expenseToEdit.id));
+        } else {
+             if (selectedEntityId === 'all') {
+                alert("Please select a specific Trading Identity from the sidebar before adding expenses.");
+                return;
+            }
+            ({ error } = await supabase.from('expenses').insert([{...expenseData, entity_id: selectedEntityId }]));
         }
-        else {
+
+        if (error) {
+            console.error("Error saving expense:", error);
+            alert(`Error: ${error.message}`);
+        } else {
             refreshData();
             onClose();
         }
     };
     
     return (
-        <Modal onClose={onClose} title="Add New Expense">
+        <Modal onClose={onClose} title={expenseToEdit ? "Edit Expense" : "Add New Expense"}>
              <form onSubmit={handleSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-300">Name / Title</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Description</label><textarea name="description" value={formData.description} onChange={handleChange} required rows={3} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
@@ -868,7 +866,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
                     </div>
                 )}
                 <div><label className="block text-sm font-medium text-slate-300">Category</label><input type="text" name="category" value={formData.category} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Expense</button>
+                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">{expenseToEdit ? 'Save Changes' : 'Save Expense'}</button>
             </form>
         </Modal>
     );

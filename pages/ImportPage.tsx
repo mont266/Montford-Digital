@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -53,6 +54,13 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
     const [stagedExpenses, setStagedExpenses] = useState<StagedExpense[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    
+    const statusChipStyles: { [key in ExpenseStatus]: string } = {
+        active: 'bg-green-500/20 text-green-300',
+        inactive: 'bg-gray-600/20 text-gray-400',
+        completed: 'bg-blue-500/20 text-blue-300',
+        upcoming: 'bg-yellow-500/20 text-yellow-300',
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
@@ -83,43 +91,16 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                 
                 const header = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
                 
-                // Maps CSV header variants to our internal 'StagedExpense' property names.
-                // Headers like 'id' and 'created_at' are intentionally omitted to be ignored during import.
                 const headerMapping: { [key: string]: string } = {
-                    // Expense Name
-                    'name': 'name',
-                    'title': 'name',
-                    
-                    // Description
+                    'name': 'name', 'title': 'name',
                     'description': 'description',
-                    
-                    // Cost
                     'amount': 'amount',
-                    
-                    // Currency (e.g., GBP, USD)
                     'currency': 'currency',
-                    
-                    // Category
                     'category': 'category',
-                    
-                    // Dates
-                    'start_date': 'start_date',
-                    'start date': 'start_date',
-                    'expense date': 'start_date',
-                    'end_date': 'end_date',
-                    'end date': 'end_date',
-                    
-                    // Type of expense
-                    'expense_type': 'type',
-                    'type': 'type',
-                    
-                    // For subscriptions
-                    'billing_cycle': 'billing_cycle',
-                    'billing cycle': 'billing_cycle',
-                    'cycle': 'billing_cycle',
-                    
-                    // Status
-                    'status': 'status'
+                    'start_date': 'start_date', 'start date': 'start_date', 'expense date': 'start_date',
+                    'end_date': 'end_date', 'end date': 'end_date',
+                    'expense_type': 'type', 'type': 'type',
+                    'billing_cycle': 'billing_cycle', 'billing cycle': 'billing_cycle', 'cycle': 'billing_cycle',
                 };
                 
                 const rows = lines.slice(1);
@@ -140,22 +121,20 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                                 value = formatted;
                             }
                             if (dbColumn === 'billing_cycle' && value?.toLowerCase() === 'yearly') value = 'annually';
-                            if (dbColumn === 'type' || dbColumn === 'status') value = value.toLowerCase();
+                            if (dbColumn === 'type') value = value.toLowerCase();
                             expense[dbColumn] = value;
                         }
                     });
 
-                    // Set expense type (default to manual)
                     expense.type = expense.type === 'subscription' ? 'subscription' : 'manual';
 
-                    // Infer status if not provided in CSV
-                    if (!expense.status) {
-                        if (expense.type === 'subscription') {
-                            const hasEnded = expense.end_date && new Date(expense.end_date) < new Date();
-                            expense.status = hasEnded ? 'inactive' : 'active';
-                        } else {
-                            expense.status = (expense.start_date && new Date(expense.start_date) <= new Date()) ? 'completed' : 'upcoming';
-                        }
+                    let calculatedStatus: ExpenseStatus;
+                    if (expense.type === 'subscription') {
+                        const hasEnded = expense.end_date && new Date(expense.end_date) < new Date();
+                        calculatedStatus = hasEnded ? 'inactive' : 'active';
+                    } else {
+                        const isCompleted = expense.start_date && new Date(expense.start_date) <= new Date();
+                        calculatedStatus = isCompleted ? 'completed' : 'upcoming';
                     }
 
                     if (!expense.description && !expense.name) throw new Error(`Row ${index + 2} needs a Name or Description.`);
@@ -173,7 +152,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                         end_date: expense.end_date || null,
                         type: expense.type,
                         billing_cycle: expense.type === 'subscription' ? (expense.billing_cycle || null) : null,
-                        status: expense.status,
+                        status: calculatedStatus,
                     };
                 });
                 setStagedExpenses(expensesToStage);
@@ -191,14 +170,18 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         const newStagedExpenses = [...stagedExpenses];
         const currentExpense = { ...newStagedExpenses[index], [field]: value };
         
-        if (field === 'type') {
-            if (value === 'manual') {
-                currentExpense.billing_cycle = null;
-                const isPast = currentExpense.start_date && new Date(currentExpense.start_date) <= new Date();
-                currentExpense.status = isPast ? 'completed' : 'upcoming';
-            } else { // subscription
+        if (field === 'type' && value === 'manual') {
+            currentExpense.billing_cycle = null;
+        }
+
+        // Fix: Cast `field` to string to satisfy Array.prototype.includes which expects a string.
+        if (['type', 'start_date', 'end_date'].includes(field as string)) {
+            if (currentExpense.type === 'subscription') {
                 const hasEnded = currentExpense.end_date && new Date(currentExpense.end_date) < new Date();
                 currentExpense.status = hasEnded ? 'inactive' : 'active';
+            } else { // manual
+                const isPast = currentExpense.start_date && new Date(currentExpense.start_date) <= new Date();
+                currentExpense.status = isPast ? 'completed' : 'upcoming';
             }
         }
 
@@ -247,7 +230,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         { key: 'amount', label: 'Amount', type: 'number', className: 'w-24' },
         { key: 'category', label: 'Category', type: 'text', className: 'w-32' },
         { key: 'start_date', label: 'Start Date', type: 'date', className: 'w-36' },
-        { key: 'status', label: 'Status', type: 'select', className: 'w-32', options: [{value: 'upcoming', label: 'Upcoming'}, {value: 'completed', label: 'Completed'}, {value: 'active', label: 'Active'}, {value: 'inactive', label: 'Inactive'}] },
+        { key: 'status', label: 'Status', type: 'text', className: 'w-32' },
         { key: 'type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'manual', label: 'Manual'}, {value: 'subscription', label: 'Subscription'}] },
         { key: 'billing_cycle', label: 'Billing Cycle', type: 'select', className: 'w-32', options: [{value: '', label: 'N/A'}, {value: 'monthly', label: 'Monthly'}, {value: 'annually', label: 'Annually'}] },
     ];
@@ -257,7 +240,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
             {step === 'upload' && (
                 <div className="space-y-4">
                      <div className="space-y-2 text-slate-300 text-sm">
-                        <p>Import expenses from a CSV file. The importer will match columns like 'Name', 'Amount', 'Type' ('manual' or 'subscription'), 'Status', 'Start Date' etc., and ignore any unrecognised columns.</p>
+                        <p>Import expenses from a CSV file. The importer will match columns like 'Name', 'Amount', 'Type' etc., and ignore any unrecognised columns like 'Status'.</p>
                          <p className="font-semibold text-yellow-400">Date columns must be in DD/MM/YYYY or YYYY-MM-DD format.</p>
                         <p className="font-semibold text-yellow-400">All imported expenses will be assigned to the currently selected Trading Identity.</p>
                     </div>
@@ -278,7 +261,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                         <table className="min-w-full text-sm">
                             <thead className="bg-slate-900/50 sticky top-0">
                                 <tr>
-                                    {tableHeaders.map(h => <th key={h.key} className={`p-2 text-left font-medium text-slate-400 ${h.className}`}>{h.label}</th>)}
+                                    {tableHeaders.map(h => <th key={h.key as string} className={`p-2 text-left font-medium text-slate-400 ${h.className}`}>{h.label}</th>)}
                                     <th className="p-2 w-16"></th>
                                 </tr>
                             </thead>
@@ -286,8 +269,12 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                                 {stagedExpenses.map((exp, index) => (
                                     <tr key={index} className="hover:bg-slate-700/50">
                                         {tableHeaders.map(h => (
-                                            <td key={h.key} className="p-1 align-top">
-                                                 {h.type === 'select' ? (
+                                            <td key={h.key as string} className="p-1 align-top">
+                                                 {h.key === 'status' ? (
+                                                    <span className={`px-2 py-1.5 w-full inline-block text-center text-xs leading-tight font-semibold rounded-md capitalize ${statusChipStyles[exp.status] || ''}`}>
+                                                        {exp.status}
+                                                    </span>
+                                                 ) : h.type === 'select' ? (
                                                     <select 
                                                         value={exp[h.key] || ''} 
                                                         onChange={e => handleStagedChange(index, h.key, e.target.value)} 
