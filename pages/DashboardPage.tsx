@@ -42,15 +42,17 @@ interface Invoice {
 
 interface Expense {
   id: string;
-  name?: string; // Stoutly field
-  description: string; // Original field
-  amount_gbp: number; // Replaces 'amount'
+  name?: string;
+  description: string;
+  amount: number; // Original amount
+  currency?: string; // Original currency
+  amount_gbp: number; // Standardized amount in GBP
   category: string;
-  start_date: string; // Replaces 'expense_date'
-  end_date?: string; // Stoutly field
+  start_date: string;
+  end_date?: string;
   expense_type: 'one-time' | 'subscription';
   billing_cycle?: 'monthly' | 'annually';
-  is_active: boolean; // Original field
+  is_active: boolean;
   entity_id: string;
 }
 
@@ -477,7 +479,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Type</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount (GBP)</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -722,7 +724,8 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
     const [formData, setFormData] = useState<{
         name: string;
         description: string;
-        amount_gbp: number | string;
+        amount: number | string;
+        currency: string;
         category: string;
         start_date: string;
         end_date: string;
@@ -731,7 +734,8 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
     }>({ 
         name: '',
         description: '', 
-        amount_gbp: '', 
+        amount: '',
+        currency: 'GBP',
         category: '', 
         start_date: '',
         end_date: '',
@@ -752,13 +756,14 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         e.preventDefault();
         
         if (selectedEntityId === 'all') {
-            alert("Please select a specific Trading Identity (e.g., Montford Digital) from the sidebar before adding expenses.");
+            alert("Please select a specific Trading Identity from the sidebar before adding expenses.");
             return;
         }
-
-        // Prepare data for insertion, ensuring end_date is null if empty
+        
+        // The database trigger will handle amount_gbp calculation.
         const submissionData = {
             ...formData,
+            currency: formData.currency.toUpperCase(),
             end_date: formData.end_date || null,
             is_active: true, 
             entity_id: selectedEntityId
@@ -777,7 +782,10 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
              <form onSubmit={handleSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-300">Name / Title</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 <div><label className="block text-sm font-medium text-slate-300">Description</label><textarea name="description" value={formData.description} onChange={handleChange} required rows={3} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Amount (GBP)</label><input type="number" step="0.01" name="amount_gbp" value={formData.amount_gbp} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="sm:col-span-2"><label className="block text-sm font-medium text-slate-300">Amount</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                    <div><label className="block text-sm font-medium text-slate-300">Currency</label><input type="text" name="currency" value={formData.currency} onChange={handleChange} required maxLength={3} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white uppercase" /></div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div><label className="block text-sm font-medium text-slate-300">Start Date</label><input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                     <div><label className="block text-sm font-medium text-slate-300">End Date (Optional)</label><input type="date" name="end_date" value={formData.end_date} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
