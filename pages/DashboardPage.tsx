@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -362,9 +363,10 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             
                             const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
 
-                            const stripeFee = (invoice.amount * 0.025) + 0.20;
+                            const calculatedStripeFee = (invoice.amount * 0.025) + 0.20;
+                            const effectiveStripeFee = calculatedStripeFee > 50 ? 0 : calculatedStripeFee;
                             const totalTax = taxCalculation.totalTax;
-                            const takeHome = invoice.amount - stripeFee - totalTax;
+                            const takeHome = invoice.amount - effectiveStripeFee - totalTax;
                             
                             if (isPaidThisYear) {
                                 runningPaidTotalThisYear += invoice.amount;
@@ -380,7 +382,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                     <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
                                         <div className="flex flex-col">
-                                            <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(stripeFee)}</span></span>
+                                            <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(effectiveStripeFee)}</span></span>
                                             <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
                                             <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
                                         </div>
