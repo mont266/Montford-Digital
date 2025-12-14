@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import Logo from '../components/Logo';
 
-// Define the structure of an invoice
+// --- Types ---
 interface InvoiceItem {
   id: string;
   description: string;
@@ -17,7 +17,7 @@ interface Invoice {
   invoice_number: string;
   issue_date: string;
   due_date: string;
-  created_at: string; // Added created date
+  created_at: string;
   amount: number;
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: {
@@ -26,6 +26,21 @@ interface Invoice {
   } | null;
   invoice_items: InvoiceItem[];
 }
+
+
+// --- Reusable Components ---
+const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string }> = ({ children, onClose, title }) => (
+    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={onClose}>
+        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md my-8 p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-white">{title}</h3>
+                <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            {children}
+        </div>
+    </div>
+);
+
 
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
 const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB');
@@ -36,6 +51,7 @@ const InvoicePublicPage: React.FC = () => {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showBankModal, setShowBankModal] = useState(false);
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -48,21 +64,13 @@ const InvoicePublicPage: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from('invoices')
-          .select(`
-            *,
-            projects ( name, client_name ),
-            invoice_items ( * )
-          `)
+          .select(`*, projects ( name, client_name ), invoice_items ( * )`)
           .eq('id', id)
           .single();
 
         if (error) throw error;
-
-        if (data) {
-          setInvoice(data as Invoice);
-        } else {
-            setError("Invoice not found.");
-        }
+        if (data) setInvoice(data as Invoice);
+        else setError("Invoice not found.");
 
       } catch (err: any) {
         setError(err.message || 'An error occurred while fetching the invoice.');
@@ -70,7 +78,6 @@ const InvoicePublicPage: React.FC = () => {
         setLoading(false);
       }
     };
-
     fetchInvoice();
   }, [id]);
   
@@ -86,127 +93,134 @@ const InvoicePublicPage: React.FC = () => {
     return 'bg-slate-700 text-slate-300 border-slate-600';
   }
 
-  const stripeFee = invoice ? (invoice.amount * 0.025) + 0.20 : 0;
-  const showBankTransfer = invoice ? stripeFee > 50 : false;
-
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
-      <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden invoice-card">
-        <header className="bg-slate-900 p-8 flex justify-between items-start">
-            <div>
-                <Logo className="h-9 w-auto" />
-                <p className="text-slate-400 mt-2">Invoice</p>
-            </div>
-            {invoice && (
-                <div className="text-right">
-                    <h2 className="text-3xl font-bold text-white">{formatCurrency(invoice.amount)}</h2>
-                    <p className="text-slate-400">Due on {formatDate(invoice.due_date)}</p>
-                </div>
-            )}
-        </header>
+    <>
+      <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
+        <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden invoice-card">
+          <header className="bg-slate-900 p-8 flex justify-between items-start">
+              <div>
+                  <Logo className="h-9 w-auto" />
+                  <p className="text-slate-400 mt-2">Invoice</p>
+              </div>
+              {invoice && (
+                  <div className="text-right">
+                      <h2 className="text-3xl font-bold text-white">{formatCurrency(invoice.amount)}</h2>
+                      <p className="text-slate-400">Due on {formatDate(invoice.due_date)}</p>
+                  </div>
+              )}
+          </header>
 
-        <main className="p-8">
-            {loading && <p className="text-center">Loading invoice...</p>}
-            {error && <p className="text-center text-red-400">{error}</p>}
-            {invoice && (
-                <div>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mb-8">
-                        <div>
-                            <p className="text-sm text-slate-400 mb-1">Billed To</p>
-                            <p className="font-semibold text-white">{invoice.projects?.client_name || 'N/A'}</p>
-                        </div>
-                         <div>
-                            <p className="text-sm text-slate-400 mb-1">Invoice Number</p>
-                            <p className="font-semibold text-white">{invoice.invoice_number}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-slate-400 mb-1">Created Date</p>
-                            <p className="font-semibold text-white">{formatDate(invoice.created_at)}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-slate-400 mb-1">Issue Date</p>
-                            <p className="font-semibold text-white">{formatDate(invoice.issue_date)}</p>
-                        </div>
-                    </div>
+          <main className="p-8">
+              {loading && <p className="text-center">Loading invoice...</p>}
+              {error && <p className="text-center text-red-400">{error}</p>}
+              {invoice && (
+                  <div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mb-8">
+                          <div>
+                              <p className="text-sm text-slate-400 mb-1">Billed To</p>
+                              <p className="font-semibold text-white">{invoice.projects?.client_name || 'N/A'}</p>
+                          </div>
+                           <div>
+                              <p className="text-sm text-slate-400 mb-1">Invoice Number</p>
+                              <p className="font-semibold text-white">{invoice.invoice_number}</p>
+                          </div>
+                          <div>
+                              <p className="text-sm text-slate-400 mb-1">Created Date</p>
+                              <p className="font-semibold text-white">{formatDate(invoice.created_at)}</p>
+                          </div>
+                          <div>
+                              <p className="text-sm text-slate-400 mb-1">Issue Date</p>
+                              <p className="font-semibold text-white">{formatDate(invoice.issue_date)}</p>
+                          </div>
+                      </div>
 
-                    <div className="border-t border-slate-700 pt-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">Itemised Breakdown</h3>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead>
-                                    <tr className="border-b border-slate-700 text-sm text-slate-400">
-                                        <th className="p-2">Description</th>
-                                        <th className="p-2 text-center">Qty</th>
-                                        <th className="p-2 text-right">Unit Price</th>
-                                        <th className="p-2 text-right">Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {invoice.invoice_items.map(item => (
-                                        <tr key={item.id} className="border-b border-slate-700/50">
-                                            <td className="p-2 text-white font-medium">{item.description}</td>
-                                            <td className="p-2 text-center">{item.quantity}</td>
-                                            <td className="p-2 text-right">{formatCurrency(item.unit_price)}</td>
-                                            <td className="p-2 text-right">{formatCurrency(item.quantity * item.unit_price)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot className="text-slate-300">
-                                    <tr className="text-white font-bold text-lg border-t-2 border-slate-600">
-                                        <td colSpan={2}></td>
-                                        <td className="p-2 text-right">Total Due</td>
-                                        <td className="p-2 text-right">{formatCurrency(invoice.amount)}</td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-                    
-                    <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-                        <div className="flex items-center mb-4 sm:mb-0 print-hide">
-                           <span className="text-slate-400 mr-2">Status:</span>
-                           <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
-                                {new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'Overdue' : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                           </span>
-                        </div>
-                        
-                        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto print-hide">
-                            <button
-                                onClick={() => window.print()}
-                                className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300"
-                            >
-                                Print Invoice
-                            </button>
-                            {invoice.status !== 'paid' && (
-                                showBankTransfer ? (
-                                    <div className="border border-slate-600 rounded-lg p-4 bg-slate-900/50 w-full sm:max-w-md">
-                                        <h4 className="font-semibold text-white mb-2">Pay via Bank Transfer</h4>
-                                        <p className="text-sm text-slate-400 mb-3">To avoid high processing fees, please use the details below. Use your invoice number as the reference.</p>
-                                        <div className="text-sm space-y-1">
-                                            <p><span className="text-slate-400">Account Name:</span> <span className="text-white font-mono">Scott Montford</span></p>
-                                            <p><span className="text-slate-400">Sort Code:</span> <span className="text-white font-mono">04-00-75</span></p>
-                                            <p><span className="text-slate-400">Account Number:</span> <span className="text-white font-mono">41017137</span></p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <button
-                                        onClick={handlePayment}
-                                        className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
-                                    >
-                                        Pay Invoice with Stripe
-                                    </button>
-                                )
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-        </main>
-         <footer className="text-center p-4 bg-slate-900/50 border-t border-slate-700">
-            <p className="text-xs text-slate-500">If you have any questions, please contact Montford Digital.</p>
-        </footer>
+                      <div className="border-t border-slate-700 pt-6">
+                          <h3 className="text-lg font-semibold text-white mb-4">Itemised Breakdown</h3>
+                          <div className="overflow-x-auto">
+                              <table className="w-full text-left">
+                                  <thead>
+                                      <tr className="border-b border-slate-700 text-sm text-slate-400">
+                                          <th className="p-2">Description</th>
+                                          <th className="p-2 text-center">Qty</th>
+                                          <th className="p-2 text-right">Unit Price</th>
+                                          <th className="p-2 text-right">Total</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {invoice.invoice_items.map(item => (
+                                          <tr key={item.id} className="border-b border-slate-700/50">
+                                              <td className="p-2 text-white font-medium">{item.description}</td>
+                                              <td className="p-2 text-center">{item.quantity}</td>
+                                              <td className="p-2 text-right">{formatCurrency(item.unit_price)}</td>
+                                              <td className="p-2 text-right">{formatCurrency(item.quantity * item.unit_price)}</td>
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                                  <tfoot className="text-slate-300">
+                                      <tr className="text-white font-bold text-lg border-t-2 border-slate-600">
+                                          <td colSpan={2}></td>
+                                          <td className="p-2 text-right">Total Due</td>
+                                          <td className="p-2 text-right">{formatCurrency(invoice.amount)}</td>
+                                      </tr>
+                                  </tfoot>
+                              </table>
+                          </div>
+                      </div>
+                      
+                      <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+                          <div className="flex items-center mb-4 sm:mb-0 print-hide">
+                             <span className="text-slate-400 mr-2">Status:</span>
+                             <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
+                                  {new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'Overdue' : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                             </span>
+                          </div>
+                          
+                          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto print-hide">
+                              <button
+                                  onClick={() => window.print()}
+                                  className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors"
+                              >
+                                  Print Invoice
+                              </button>
+                              {invoice.status !== 'paid' && (
+                                  <>
+                                      <button
+                                          onClick={() => setShowBankModal(true)}
+                                          className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors"
+                                      >
+                                          Pay by Bank Transfer
+                                      </button>
+                                      <button
+                                          onClick={handlePayment}
+                                          className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
+                                      >
+                                          Pay with Stripe
+                                      </button>
+                                  </>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              )}
+          </main>
+           <footer className="text-center p-4 bg-slate-900/50 border-t border-slate-700">
+              <p className="text-xs text-slate-500">If you have any questions, please contact Montford Digital.</p>
+          </footer>
+        </div>
       </div>
-    </div>
+      {showBankModal && invoice && (
+          <Modal onClose={() => setShowBankModal(false)} title="Pay via Bank Transfer">
+              <p className="text-sm text-slate-400 mb-4">
+                  Please use your invoice number ({invoice.invoice_number}) as the payment reference.
+              </p>
+              <div className="text-base space-y-2 bg-slate-900/50 p-4 rounded-md border border-slate-700">
+                  <p><span className="text-slate-400">Account Name:</span> <span className="text-white font-mono">Scott Montford</span></p>
+                  <p><span className="text-slate-400">Sort Code:</span> <span className="text-white font-mono">04-00-75</span></p>
+                  <p><span className="text-slate-400">Account Number:</span> <span className="text-white font-mono">41017137</span></p>
+              </div>
+          </Modal>
+      )}
+    </>
   );
 };
 
