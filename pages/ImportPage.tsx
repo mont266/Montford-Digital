@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -89,7 +88,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                 const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
                 if (lines.length < 2) throw new Error("CSV must have a header and at least one data row.");
                 
-                const header = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+                const header = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.trim().replace(/"/g, '').replace(/\s+/g, ' ').toLowerCase());
                 
                 const headerMapping: { [key: string]: string } = {
                     'name': 'name', 'title': 'name',
@@ -230,6 +229,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         { key: 'amount', label: 'Amount', type: 'number', className: 'w-24' },
         { key: 'category', label: 'Category', type: 'text', className: 'w-32' },
         { key: 'start_date', label: 'Start Date', type: 'date', className: 'w-36' },
+        { key: 'end_date', label: 'End Date', type: 'date', className: 'w-36' },
         { key: 'status', label: 'Status', type: 'text', className: 'w-32' },
         { key: 'type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'manual', label: 'Manual'}, {value: 'subscription', label: 'Subscription'}] },
         { key: 'billing_cycle', label: 'Billing Cycle', type: 'select', className: 'w-32', options: [{value: '', label: 'N/A'}, {value: 'monthly', label: 'Monthly'}, {value: 'annually', label: 'Annually'}] },

@@ -60,6 +60,7 @@ interface Expense {
 }
 
 type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
+type OutgoingTimeSpan = '7d' | '30d' | '90d' | '1y' | 'all';
 
 // --- Reusable Components ---
 const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
@@ -84,8 +85,8 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: s
     </div>
 );
 
-const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
-const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB');
+const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
+const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
 
 // --- Page Components ---
@@ -373,8 +374,8 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.created_at)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.due_date)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.created_at).toLocaleDateString('en-GB')}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString('en-GB')}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
                                         <div className="flex flex-col">
@@ -423,17 +424,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
     const [showModal, setShowModal] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-
-    useEffect(() => {
-        const handleDocumentClick = (e: MouseEvent) => {
-            if (!(e.target as HTMLElement).closest('.actions-dropdown-container')) {
-                setOpenDropdownId(null);
-            }
-        };
-        if (openDropdownId) { document.addEventListener('click', handleDocumentClick); }
-        return () => { document.removeEventListener('click', handleDocumentClick); };
-    }, [openDropdownId]);
+    const [timeSpan, setTimeSpan] = useState<OutgoingTimeSpan>('all');
 
     const handleEdit = (expense: Expense) => {
         setEditingExpense(expense);
@@ -458,8 +449,25 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         }
     };
 
-    const expectedThisMonth = useMemo(() => {
-        return expenses
+    const filteredExpenses = useMemo(() => {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let startDate: Date | null = null;
+
+        switch (timeSpan) {
+            case '7d': startDate = new Date(today); startDate.setDate(today.getDate() - 7); break;
+            case '30d': startDate = new Date(today); startDate.setMonth(today.getMonth() - 1); break;
+            case '90d': startDate = new Date(today); startDate.setMonth(today.getMonth() - 3); break;
+            case '1y': startDate = new Date(today); startDate.setFullYear(today.getFullYear() - 1); break;
+            case 'all': default: break;
+        }
+        return startDate ? expenses.filter(exp => new Date(exp.start_date) >= startDate!) : expenses;
+    }, [timeSpan, expenses]);
+
+    const { totalSpend, recurringMonthlyCost, projectedAnnualCost } = useMemo(() => {
+        const totalSpend = filteredExpenses.reduce((sum, exp) => sum + exp.amount_gbp, 0);
+        
+        const recurringMonthlyCost = expenses
             .filter(e => e.type === 'subscription' && e.status === 'active')
             .reduce((sum, e) => {
                 if (e.billing_cycle === 'annually') {
@@ -467,89 +475,215 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 }
                 return sum + e.amount_gbp;
             }, 0);
+            
+        const projectedAnnualCost = recurringMonthlyCost * 12;
+
+        return { totalSpend, recurringMonthlyCost, projectedAnnualCost };
+    }, [filteredExpenses, expenses]);
+    
+    const expectedPaymentsThisMonth = useMemo(() => {
+        const today = new Date();
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        
+        return expenses.filter(exp => {
+            if (exp.status === 'inactive') return false;
+
+            const startDate = new Date(exp.start_date);
+            if (exp.type === 'manual') {
+                return startDate >= startOfMonth && startDate <= endOfMonth;
+            }
+            if (exp.type === 'subscription') {
+                let dueDate = new Date(startDate);
+                if (exp.billing_cycle === 'monthly') {
+                    dueDate.setMonth(today.getMonth());
+                    dueDate.setFullYear(today.getFullYear());
+                }
+                // For annual, it's only due if the month matches
+                return dueDate.getMonth() === today.getMonth();
+            }
+            return false;
+        }).sort((a,b) => new Date(a.start_date).getDate() - new Date(b.start_date).getDate());
+
     }, [expenses]);
     
-    const paidThisMonth = useMemo(() => {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        return expenses
-            .filter(e => {
-                const expenseDate = new Date(e.start_date);
-                return expenseDate >= startOfMonth && expenseDate <= endOfMonth && e.status !== 'inactive';
-            })
-            .reduce((sum, e) => sum + e.amount_gbp, 0);
-    }, [expenses]);
-    
+    const subscriptionOutgoings = useMemo(() => expenses.filter(e => e.type === 'subscription'), [expenses]);
+    const manualOutgoings = useMemo(() => expenses.filter(e => e.type === 'manual'), [expenses]);
+
     const statusChipStyles: { [key in ExpenseStatus]: string } = {
         active: 'bg-green-500/20 text-green-300',
-        inactive: 'bg-gray-600/20 text-gray-400 line-through',
+        inactive: 'bg-slate-700 text-slate-400',
         completed: 'bg-blue-500/20 text-blue-300',
         upcoming: 'bg-yellow-500/20 text-yellow-300',
     };
-
+    
+    const handleExportCSV = () => {
+        const headers = ['ID', 'Name', 'Description', 'Amount', 'Currency', 'Amount (GBP)', 'Category', 'Start Date', 'End Date', 'Type', 'Billing Cycle', 'Status'];
+        const rows = expenses.map(exp => [
+            exp.id,
+            exp.name || '',
+            exp.description,
+            exp.amount,
+            exp.currency,
+            exp.amount_gbp,
+            exp.category,
+            exp.start_date,
+            exp.end_date || '',
+            exp.type,
+            exp.billing_cycle || '',
+            exp.status
+        ].join(','));
+        
+        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `montford-digital-expenses-${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+    
+    const CostDisplay: React.FC<{expense: Expense}> = ({expense}) => (
+        <div className="flex flex-col text-right">
+            <span className="font-semibold text-white">
+                 {expense.currency !== 'GBP' ? formatCurrency(expense.amount, expense.currency) : formatCurrency(expense.amount_gbp)}
+                 {expense.billing_cycle === 'monthly' ? ' / mo' : expense.billing_cycle === 'annually' ? ' / yr' : ''}
+            </span>
+            {expense.currency !== 'GBP' && <span className="text-xs text-slate-400">(≈ {formatCurrency(expense.amount_gbp)})</span>}
+        </div>
+    );
+    
     return (
-         <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Expenses</h2>
-                 <div className="flex space-x-2">
-                    <button onClick={() => setShowImportModal(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Import Expenses</button>
-                    <button onClick={handleAddNew} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
+         <div className="space-y-8">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-4">
+                    <h2 className="text-3xl font-bold text-white">Outgoings</h2>
+                    <button onClick={refreshData} className="text-slate-400 hover:text-white transition-colors" title="Refresh data">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M20 4h-5l-1 1M4 20h5l1-1M12 4V2M12 22v-2M20 12h2M2 12h2" /></svg>
+                    </button>
+                </div>
+                 <div className="flex items-center gap-2 flex-wrap">
+                     <div className="flex space-x-1 bg-slate-800 border border-slate-700 rounded-md p-1 text-sm">
+                         {(['7d', '30d', '90d', '1y', 'all'] as const).map(span => (
+                             <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
+                                {span === '7d' ? '7 Days' : span === '30d' ? '30 Days' : span === '90d' ? '90 Days' : span === '1y' ? '1 Year' : 'All Time'}
+                             </button>
+                         ))}
+                     </div>
+                     <button onClick={handleExportCSV} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        Export CSV
+                    </button>
+                    <button onClick={handleAddNew} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm">+ Add Outgoing</button>
                 </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <p className="text-sm text-slate-400">Expected This Month (Active Subs)</p>
-                    <p className="text-2xl font-bold text-white">{formatCurrency(expectedThisMonth)}</p>
+                    <p className="text-sm text-slate-400">Spend ({timeSpan === 'all' ? 'All Time' : `Last ${timeSpan}`})</p>
+                    <p className="text-3xl font-bold text-white">{formatCurrency(totalSpend)}</p>
                 </div>
                  <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <p className="text-sm text-slate-400">Paid This Month</p>
-                    <p className="text-2xl font-bold text-white">{formatCurrency(paidThisMonth)}</p>
+                    <p className="text-sm text-slate-400">Recurring Monthly Cost (GBP)</p>
+                    <p className="text-3xl font-bold text-white">{formatCurrency(recurringMonthlyCost)}</p>
+                </div>
+                <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                    <p className="text-sm text-slate-400">Projected Annual Cost (GBP)</p>
+                    <p className="text-3xl font-bold text-white">{formatCurrency(projectedAnnualCost)}</p>
                 </div>
             </div>
-             <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-700">
-                    <thead className="bg-slate-900/50">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount (GBP)</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700">
-                        {expenses.map(exp => (
-                            <tr key={exp.id} className={`${['inactive', 'completed'].includes(exp.status) ? 'opacity-60' : ''}`}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.start_date)}</td>
-                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.status === 'inactive' ? 'line-through' : ''}`}>{exp.name || exp.description}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>
-                                      {exp.status}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount_gbp)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                                    <div className="relative inline-block text-left actions-dropdown-container">
-                                        <button onClick={() => setOpenDropdownId(openDropdownId === exp.id ? null : exp.id)} className="p-2 rounded-full hover:bg-slate-700">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
-                                        </button>
-                                         {openDropdownId === exp.id && (
-                                            <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
-                                                <div className="py-1" role="menu">
-                                                    <button onClick={() => { handleEdit(exp); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Edit</button>
-                                                    <div className="border-t border-slate-700 my-1"></div>
-                                                    <button onClick={() => { handleDelete(exp.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300">Delete</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+
+            {expectedPaymentsThisMonth.length > 0 && (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+                 <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Expected Payments This Month
+                </h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                           <tr className="border-b border-slate-700 text-slate-400">
+                                <th className="p-2 text-left font-medium">ITEM</th>
+                                <th className="p-2 text-left font-medium">TYPE</th>
+                                <th className="p-2 text-left font-medium">DUE DATE</th>
+                                <th className="p-2 text-right font-medium">AMOUNT</th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                            {expectedPaymentsThisMonth.map(exp => (
+                                <tr key={exp.id} className="hover:bg-slate-700/50">
+                                    <td className="p-2 text-white font-semibold">{exp.name || exp.description}</td>
+                                    <td className="p-2"><span className="bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full text-xs capitalize">{exp.type}</span></td>
+                                    <td className="p-2">{formatDate(exp.start_date)}</td>
+                                    <td className="p-2"><CostDisplay expense={exp} /></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
+            )}
+            
+            <div className="space-y-8">
+                <div>
+                    <h3 className="text-xl font-bold text-white mb-4">Subscriptions</h3>
+                     <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-700 text-sm">
+                            <thead className="bg-slate-900/50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Service</th>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Category</th>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Date Range</th>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-right font-medium text-slate-400 uppercase">Cost</th>
+                                    <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                                {subscriptionOutgoings.map(exp => (
+                                    <tr key={exp.id} className={exp.status === 'inactive' ? 'opacity-50' : ''}>
+                                        <td className="px-4 py-3 text-white font-semibold">{exp.name || exp.description}</td>
+                                        <td className="px-4 py-3">{exp.category}</td>
+                                        <td className="px-4 py-3">{formatDate(exp.start_date)} - {exp.end_date ? formatDate(exp.end_date) : 'Present'}</td>
+                                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>{exp.status}</span></td>
+                                        <td className="px-4 py-3"><CostDisplay expense={exp} /></td>
+                                        <td className="px-4 py-3 text-center"><button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                 <div>
+                    <h3 className="text-xl font-bold text-white mb-4">Manual Outgoings</h3>
+                     <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-700 text-sm">
+                            <thead className="bg-slate-900/50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Item/Service</th>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Category</th>
+                                    <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Purchase Date</th>
+                                    <th className="px-4 py-3 text-right font-medium text-slate-400 uppercase">Amount</th>
+                                    <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                                {manualOutgoings.map(exp => (
+                                    <tr key={exp.id} className={exp.status === 'completed' ? 'opacity-70' : ''}>
+                                        <td className="px-4 py-3 text-white font-semibold">{exp.name || exp.description}</td>
+                                        <td className="px-4 py-3">{exp.category}</td>
+                                        <td className="px-4 py-3">{formatDate(exp.start_date)}</td>
+                                        <td className="px-4 py-3"><CostDisplay expense={exp} /></td>
+                                        <td className="px-4 py-3 text-center"><button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             {showImportModal && (
                 <Modal onClose={() => setShowImportModal(false)} title="Import Expenses from CSV">
                     <ImportFlow 
@@ -941,7 +1075,7 @@ const DashboardPage: React.FC = () => {
         { path: "/dashboard", label: "Overview" },
         { path: "/dashboard/projects", label: "Projects" },
         { path: "/dashboard/invoices", label: "Invoices" },
-        { path: "/dashboard/expenses", label: "Expenses" },
+        { path: "/dashboard/expenses", label: "Outgoings" },
     ];
 
     return (
