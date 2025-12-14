@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 
 // --- Type Definitions ---
 type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
+type ExpenseType = 'manual' | 'subscription';
 
 interface StagedExpense {
     name: string;
@@ -12,7 +13,7 @@ interface StagedExpense {
     currency: string;
     start_date: string;
     end_date: string | null;
-    expense_type: 'one-time' | 'subscription';
+    expense_type: ExpenseType;
     billing_cycle: 'monthly' | 'annually' | null;
     status: ExpenseStatus;
     [key: string]: any; // Allow other properties
@@ -102,22 +103,26 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                         const dbColumn = headerMapping[key];
                         if (dbColumn) {
                             let value: any = rowData[key];
-                             if (dbColumn === 'amount') value = parseFloat(value) || '';
+                            if (dbColumn === 'amount') value = parseFloat(value) || '';
                             if (dbColumn === 'start_date' || dbColumn === 'end_date') {
                                 const formatted = parseDateToYYYYMMDD(value);
                                 if (value && !formatted) throw new Error(`Invalid date format for "${key}" on row ${index + 2}.`);
                                 value = formatted;
                             }
                             if (dbColumn === 'billing_cycle' && value?.toLowerCase() === 'yearly') value = 'annually';
-                            if (dbColumn === 'status') value = value.toLowerCase();
+                            if (dbColumn === 'expense_type' || dbColumn === 'status') value = value.toLowerCase();
                             expense[dbColumn] = value;
                         }
                     });
 
+                    // Set expense type (default to manual)
+                    expense.expense_type = expense.expense_type === 'subscription' ? 'subscription' : 'manual';
+
                     // Infer status if not provided in CSV
                     if (!expense.status) {
                         if (expense.expense_type === 'subscription') {
-                            expense.status = 'active';
+                            const hasEnded = expense.end_date && new Date(expense.end_date) < new Date();
+                            expense.status = hasEnded ? 'inactive' : 'active';
                         } else {
                             expense.status = (expense.start_date && new Date(expense.start_date) <= new Date()) ? 'completed' : 'upcoming';
                         }
@@ -135,8 +140,8 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                         currency: expense.currency || 'GBP',
                         start_date: expense.start_date || '',
                         end_date: expense.end_date || null,
-                        expense_type: expense.expense_type || 'one-time',
-                        billing_cycle: expense.billing_cycle || null,
+                        expense_type: expense.expense_type,
+                        billing_cycle: expense.expense_type === 'subscription' ? (expense.billing_cycle || null) : null,
                         status: expense.status,
                     };
                 });
@@ -155,12 +160,15 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         const newStagedExpenses = [...stagedExpenses];
         const currentExpense = { ...newStagedExpenses[index], [field]: value };
         
-        if (field === 'expense_type' && value === 'one-time') {
-            currentExpense.billing_cycle = null;
-            currentExpense.status = 'completed';
-        }
-         if (field === 'expense_type' && value === 'subscription') {
-            currentExpense.status = 'active';
+        if (field === 'expense_type') {
+            if (value === 'manual') {
+                currentExpense.billing_cycle = null;
+                const isPast = currentExpense.start_date && new Date(currentExpense.start_date) <= new Date();
+                currentExpense.status = isPast ? 'completed' : 'upcoming';
+            } else { // subscription
+                const hasEnded = currentExpense.end_date && new Date(currentExpense.end_date) < new Date();
+                currentExpense.status = hasEnded ? 'inactive' : 'active';
+            }
         }
 
         newStagedExpenses[index] = currentExpense;
@@ -207,7 +215,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         { key: 'amount', label: 'Amount', type: 'number', className: 'w-24' },
         { key: 'start_date', label: 'Start Date', type: 'date', className: 'w-36' },
         { key: 'status', label: 'Status', type: 'select', className: 'w-32', options: [{value: 'upcoming', label: 'Upcoming'}, {value: 'completed', label: 'Completed'}, {value: 'active', label: 'Active'}, {value: 'inactive', label: 'Inactive'}] },
-        { key: 'expense_type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'one-time', label: 'One-Time'}, {value: 'subscription', label: 'Subscription'}] },
+        { key: 'expense_type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'manual', label: 'Manual'}, {value: 'subscription', label: 'Subscription'}] },
     ];
 
     return (
@@ -215,7 +223,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
             {step === 'upload' && (
                 <div className="space-y-4">
                      <div className="space-y-2 text-slate-300 text-sm">
-                        <p>Import expenses from a CSV file. The importer will match columns like 'Name', 'Amount', 'Status', 'Start Date' etc., and ignore any unrecognised columns.</p>
+                        <p>Import expenses from a CSV file. The importer will match columns like 'Name', 'Amount', 'Type' ('manual' or 'subscription'), 'Status', 'Start Date' etc., and ignore any unrecognised columns.</p>
                          <p className="font-semibold text-yellow-400">Date columns must be in DD/MM/YYYY or YYYY-MM-DD format.</p>
                         <p className="font-semibold text-yellow-400">All imported expenses will be assigned to the currently selected Trading Identity.</p>
                     </div>

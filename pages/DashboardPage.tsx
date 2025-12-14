@@ -42,6 +42,7 @@ interface Invoice {
 }
 
 type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
+type ExpenseType = 'manual' | 'subscription';
 
 interface Expense {
   id: string;
@@ -53,7 +54,7 @@ interface Expense {
   category: string;
   start_date: string;
   end_date?: string;
-  expense_type: 'one-time' | 'subscription';
+  expense_type: ExpenseType;
   billing_cycle?: 'monthly' | 'annually';
   status: ExpenseStatus;
   entity_id: string;
@@ -132,7 +133,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount_gbp, 0);
     const netProfit = totalRevenue - totalExpensesInPeriod;
     
-    const oneTimePayments = filteredExpenses.filter(e => e.expense_type === 'one-time').reduce((sum, e) => sum + e.amount_gbp, 0);
+    const manualPayments = filteredExpenses.filter(e => e.expense_type === 'manual').reduce((sum, e) => sum + e.amount_gbp, 0);
     const monthlySubscriptions = expenses
         .filter(e => e.expense_type === 'subscription' && e.status === 'active')
         .reduce((sum, e) => {
@@ -163,7 +164,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
                 <StatCard title="Active Subscriptions" value={`${formatCurrency(monthlySubscriptions)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
-                <StatCard title="One-Time Payments" value={formatCurrency(oneTimePayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
+                <StatCard title="Manual Payments" value={formatCurrency(manualPayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
             </div>
         </div>
     );
@@ -778,7 +779,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         category: string;
         start_date: string;
         end_date: string;
-        expense_type: 'one-time' | 'subscription';
+        expense_type: ExpenseType;
         billing_cycle: string | null;
     }>({ 
         name: '',
@@ -788,7 +789,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         category: '', 
         start_date: '',
         end_date: '',
-        expense_type: 'one-time',
+        expense_type: 'manual',
         billing_cycle: null
     });
     
@@ -797,7 +798,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         setFormData(prev => ({
             ...prev,
             [name]: type === 'number' ? parseFloat(value) || '' : value,
-            billing_cycle: name === 'expense_type' && value === 'one-time' ? null : prev.billing_cycle
+            billing_cycle: name === 'expense_type' && value === 'manual' ? null : prev.billing_cycle
         }));
     };
     
@@ -809,10 +810,11 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
             return;
         }
 
-        // Determine default status
+        // Determine default status based on type and dates
         let status: ExpenseStatus = 'upcoming';
         if (formData.expense_type === 'subscription') {
-            status = 'active';
+            const hasEnded = formData.end_date && new Date(formData.end_date) < new Date();
+            status = hasEnded ? 'inactive' : 'active';
         } else if (formData.start_date && new Date(formData.start_date) <= new Date()) {
             status = 'completed';
         }
@@ -844,12 +846,12 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div><label className="block text-sm font-medium text-slate-300">Start Date</label><input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                    <div><label className="block text-sm font-medium text-slate-300">End Date (Optional)</label><input type="date" name="end_date" value={formData.end_date} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                    <div><label className="block text-sm font-medium text-slate-300">End Date (for subscriptions)</label><input type="date" name="end_date" value={formData.end_date} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-300">Expense Type</label>
                     <select name="expense_type" value={formData.expense_type} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
-                        <option value="one-time">One-Time</option>
+                        <option value="manual">Manual</option>
                         <option value="subscription">Subscription</option>
                     </select>
                 </div>
