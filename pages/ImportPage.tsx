@@ -11,6 +11,7 @@ interface StagedExpense {
     description: string;
     amount: number | string;
     currency: string;
+    category: string;
     start_date: string;
     end_date: string | null;
     expense_type: ExpenseType;
@@ -82,13 +83,42 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                 
                 const header = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
                 
+                // Maps CSV header variants to our internal 'StagedExpense' property names.
+                // Headers like 'id' and 'created_at' are intentionally omitted to be ignored during import.
                 const headerMapping: { [key: string]: string } = {
-                    'name': 'name', 'title': 'name', 'description': 'description', 'amount': 'amount',
-                    'currency': 'currency', 'category': 'category',
-                    'start date': 'start_date', 'start_date': 'start_date', 'expense date': 'start_date',
-                    'end date': 'end_date', 'end_date': 'end_date',
-                    'expense type': 'expense_type', 'type': 'expense_type',
-                    'billing cycle': 'billing_cycle', 'cycle': 'billing_cycle',
+                    // Expense Name
+                    'name': 'name',
+                    'title': 'name',
+                    
+                    // Description
+                    'description': 'description',
+                    
+                    // Cost
+                    'amount': 'amount',
+                    
+                    // Currency (e.g., GBP, USD)
+                    'currency': 'currency',
+                    
+                    // Category
+                    'category': 'category',
+                    
+                    // Dates
+                    'start_date': 'start_date',
+                    'start date': 'start_date',
+                    'expense date': 'start_date',
+                    'end_date': 'end_date',
+                    'end date': 'end_date',
+                    
+                    // Type of expense
+                    'expense_type': 'expense_type',
+                    'type': 'expense_type',
+                    
+                    // For subscriptions
+                    'billing_cycle': 'billing_cycle',
+                    'billing cycle': 'billing_cycle',
+                    'cycle': 'billing_cycle',
+                    
+                    // Status
                     'status': 'status'
                 };
                 
@@ -138,6 +168,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                         description: expense.description || '',
                         amount: expense.amount || '',
                         currency: expense.currency || 'GBP',
+                        category: expense.category || '',
                         start_date: expense.start_date || '',
                         end_date: expense.end_date || null,
                         expense_type: expense.expense_type,
@@ -188,6 +219,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                 description: exp.description,
                 amount: exp.amount,
                 currency: exp.currency.toUpperCase(),
+                category: exp.category,
                 start_date: exp.start_date,
                 end_date: exp.end_date || null,
                 expense_type: exp.expense_type,
@@ -210,9 +242,10 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
     };
     
     const tableHeaders: { key: keyof StagedExpense, label: string, type: string, className?: string, options?: {value: any, label: string}[] }[] = [
-        { key: 'name', label: 'Name', type: 'text', className: 'w-1/6' },
-        { key: 'description', label: 'Description', type: 'text', className: 'w-1/4' },
+        { key: 'name', label: 'Name', type: 'text', className: 'w-48' },
+        { key: 'description', label: 'Description', type: 'text', className: 'w-64' },
         { key: 'amount', label: 'Amount', type: 'number', className: 'w-24' },
+        { key: 'category', label: 'Category', type: 'text', className: 'w-32' },
         { key: 'start_date', label: 'Start Date', type: 'date', className: 'w-36' },
         { key: 'status', label: 'Status', type: 'select', className: 'w-32', options: [{value: 'upcoming', label: 'Upcoming'}, {value: 'completed', label: 'Completed'}, {value: 'active', label: 'Active'}, {value: 'inactive', label: 'Inactive'}] },
         { key: 'expense_type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'manual', label: 'Manual'}, {value: 'subscription', label: 'Subscription'}] },
