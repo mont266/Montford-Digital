@@ -593,10 +593,12 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                              </button>
                          ))}
                      </div>
-                      <button onClick={() => setShowImportModal(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 text-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                        Import CSV
-                    </button>
+                      {selectedEntityId !== 'all' && (
+                        <button onClick={() => setShowImportModal(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 text-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                            Import CSV
+                        </button>
+                      )}
                      <button onClick={handleExportCSV} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 text-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                         Export CSV
@@ -952,30 +954,6 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        let status: ExpenseStatus;
-        const today = new Date();
-        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-        const startDateParts = formData.start_date.split('-').map(Number);
-        const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
-
-        if (formData.type === 'subscription') {
-            const endDate = formData.end_date ? (() => {
-                const endDateParts = formData.end_date.split('-').map(Number);
-                return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
-            })() : null;
-            
-            if (endDate && endDate < todayDateOnly) {
-                status = 'inactive';
-            } else if (startDate > todayDateOnly) {
-                status = 'upcoming';
-            } else {
-                status = 'active';
-            }
-        } else { // manual
-            status = startDate <= todayDateOnly ? 'completed' : 'upcoming';
-        }
         
         const expenseData = {
             name: formData.name,
@@ -987,7 +965,6 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
             end_date: formData.end_date || null,
             type: formData.type,
             billing_cycle: formData.type === 'subscription' ? formData.billing_cycle : null,
-            status,
         };
         
         let error;

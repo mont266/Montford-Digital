@@ -246,7 +246,6 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                 end_date: exp.end_date || null,
                 type: exp.type,
                 billing_cycle: exp.billing_cycle || null,
-                status: exp.status,
                 entity_id: selectedEntityId,
             }));
 
