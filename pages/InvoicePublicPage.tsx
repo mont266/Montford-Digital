@@ -93,6 +93,8 @@ const InvoicePublicPage: React.FC = () => {
     return 'bg-slate-700 text-slate-300 border-slate-600';
   }
 
+  const stripeFee = invoice ? (invoice.amount * 0.025) + 0.20 : 0;
+
   return (
     <>
       <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
@@ -190,12 +192,14 @@ const InvoicePublicPage: React.FC = () => {
                                       >
                                           Pay by Bank Transfer
                                       </button>
-                                      <button
-                                          onClick={handlePayment}
-                                          className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
-                                      >
-                                          Pay with Stripe
-                                      </button>
+                                      {stripeFee <= 50 && (
+                                        <button
+                                            onClick={handlePayment}
+                                            className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
+                                        >
+                                            Pay with Card
+                                        </button>
+                                      )}
                                   </>
                               )}
                           </div>
