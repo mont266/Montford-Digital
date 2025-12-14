@@ -53,7 +53,7 @@ interface Expense {
   category: string;
   start_date: string;
   end_date?: string;
-  expense_type: 'one-time' | 'subscription';
+  type: 'manual' | 'subscription';
   billing_cycle?: 'monthly' | 'annually';
   status: ExpenseStatus;
   entity_id: string;
@@ -132,9 +132,9 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount_gbp, 0);
     const netProfit = totalRevenue - totalExpensesInPeriod;
     
-    const oneTimePayments = filteredExpenses.filter(e => e.expense_type === 'one-time').reduce((sum, e) => sum + e.amount_gbp, 0);
+    const oneTimePayments = filteredExpenses.filter(e => e.type === 'manual').reduce((sum, e) => sum + e.amount_gbp, 0);
     const monthlySubscriptions = expenses
-        .filter(e => e.expense_type === 'subscription' && e.status === 'active')
+        .filter(e => e.type === 'subscription' && e.status === 'active')
         .reduce((sum, e) => {
             if (e.billing_cycle === 'annually') {
                 return sum + (e.amount_gbp / 12);
@@ -450,7 +450,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
 
     const expectedThisMonth = useMemo(() => {
         return expenses
-            .filter(e => e.expense_type === 'subscription' && e.status === 'active')
+            .filter(e => e.type === 'subscription' && e.status === 'active')
             .reduce((sum, e) => {
                 if (e.billing_cycle === 'annually') {
                     return sum + (e.amount_gbp / 12);
@@ -528,7 +528,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                             <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
                                                 <div className="py-1" role="menu">
                                                     <span className="block px-4 pt-2 pb-1 text-xs text-slate-500">Change Status</span>
-                                                    {exp.expense_type === 'subscription' ? (
+                                                    {exp.type === 'subscription' ? (
                                                         <>
                                                             <button onClick={() => { handleStatusChange(exp.id, 'active'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Active</button>
                                                             <button onClick={() => { handleStatusChange(exp.id, 'inactive'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Inactive</button>
@@ -778,7 +778,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         category: string;
         start_date: string;
         end_date: string;
-        expense_type: 'one-time' | 'subscription';
+        type: 'manual' | 'subscription';
         billing_cycle: string | null;
     }>({ 
         name: '',
@@ -788,7 +788,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         category: '', 
         start_date: '',
         end_date: '',
-        expense_type: 'one-time',
+        type: 'manual',
         billing_cycle: null
     });
     
@@ -797,7 +797,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         setFormData(prev => ({
             ...prev,
             [name]: type === 'number' ? parseFloat(value) || '' : value,
-            billing_cycle: name === 'expense_type' && value === 'one-time' ? null : prev.billing_cycle
+            billing_cycle: name === 'type' && value === 'manual' ? null : prev.billing_cycle
         }));
     };
     
@@ -811,7 +811,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
 
         // Determine default status
         let status: ExpenseStatus = 'upcoming';
-        if (formData.expense_type === 'subscription') {
+        if (formData.type === 'subscription') {
             status = 'active';
         } else if (formData.start_date && new Date(formData.start_date) <= new Date()) {
             status = 'completed';
@@ -822,11 +822,15 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
             status,
             currency: formData.currency.toUpperCase(),
             end_date: formData.end_date || null,
-            entity_id: selectedEntityId
+            entity_id: selectedEntityId,
+            billing_cycle: formData.billing_cycle || null,
         };
 
         const { error } = await supabase.from('expenses').insert([submissionData]);
-        if (error) console.error("Error creating expense:", error);
+        if (error) {
+            console.error("Error creating expense:", error);
+            alert(`Error: ${error.message}`);
+        }
         else {
             refreshData();
             onClose();
@@ -848,12 +852,12 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-300">Expense Type</label>
-                    <select name="expense_type" value={formData.expense_type} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
-                        <option value="one-time">One-Time</option>
+                    <select name="type" value={formData.type} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
+                        <option value="manual">Manual</option>
                         <option value="subscription">Subscription</option>
                     </select>
                 </div>
-                {formData.expense_type === 'subscription' && (
+                {formData.type === 'subscription' && (
                     <div>
                         <label className="block text-sm font-medium text-slate-300">Billing Cycle</label>
                         <select name="billing_cycle" value={formData.billing_cycle || ''} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">

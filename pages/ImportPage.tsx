@@ -14,7 +14,7 @@ interface StagedExpense {
     category: string;
     start_date: string;
     end_date: string | null;
-    expense_type: ExpenseType;
+    type: ExpenseType;
     billing_cycle: 'monthly' | 'annually' | null;
     status: ExpenseStatus;
     [key: string]: any; // Allow other properties
@@ -110,8 +110,8 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                     'end date': 'end_date',
                     
                     // Type of expense
-                    'expense_type': 'expense_type',
-                    'type': 'expense_type',
+                    'expense_type': 'type',
+                    'type': 'type',
                     
                     // For subscriptions
                     'billing_cycle': 'billing_cycle',
@@ -140,17 +140,17 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                                 value = formatted;
                             }
                             if (dbColumn === 'billing_cycle' && value?.toLowerCase() === 'yearly') value = 'annually';
-                            if (dbColumn === 'expense_type' || dbColumn === 'status') value = value.toLowerCase();
+                            if (dbColumn === 'type' || dbColumn === 'status') value = value.toLowerCase();
                             expense[dbColumn] = value;
                         }
                     });
 
                     // Set expense type (default to manual)
-                    expense.expense_type = expense.expense_type === 'subscription' ? 'subscription' : 'manual';
+                    expense.type = expense.type === 'subscription' ? 'subscription' : 'manual';
 
                     // Infer status if not provided in CSV
                     if (!expense.status) {
-                        if (expense.expense_type === 'subscription') {
+                        if (expense.type === 'subscription') {
                             const hasEnded = expense.end_date && new Date(expense.end_date) < new Date();
                             expense.status = hasEnded ? 'inactive' : 'active';
                         } else {
@@ -161,7 +161,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                     if (!expense.description && !expense.name) throw new Error(`Row ${index + 2} needs a Name or Description.`);
                     if (expense.amount === undefined || expense.amount === '') throw new Error(`Row ${index + 2} needs an Amount.`);
                     if (!expense.start_date) throw new Error(`Row ${index + 2} needs a Start Date.`);
-                    if (expense.expense_type === 'subscription' && !expense.billing_cycle) throw new Error(`Row ${index + 2} is a subscription but is missing a Billing Cycle.`);
+                    if (expense.type === 'subscription' && !expense.billing_cycle) throw new Error(`Row ${index + 2} is a subscription but is missing a Billing Cycle.`);
                     
                     return {
                         name: expense.name || '',
@@ -171,8 +171,8 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                         category: expense.category || '',
                         start_date: expense.start_date || '',
                         end_date: expense.end_date || null,
-                        expense_type: expense.expense_type,
-                        billing_cycle: expense.expense_type === 'subscription' ? (expense.billing_cycle || null) : null,
+                        type: expense.type,
+                        billing_cycle: expense.type === 'subscription' ? (expense.billing_cycle || null) : null,
                         status: expense.status,
                     };
                 });
@@ -191,7 +191,7 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         const newStagedExpenses = [...stagedExpenses];
         const currentExpense = { ...newStagedExpenses[index], [field]: value };
         
-        if (field === 'expense_type') {
+        if (field === 'type') {
             if (value === 'manual') {
                 currentExpense.billing_cycle = null;
                 const isPast = currentExpense.start_date && new Date(currentExpense.start_date) <= new Date();
@@ -222,8 +222,8 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                 category: exp.category,
                 start_date: exp.start_date,
                 end_date: exp.end_date || null,
-                expense_type: exp.expense_type,
-                billing_cycle: exp.billing_cycle,
+                type: exp.type,
+                billing_cycle: exp.billing_cycle || null,
                 status: exp.status,
                 entity_id: selectedEntityId,
             }));
@@ -248,7 +248,8 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         { key: 'category', label: 'Category', type: 'text', className: 'w-32' },
         { key: 'start_date', label: 'Start Date', type: 'date', className: 'w-36' },
         { key: 'status', label: 'Status', type: 'select', className: 'w-32', options: [{value: 'upcoming', label: 'Upcoming'}, {value: 'completed', label: 'Completed'}, {value: 'active', label: 'Active'}, {value: 'inactive', label: 'Inactive'}] },
-        { key: 'expense_type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'manual', label: 'Manual'}, {value: 'subscription', label: 'Subscription'}] },
+        { key: 'type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'manual', label: 'Manual'}, {value: 'subscription', label: 'Subscription'}] },
+        { key: 'billing_cycle', label: 'Billing Cycle', type: 'select', className: 'w-32', options: [{value: '', label: 'N/A'}, {value: 'monthly', label: 'Monthly'}, {value: 'annually', label: 'Annually'}] },
     ];
 
     return (
@@ -290,7 +291,8 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                                                     <select 
                                                         value={exp[h.key] || ''} 
                                                         onChange={e => handleStagedChange(index, h.key, e.target.value)} 
-                                                        className="w-full bg-slate-700 border-slate-600 rounded p-1.5 text-white text-xs capitalize"
+                                                        className="w-full bg-slate-700 border-slate-600 rounded p-1.5 text-white text-xs capitalize disabled:opacity-50"
+                                                        disabled={h.key === 'billing_cycle' && exp.type !== 'subscription'}
                                                     >
                                                         {h.options?.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                                     </select>
