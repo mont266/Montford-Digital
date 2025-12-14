@@ -142,7 +142,12 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
 
-    const { filteredInvoices, filteredExpenses, totalExpensesInPeriod } = useMemo(() => {
+    const { 
+        filteredInvoices, 
+        filteredExpenses, 
+        totalExpensesInPeriod,
+        totalSubscriptionSpendInPeriod
+    } = useMemo(() => {
         const getUKFinancialYear = (date: Date) => {
             const year = date.getFullYear();
             const month = date.getMonth(); // 0 = Jan, 3 = Apr
@@ -234,8 +239,41 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
             }
             return sum;
         }, 0);
+        
+        const subscriptionSpend = expenses.reduce((sum, exp) => {
+            if (exp.type === 'subscription' && exp.billing_cycle) {
+                let spendInPeriod = 0;
+                const subStartDate = new Date(exp.start_date);
+                const periodEndDate = endDate || today;
+                
+                const effectiveSubEndDate = exp.end_date ? new Date(exp.end_date) : periodEndDate;
+                const finalEndDate = periodEndDate < effectiveSubEndDate ? periodEndDate : effectiveSubEndDate;
 
-        return { filteredInvoices, filteredExpenses: filteredExpensesForCards, totalExpensesInPeriod: totalExpenses };
+                if (subStartDate > finalEndDate) return sum;
+
+                let paymentDate = new Date(subStartDate);
+                while (paymentDate <= finalEndDate) {
+                    if (!startDate || paymentDate >= startDate) {
+                         spendInPeriod += exp.amount_gbp;
+                    }
+                    
+                    if (exp.billing_cycle === 'monthly') {
+                        paymentDate.setMonth(paymentDate.getMonth() + 1);
+                    } else { // annually
+                        paymentDate.setFullYear(paymentDate.getFullYear() + 1);
+                    }
+                }
+                return sum + spendInPeriod;
+            }
+            return sum;
+        }, 0);
+
+        return { 
+            filteredInvoices, 
+            filteredExpenses: filteredExpensesForCards, 
+            totalExpensesInPeriod: totalExpenses,
+            totalSubscriptionSpendInPeriod: subscriptionSpend
+        };
 
     }, [timeSpan, invoices, expenses]);
 
@@ -298,25 +336,34 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     };
     
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                 <h2 className="text-2xl font-bold text-white">Overview</h2>
-                 <div className="flex space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
-                     {(['7d', 'mtd', 'tfy', 'lfy', 'all'] as const).map(span => (
-                         <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
-                            {timeSpanLabels[span]}
-                         </button>
-                     ))}
-                 </div>
+        <div className="space-y-10">
+            <div>
+                <div className="flex justify-between items-center mb-6">
+                     <h2 className="text-2xl font-bold text-white">Overview</h2>
+                     <div className="flex space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
+                         {(['7d', 'mtd', 'tfy', 'lfy', 'all'] as const).map(span => (
+                             <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
+                                {timeSpanLabels[span]}
+                             </button>
+                         ))}
+                     </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
+                    <StatCard title="Est. Tax Paid" value={formatCurrency(totalTaxPaid)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 001.414 0l2.414-2.414a1 1 0 01.707-.293H15v5" /></svg>} />
+                    <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
+                    <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
+                    <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
-                <StatCard title="Est. Tax Paid" value={formatCurrency(totalTaxPaid)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 001.414 0l2.414-2.414a1 1 0 01.707-.293H15v5" /></svg>} />
-                <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
-                <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
-                <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
-                <StatCard title="Active Subscriptions" value={`${formatCurrency(monthlySubscriptions)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
-                <StatCard title="One-Time Payments" value={formatCurrency(oneTimePayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
+
+            <div>
+                <h3 className="text-xl font-bold text-white mb-4">Expense Breakdown</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard title="Active Subscriptions" value={`${formatCurrency(monthlySubscriptions)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
+                    <StatCard title={`Subscriptions Spend (${timeSpanLabels[timeSpan]})`} value={formatCurrency(totalSubscriptionSpendInPeriod)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>} />
+                    <StatCard title="One-Time Payments" value={formatCurrency(oneTimePayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
+                </div>
             </div>
         </div>
     );
