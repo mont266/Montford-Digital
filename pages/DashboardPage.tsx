@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import ImportPage from './ImportPage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -884,6 +885,7 @@ const DashboardPage: React.FC = () => {
         { path: "/dashboard/projects", label: "Projects" },
         { path: "/dashboard/invoices", label: "Invoices" },
         { path: "/dashboard/expenses", label: "Expenses" },
+        { path: "/dashboard/import", label: "Import Expenses" },
     ];
 
     return (
@@ -936,6 +938,7 @@ const DashboardPage: React.FC = () => {
                         <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                         <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                         <Route path="expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route path="import" element={<ImportPage selectedEntityId={selectedEntityId} />} />
                     </Routes>
                  )}
             </main>
