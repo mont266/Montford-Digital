@@ -498,24 +498,60 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         }
     };
 
-    const filteredExpenses = useMemo(() => {
+    const { totalSpend, recurringMonthlyCost, projectedAnnualCost } = useMemo(() => {
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        let startDate: Date | null = null;
-
-        switch (timeSpan) {
-            case '7d': startDate = new Date(today); startDate.setDate(today.getDate() - 7); break;
-            case '30d': startDate = new Date(today); startDate.setMonth(today.getMonth() - 1); break;
-            case '90d': startDate = new Date(today); startDate.setMonth(today.getMonth() - 3); break;
-            case '1y': startDate = new Date(today); startDate.setFullYear(today.getFullYear() - 1); break;
-            case 'all': default: break;
-        }
-        return startDate ? expenses.filter(exp => new Date(exp.start_date) >= startDate!) : expenses;
-    }, [timeSpan, expenses]);
-
-    const { totalSpend, recurringMonthlyCost, projectedAnnualCost } = useMemo(() => {
-        const totalSpend = filteredExpenses.reduce((sum, exp) => sum + exp.amount_gbp, 0);
         
+        let calculatedTotalSpend = 0;
+
+        if (timeSpan === 'all') {
+            calculatedTotalSpend = expenses.reduce((sum, exp) => {
+                if (exp.type === 'manual') {
+                    return sum + exp.amount_gbp;
+                }
+                if (exp.type === 'subscription') {
+                    return sum + calculateTotalSpend(exp);
+                }
+                return sum;
+            }, 0);
+        } else {
+            let periodStartDate: Date = new Date(today);
+            switch (timeSpan) {
+                case '7d': periodStartDate.setDate(today.getDate() - 7); break;
+                case '30d': periodStartDate.setMonth(today.getMonth() - 1); break;
+                case '90d': periodStartDate.setMonth(today.getMonth() - 3); break;
+                case '1y': periodStartDate.setFullYear(today.getFullYear() - 1); break;
+            }
+
+            calculatedTotalSpend = expenses.reduce((sum, exp) => {
+                let spendInPeriod = 0;
+                if (exp.type === 'manual') {
+                    const expenseDate = new Date(exp.start_date);
+                    if (expenseDate >= periodStartDate && expenseDate <= today) {
+                        spendInPeriod = exp.amount_gbp;
+                    }
+                } else if (exp.type === 'subscription' && exp.billing_cycle) {
+                    const subStartDate = new Date(exp.start_date);
+                    const subEndDate = exp.end_date ? new Date(exp.end_date) : today;
+                    const effectiveEndDate = subEndDate > today ? today : subEndDate;
+
+                    let paymentDate = new Date(subStartDate);
+                    while (paymentDate <= effectiveEndDate) {
+                        if (paymentDate >= periodStartDate) {
+                            spendInPeriod += exp.amount_gbp;
+                        }
+
+                        if (exp.billing_cycle === 'monthly') {
+                            paymentDate.setMonth(paymentDate.getMonth() + 1);
+                        } else { // annually
+                            paymentDate.setFullYear(paymentDate.getFullYear() + 1);
+                        }
+                    }
+                }
+                return sum + spendInPeriod;
+            }, 0);
+        }
+
         const recurringMonthlyCost = expenses
             .filter(e => e.type === 'subscription' && e.status === 'active')
             .reduce((sum, e) => {
@@ -530,8 +566,8 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
             
         const projectedAnnualCost = recurringMonthlyCost * 12;
 
-        return { totalSpend, recurringMonthlyCost, projectedAnnualCost };
-    }, [filteredExpenses, expenses]);
+        return { totalSpend: calculatedTotalSpend, recurringMonthlyCost, projectedAnnualCost };
+    }, [timeSpan, expenses]);
     
     const expectedPaymentsThisMonth = useMemo(() => {
         const today = new Date();
