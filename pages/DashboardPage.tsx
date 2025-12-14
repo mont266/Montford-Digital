@@ -2,6 +2,8 @@
 
 
 
+
+
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -140,7 +142,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
 
-    const filteredData = useMemo(() => {
+    const { filteredInvoices, filteredExpenses, totalExpensesInPeriod } = useMemo(() => {
         const getUKFinancialYear = (date: Date) => {
             const year = date.getFullYear();
             const month = date.getMonth(); // 0 = Jan, 3 = Apr
@@ -191,15 +193,53 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
         }
 
         const filteredInvoices = invoices.filter(inv => filterByDate(new Date(inv.issue_date)));
-        const filteredExpenses = expenses.filter(exp => filterByDate(new Date(exp.start_date)));
+        
+        // This is used for the "One-Time Payments" card. Filtering by start_date is correct for this specific purpose.
+        const filteredExpensesForCards = expenses.filter(exp => filterByDate(new Date(exp.start_date)));
+        
+        // Correctly calculate total spend in period, accounting for recurring subscriptions.
+        const totalExpenses = expenses.reduce((sum, exp) => {
+            if (exp.type === 'manual') {
+                const expenseDate = new Date(exp.start_date);
+                if ((!startDate || expenseDate >= startDate) && (!endDate || expenseDate <= endDate)) {
+                    return sum + exp.amount_gbp;
+                }
+                return sum;
+            }
 
-        return { filteredInvoices, filteredExpenses };
+            if (exp.type === 'subscription' && exp.billing_cycle) {
+                let spendInPeriod = 0;
+                const subStartDate = new Date(exp.start_date);
+                const periodEndDate = endDate || today;
+                
+                const effectiveSubEndDate = exp.end_date ? new Date(exp.end_date) : periodEndDate;
+                
+                const finalEndDate = periodEndDate < effectiveSubEndDate ? periodEndDate : effectiveSubEndDate;
+
+                if (subStartDate > finalEndDate) return sum;
+
+                let paymentDate = new Date(subStartDate);
+                while (paymentDate <= finalEndDate) {
+                    if (!startDate || paymentDate >= startDate) {
+                         spendInPeriod += exp.amount_gbp;
+                    }
+                    
+                    if (exp.billing_cycle === 'monthly') {
+                        paymentDate.setMonth(paymentDate.getMonth() + 1);
+                    } else { // annually
+                        paymentDate.setFullYear(paymentDate.getFullYear() + 1);
+                    }
+                }
+                return sum + spendInPeriod;
+            }
+            return sum;
+        }, 0);
+
+        return { filteredInvoices, filteredExpenses: filteredExpensesForCards, totalExpensesInPeriod: totalExpenses };
 
     }, [timeSpan, invoices, expenses]);
 
 
-    const { filteredInvoices, filteredExpenses } = filteredData;
-    
     const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
 
     const invoiceTaxMap = useMemo(() => {
@@ -234,7 +274,6 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
         .filter(inv => inv.status === 'paid')
         .reduce((sum, inv) => sum + (invoiceTaxMap.get(inv.id) || 0), 0);
     
-    const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount_gbp, 0);
     const netProfit = totalRevenue - totalExpensesInPeriod - totalTaxPaid;
     
     const oneTimePayments = filteredExpenses.filter(e => e.type === 'manual').reduce((sum, e) => sum + e.amount_gbp, 0);
