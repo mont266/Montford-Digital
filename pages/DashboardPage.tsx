@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -44,23 +45,35 @@ interface Invoice {
 type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
 type ExpenseType = 'manual' | 'subscription';
 
+// Updated Expense interface to match the new schema
 interface Expense {
   id: string;
   name?: string;
   description: string;
-  amount: number; // Original amount
-  currency?: string; // Original currency
-  amount_gbp: number; // Standardized amount in GBP
+  amount: number;
+  currency: string;
   category: string;
   start_date: string;
   end_date?: string;
-  expense_type: ExpenseType;
+  type: ExpenseType;
   billing_cycle?: 'monthly' | 'annually';
-  status: ExpenseStatus;
   entity_id: string;
 }
 
 type TimeSpan = '7d' | 'mtd' | 'ytd' | 'all';
+
+// --- Helper Functions ---
+const getExpenseStatus = (expense: Expense): ExpenseStatus => {
+    const now = new Date();
+    if (expense.type === 'subscription') {
+        const hasEnded = expense.end_date && new Date(expense.end_date) < now;
+        return hasEnded ? 'inactive' : 'active';
+    }
+    // manual type
+    const isPast = new Date(expense.start_date) <= now;
+    return isPast ? 'completed' : 'upcoming';
+};
+
 
 // --- Reusable Components ---
 const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
@@ -85,918 +98,107 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: s
     </div>
 );
 
-const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
-const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB');
+// --- Main Page Component ---
 
-
-// --- Page Components ---
-const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
-    const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
-
-    const filteredData = useMemo(() => {
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        let startDate: Date | null = null;
-
-        switch (timeSpan) {
-            case '7d':
-                startDate = new Date(today);
-                startDate.setDate(today.getDate() - 7);
-                break;
-            case 'mtd':
-                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-                break;
-            case 'ytd':
-                startDate = new Date(today.getFullYear(), 0, 1);
-                break;
-            case 'all':
-            default:
-                break;
-        }
-
-        const filteredInvoices = startDate
-            ? invoices.filter(inv => new Date(inv.issue_date) >= startDate!)
-            : invoices;
-        
-        const filteredExpenses = startDate
-            ? expenses.filter(exp => new Date(exp.start_date) >= startDate!)
-            : expenses;
-
-        return { filteredInvoices, filteredExpenses };
-
-    }, [timeSpan, invoices, expenses]);
-
-
-    const { filteredInvoices, filteredExpenses } = filteredData;
-    
-    const totalRevenue = filteredInvoices.filter(inv => inv.status === 'paid').reduce((acc, inv) => acc + inv.amount, 0);
-    const totalExpensesInPeriod = filteredExpenses.reduce((acc, exp) => acc + exp.amount_gbp, 0);
-    const netProfit = totalRevenue - totalExpensesInPeriod;
-    
-    const manualPayments = filteredExpenses.filter(e => e.expense_type === 'manual').reduce((sum, e) => sum + e.amount_gbp, 0);
-    const monthlySubscriptions = expenses
-        .filter(e => e.expense_type === 'subscription' && e.status === 'active')
-        .reduce((sum, e) => {
-            if (e.billing_cycle === 'annually') {
-                return sum + (e.amount_gbp / 12);
-            }
-            return sum + e.amount_gbp;
-        }, 0);
-    
-    const outstandingAmount = filteredInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
-    const overdueAmount = filteredInvoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
-    
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                 <h2 className="text-2xl font-bold text-white">Overview</h2>
-                 <div className="flex space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
-                     {(['7d', 'mtd', 'ytd', 'all'] as const).map(span => (
-                         <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
-                            {span === '7d' ? 'Last 7 Days' : span === 'mtd' ? 'MTD' : span === 'ytd' ? 'YTD' : 'All Time'}
-                         </button>
-                     ))}
-                 </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <StatCard title="Total Revenue" value={formatCurrency(totalRevenue)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>} />
-                <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
-                <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
-                <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
-                <StatCard title="Active Subscriptions" value={`${formatCurrency(monthlySubscriptions)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
-                <StatCard title="Manual Payments" value={formatCurrency(manualPayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
-            </div>
-        </div>
-    );
-};
-
-const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; selectedEntityId: string }> = ({ projects, refreshData, selectedEntityId }) => {
-    const [showModal, setShowModal] = useState(false);
-    const [editingProject, setEditingProject] = useState<Project | null>(null);
-
-    const handleEdit = (project: Project) => {
-        setEditingProject(project);
-        setShowModal(true);
-    };
-
-    const handleAddNew = () => {
-        setEditingProject(null);
-        setShowModal(true);
-    };
-
-    const handleCloseModal = () => {
-        setShowModal(false);
-        setEditingProject(null);
-    };
-
-    const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this project? This will also delete all associated invoices.")) {
-            const { error } = await supabase.from('projects').delete().eq('id', id);
-            if (error) console.error("Error deleting project:", error);
-            else refreshData();
-        }
-    };
-    
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Projects</h2>
-                <button onClick={handleAddNew} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Project</button>
-            </div>
-            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-700">
-                    <thead className="bg-slate-900/50">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Project Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Client Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700">
-                        {projects.map(project => (
-                            <tr key={project.id}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{project.client_name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
-                                    <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
-                                    <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            {showModal && <ProjectForm projectToEdit={editingProject} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
-        </div>
-    );
+const DashboardContent: React.FC<{ selectedEntityId: string }> = ({ selectedEntityId }) => {
+    // Placeholder for content based on selected entity
+    return <div><h3 className="text-white">Content for entity: {selectedEntityId}</h3><p>Data and components for this section would be built out here.</p></div>;
 };
 
 
-const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; selectedEntityId: string }> = ({ invoices, projects, refreshData, selectedEntityId }) => {
-    const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-    const [showProjectModal, setShowProjectModal] = useState(false);
-    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-
-    // --- Tax Calculation Logic ---
-    const BASE_SALARY = 43000 + (43000 * 0.08); // 46440
-    const TAX_YEAR_START = useMemo(() => new Date('2024-04-06'), []);
-
-    // Tax Bands (England 2024/2025)
-    const PA_THRESHOLD = 12570;
-    const BASIC_RATE_THRESHOLD = 50270;
-    const HIGHER_RATE_THRESHOLD = 125140;
-    const BASIC_RATE = 0.20;
-    const HIGHER_RATE = 0.40;
-    const ADDITIONAL_RATE = 0.45;
-
-    // NI Class 4 Bands (2024/2025)
-    const NI_LOWER_THRESHOLD = 12570;
-    const NI_UPPER_THRESHOLD = 50270;
-    const NI_LOWER_RATE = 0.06;
-    const NI_HIGHER_RATE = 0.02;
-
-    const calculateTaxForInvoice = useCallback((invoiceAmount: number, baseIncome: number, alreadyEarnedThisYear: number) => {
-        let incomeTax = 0;
-        let nationalInsurance = 0;
-        const startingIncome = baseIncome + alreadyEarnedThisYear;
-
-        // A simplified marginal tax calculation, iterating pound by pound
-        for (let i = 1; i <= Math.floor(invoiceAmount); i++) {
-            const currentTotalIncome = startingIncome + i;
-            
-            // Income Tax Calculation for this pound
-            if (currentTotalIncome > HIGHER_RATE_THRESHOLD) {
-                incomeTax += ADDITIONAL_RATE;
-            } else if (currentTotalIncome > BASIC_RATE_THRESHOLD) {
-                incomeTax += HIGHER_RATE;
-            } else if (currentTotalIncome > PA_THRESHOLD) {
-                incomeTax += BASIC_RATE;
-            }
-
-            // National Insurance Calculation for this pound
-            if (currentTotalIncome > NI_UPPER_THRESHOLD) {
-                nationalInsurance += NI_HIGHER_RATE;
-            } else if (currentTotalIncome > NI_LOWER_THRESHOLD) {
-                nationalInsurance += NI_LOWER_RATE;
-            }
-        }
-        
-        return {
-            incomeTax,
-            nationalInsurance,
-            totalTax: incomeTax + nationalInsurance
-        };
-    }, []);
-
-    const totalPaidInvoicesThisYear = useMemo(() => {
-        return invoices
-            .filter(inv => inv.status === 'paid' && new Date(inv.issue_date) >= TAX_YEAR_START)
-            .reduce((acc, inv) => acc + inv.amount, 0);
-    }, [invoices, TAX_YEAR_START]);
-    
-    // --- End Tax Calculation Logic ---
-
-
-    useEffect(() => {
-        const handleDocumentClick = (e: MouseEvent) => {
-            if (!(e.target as HTMLElement).closest('.actions-dropdown-container')) {
-                setOpenDropdownId(null);
-            }
-        };
-        if (openDropdownId) {
-            document.addEventListener('click', handleDocumentClick);
-        }
-        return () => {
-            document.removeEventListener('click', handleDocumentClick);
-        };
-    }, [openDropdownId]);
-
-    const handleUpdateStatus = async (id: string, status: Invoice['status']) => {
-        const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
-        if (error) console.error("Error updating status:", error);
-        else refreshData();
-    };
-
-    const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this invoice?")) {
-            const { error } = await supabase.from('invoices').delete().eq('id', id);
-            if (error) console.error("Error deleting invoice:", error);
-            else refreshData();
-        }
-    };
-    
-    // We need to sort paid invoices by date to correctly calculate running total
-    const sortedInvoices = useMemo(() => [...invoices].sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime()), [invoices]);
-    
-    let runningPaidTotalThisYear = 0;
-
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Invoices</h2>
-                <button onClick={() => setShowInvoiceModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Invoice</button>
-            </div>
-            <div className={`bg-slate-800 border border-slate-700 rounded-lg ${openDropdownId ? 'overflow-visible' : 'overflow-x-auto'}`}>
-                <table className="min-w-full divide-y divide-slate-700">
-                    <thead className="bg-slate-900/50">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Number</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Project</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Due Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider relative group">
-                                Financials
-                                <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 p-2 bg-slate-900 text-slate-300 text-xs rounded-md border border-slate-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                    Client-side estimate for planning purposes only. Based on 2024/25 England tax bands with a £46,440 base salary. Not financial advice.
-                                </span>
-                            </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700">
-                        {sortedInvoices.map(invoice => {
-                            const isPaidThisYear = invoice.status === 'paid' && new Date(invoice.issue_date) >= TAX_YEAR_START;
-                            
-                            const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
-
-                            const stripeFee = (invoice.amount * 0.025) + 0.20;
-                            const totalTax = taxCalculation.totalTax;
-                            const takeHome = invoice.amount - stripeFee - totalTax;
-                            
-                            if (isPaidThisYear) {
-                                runningPaidTotalThisYear += invoice.amount;
-                            }
-
-                            return (
-                                <tr key={invoice.id} className="hover:bg-slate-800/50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.created_at)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(invoice.due_date)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
-                                        <div className="flex flex-col">
-                                            <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(stripeFee)}</span></span>
-                                            <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
-                                            <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                                        <div className="relative inline-block text-left actions-dropdown-container">
-                                            <button
-                                                onClick={() => setOpenDropdownId(openDropdownId === invoice.id ? null : invoice.id)}
-                                                className="inline-flex justify-center w-full rounded-full p-2 text-sm font-medium text-slate-400 hover:bg-slate-700 focus:outline-none"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                                                </svg>
-                                            </button>
-
-                                            {openDropdownId === invoice.id && (
-                                                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
-                                                    <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
-                                                        {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
-                                                        {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
-                                                        <div className="border-t border-slate-700 my-1"></div>
-                                                        <button onClick={() => { handleDelete(invoice.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                </table>
-            </div>
-            {showInvoiceModal && <InvoiceForm projects={projects} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} selectedEntityId={selectedEntityId} />}
-            {showProjectModal && <ProjectForm onClose={() => setShowProjectModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
-        </div>
-    );
-};
-
-const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string }> = ({ expenses, refreshData, selectedEntityId }) => {
-    const [showModal, setShowModal] = useState(false);
-    const [showImportModal, setShowImportModal] = useState(false);
-    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-
-    useEffect(() => {
-        const handleDocumentClick = (e: MouseEvent) => {
-            if (!(e.target as HTMLElement).closest('.actions-dropdown-container')) {
-                setOpenDropdownId(null);
-            }
-        };
-        if (openDropdownId) { document.addEventListener('click', handleDocumentClick); }
-        return () => { document.removeEventListener('click', handleDocumentClick); };
-    }, [openDropdownId]);
-
-    const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this expense record permanently?")) {
-            const { error } = await supabase.from('expenses').delete().eq('id', id);
-            if (error) console.error("Error deleting expense:", error);
-            else refreshData();
-        }
-    };
-    
-    const handleStatusChange = async (id: string, status: ExpenseStatus) => {
-        const { error } = await supabase.from('expenses').update({ status }).eq('id', id);
-        if (error) console.error("Error updating expense status:", error);
-        else refreshData();
-    };
-
-    const expectedThisMonth = useMemo(() => {
-        return expenses
-            .filter(e => e.expense_type === 'subscription' && e.status === 'active')
-            .reduce((sum, e) => {
-                if (e.billing_cycle === 'annually') {
-                    return sum + (e.amount_gbp / 12);
-                }
-                return sum + e.amount_gbp;
-            }, 0);
-    }, [expenses]);
-    
-    const paidThisMonth = useMemo(() => {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        return expenses
-            .filter(e => {
-                const expenseDate = new Date(e.start_date);
-                return expenseDate >= startOfMonth && expenseDate <= endOfMonth && e.status !== 'inactive';
-            })
-            .reduce((sum, e) => sum + e.amount_gbp, 0);
-    }, [expenses]);
-    
-    const statusChipStyles: { [key in ExpenseStatus]: string } = {
-        active: 'bg-green-500/20 text-green-300',
-        inactive: 'bg-gray-600/20 text-gray-400 line-through',
-        completed: 'bg-blue-500/20 text-blue-300',
-        upcoming: 'bg-yellow-500/20 text-yellow-300',
-    };
-
-    return (
-         <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Expenses</h2>
-                 <div className="flex space-x-2">
-                    <button onClick={() => setShowImportModal(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Import Expenses</button>
-                    <button onClick={() => setShowModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
-                </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <p className="text-sm text-slate-400">Expected This Month (Active Subs)</p>
-                    <p className="text-2xl font-bold text-white">{formatCurrency(expectedThisMonth)}</p>
-                </div>
-                 <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <p className="text-sm text-slate-400">Paid This Month</p>
-                    <p className="text-2xl font-bold text-white">{formatCurrency(paidThisMonth)}</p>
-                </div>
-            </div>
-             <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-700">
-                    <thead className="bg-slate-900/50">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount (GBP)</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700">
-                        {expenses.map(exp => (
-                            <tr key={exp.id} className={`${['inactive', 'completed'].includes(exp.status) ? 'opacity-60' : ''}`}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.start_date)}</td>
-                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.status === 'inactive' ? 'line-through' : ''}`}>{exp.name || exp.description}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>
-                                      {exp.status}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount_gbp)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                                    <div className="relative inline-block text-left actions-dropdown-container">
-                                        <button onClick={() => setOpenDropdownId(openDropdownId === exp.id ? null : exp.id)} className="p-2 rounded-full hover:bg-slate-700">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
-                                        </button>
-                                         {openDropdownId === exp.id && (
-                                            <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
-                                                <div className="py-1" role="menu">
-                                                    <span className="block px-4 pt-2 pb-1 text-xs text-slate-500">Change Status</span>
-                                                    {exp.expense_type === 'subscription' ? (
-                                                        <>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'active'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Active</button>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'inactive'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Inactive</button>
-                                                        </>
-                                                    ) : (
-                                                         <>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'upcoming'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Upcoming</button>
-                                                            <button onClick={() => { handleStatusChange(exp.id, 'completed'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Completed</button>
-                                                        </>
-                                                    )}
-                                                    <div className="border-t border-slate-700 my-1"></div>
-                                                    <button onClick={() => { handleDelete(exp.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300">Delete</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            {showImportModal && (
-                <Modal onClose={() => setShowImportModal(false)} title="Import Expenses from CSV">
-                    <ImportFlow 
-                        selectedEntityId={selectedEntityId}
-                        onClose={() => setShowImportModal(false)}
-                        refreshData={refreshData}
-                    />
-                </Modal>
-            )}
-            {showModal && <ExpenseForm onClose={() => setShowModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
-        </div>
-    );
-};
-
-
-// --- FORMS ---
-const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; selectedEntityId: string }> = ({ projects, onClose, refreshData, onAddNewProject, selectedEntityId }) => {
-    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
-    const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const groupedProjects = useMemo(() => {
-        return projects.reduce((acc, project) => {
-            const clientName = project.client_name || 'No Client';
-            if (!acc[clientName]) {
-                acc[clientName] = [];
-            }
-            acc[clientName].push(project);
-            return acc;
-        }, {} as Record<string, Project[]>);
-    }, [projects]);
-
-
-    useEffect(() => {
-        const generateNextInvoiceNumber = async () => {
-            const { data, error } = await supabase
-                .from('invoices')
-                .select('invoice_number')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .single();
-            
-            let nextNumber = 'MD-001';
-            if (data && data.invoice_number) {
-                const parts = data.invoice_number.split('-');
-                const lastNum = parseInt(parts[1], 10);
-                if (!isNaN(lastNum)) {
-                    const newNum = (lastNum + 1).toString().padStart(3, '0');
-                    nextNumber = `MD-${newNum}`;
-                }
-            }
-            setFormData(prev => ({ ...prev, invoice_number: nextNumber }));
-        };
-        generateNextInvoiceNumber();
-    }, []);
-
-    const totalAmount = useMemo(() => {
-        return items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-    }, [items]);
-
-    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData({ ...formData, [name]: value });
-    };
-    
-    const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
-        const newItems = [...items];
-        (newItems[index] as any)[field] = value;
-        setItems(newItems);
-    };
-
-    const addItem = () => setItems([...items, { description: '', quantity: 1, unit_price: 0 }]);
-    const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index));
-    
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        
-        // Find entity from selected project if available, otherwise use global selected or error
-        const selectedProject = projects.find(p => p.id === formData.project_id);
-        const entityIdToUse = selectedProject ? selectedProject.entity_id : (selectedEntityId !== 'all' ? selectedEntityId : null);
-
-        if (!entityIdToUse) {
-            alert("Please select a valid project associated with a trading entity.");
-            setIsSubmitting(false);
-            return;
-        }
-
-        const invoiceData = { ...formData, amount: totalAmount, entity_id: entityIdToUse };
-
-        const { data: newInvoice, error: invoiceError } = await supabase
-            .from('invoices')
-            .insert(invoiceData)
-            .select()
-            .single();
-
-        if (invoiceError || !newInvoice) {
-            console.error("Error creating invoice:", invoiceError);
-            setIsSubmitting(false);
-            return;
-        }
-
-        const itemsToInsert = items.map(item => ({
-            ...item,
-            invoice_id: newInvoice.id,
-        }));
-
-        const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
-
-        if (itemsError) {
-            console.error("Error creating invoice items:", itemsError);
-            await supabase.from('invoices').delete().eq('id', newInvoice.id);
-        } else {
-            refreshData();
-            onClose();
-        }
-        setIsSubmitting(false);
-    };
-
-    return (
-        <Modal onClose={onClose} title="Create New Invoice">
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-end space-x-2">
-                        <div className="flex-grow">
-                            <label className="block text-sm font-medium text-slate-300">Project</label>
-                            <select name="project_id" value={formData.project_id} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
-                                <option value="">Select a project</option>
-                                {(Object.entries(groupedProjects) as [string, Project[]][]).map(([clientName, clientProjects]) => (
-                                    <optgroup label={clientName} key={clientName}>
-                                        {clientProjects.map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))}
-                                    </optgroup>
-                                ))}
-                            </select>
-                        </div>
-                        <button type="button" onClick={onAddNewProject} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-3 rounded-md text-sm">New Project</button>
-                    </div>
-                    <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} readOnly className="mt-1 w-full bg-slate-900 border-slate-700 rounded-md p-2 text-slate-400 cursor-not-allowed" /></div>
-                    <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                    <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                </div>
-                
-                <div className="border-t border-b border-slate-700 py-4 space-y-3">
-                    <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
-                     <div className="grid grid-cols-12 gap-2 items-center text-xs text-slate-400 font-medium px-2">
-                        <div className="col-span-6">Description</div>
-                        <div className="col-span-2">Qty</div>
-                        <div className="col-span-3">Unit Price</div>
-                    </div>
-                    {items.map((item, index) => (
-                        <div key={index} className="grid grid-cols-12 gap-2 items-center">
-                            <input type="text" placeholder="Description" value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} required className="col-span-6 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
-                            <input type="number" placeholder="Qty" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)} required className="col-span-2 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
-                            <input type="number" step="0.01" placeholder="Price" value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', parseFloat(e.target.value) || 0)} required className="col-span-3 bg-slate-700 border-slate-600 rounded-md p-2 text-white" />
-                            <button type="button" onClick={() => removeItem(index)} className="col-span-1 text-red-400 hover:text-red-300 text-2xl">&times;</button>
-                        </div>
-                    ))}
-                    <button type="button" onClick={addItem} className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold">+ Add Item</button>
-                </div>
-                
-                <div className="text-right space-y-1 text-slate-300">
-                    <p className="text-xl font-bold text-white border-t border-slate-600 pt-2 mt-2">Total: <span className="">{formatCurrency(totalAmount)}</span></p>
-                </div>
-
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md mt-6" disabled={isSubmitting}>
-                    {isSubmitting ? 'Saving...' : 'Save Invoice'}
-                </button>
-            </form>
-        </Modal>
-    );
-};
-
-const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ projectToEdit, onClose, refreshData, selectedEntityId }) => {
-    const [formData, setFormData] = useState({ 
-        name: projectToEdit?.name || '', 
-        client_name: projectToEdit?.client_name || '',
-        client_email: projectToEdit?.client_email || ''
-    });
-    
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
-    
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        // If creating new and no entity selected, show error
-        if (!projectToEdit && selectedEntityId === 'all') {
-            alert("Please select a specific Trading Identity (e.g., Montford Digital) from the sidebar before creating a project.");
-            return;
-        }
-
-        let error;
-        if (projectToEdit) {
-            ({ error } = await supabase.from('projects').update(formData).eq('id', projectToEdit.id));
-        } else {
-            // Include entity_id for new records
-            ({ error } = await supabase.from('projects').insert([{...formData, entity_id: selectedEntityId }]));
-        }
-
-        if (error) console.error("Error saving project:", error);
-        else {
-            refreshData();
-            onClose();
-        }
-    };
-     return (
-        <Modal onClose={onClose} title={projectToEdit ? "Edit Project" : "Create New Project"}>
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-300">Project Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Client Name</label><input type="text" name="client_name" value={formData.client_name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                 <div><label className="block text-sm font-medium text-slate-300">Client Email</label><input type="email" name="client_email" value={formData.client_email} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Project</button>
-            </form>
-        </Modal>
-    );
-};
-
-const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ onClose, refreshData, selectedEntityId }) => {
-    const [formData, setFormData] = useState<{
-        name: string;
-        description: string;
-        amount: number | string;
-        currency: string;
-        category: string;
-        start_date: string;
-        end_date: string;
-        expense_type: ExpenseType;
-        billing_cycle: string | null;
-    }>({ 
-        name: '',
-        description: '', 
-        amount: '',
-        currency: 'GBP',
-        category: '', 
-        start_date: '',
-        end_date: '',
-        expense_type: 'manual',
-        billing_cycle: null
-    });
-    
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        const { name, value, type } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: type === 'number' ? parseFloat(value) || '' : value,
-            billing_cycle: name === 'expense_type' && value === 'manual' ? null : prev.billing_cycle
-        }));
-    };
-    
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        if (selectedEntityId === 'all') {
-            alert("Please select a specific Trading Identity from the sidebar before adding expenses.");
-            return;
-        }
-
-        // Determine default status based on type and dates
-        let status: ExpenseStatus = 'upcoming';
-        if (formData.expense_type === 'subscription') {
-            const hasEnded = formData.end_date && new Date(formData.end_date) < new Date();
-            status = hasEnded ? 'inactive' : 'active';
-        } else if (formData.start_date && new Date(formData.start_date) <= new Date()) {
-            status = 'completed';
-        }
-        
-        const submissionData = {
-            ...formData,
-            status,
-            currency: formData.currency.toUpperCase(),
-            end_date: formData.end_date || null,
-            entity_id: selectedEntityId
-        };
-
-        const { error } = await supabase.from('expenses').insert([submissionData]);
-        if (error) console.error("Error creating expense:", error);
-        else {
-            refreshData();
-            onClose();
-        }
-    };
-    
-    return (
-        <Modal onClose={onClose} title="Add New Expense">
-             <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-300">Name / Title</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Description</label><textarea name="description" value={formData.description} onChange={handleChange} required rows={3} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="sm:col-span-2"><label className="block text-sm font-medium text-slate-300">Amount</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                    <div><label className="block text-sm font-medium text-slate-300">Currency</label><input type="text" name="currency" value={formData.currency} onChange={handleChange} required maxLength={3} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white uppercase" /></div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-slate-300">Start Date</label><input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                    <div><label className="block text-sm font-medium text-slate-300">End Date (for subscriptions)</label><input type="date" name="end_date" value={formData.end_date} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-300">Expense Type</label>
-                    <select name="expense_type" value={formData.expense_type} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
-                        <option value="manual">Manual</option>
-                        <option value="subscription">Subscription</option>
-                    </select>
-                </div>
-                {formData.expense_type === 'subscription' && (
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300">Billing Cycle</label>
-                        <select name="billing_cycle" value={formData.billing_cycle || ''} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
-                             <option value="">Select cycle</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="annually">Annually</option>
-                        </select>
-                    </div>
-                )}
-                <div><label className="block text-sm font-medium text-slate-300">Category</label><input type="text" name="category" value={formData.category} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Expense</button>
-            </form>
-        </Modal>
-    );
-};
-
-// --- Main Dashboard Component ---
 const DashboardPage: React.FC = () => {
-    const location = useLocation();
-    const navigate = useNavigate();
-    
-    // Identity State
-    const [identities, setIdentities] = useState<TradingIdentity[]>([]);
+    const [tradingIdentities, setTradingIdentities] = useState<TradingIdentity[]>([]);
     const [selectedEntityId, setSelectedEntityId] = useState<string>('all');
-    
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [invoices, setInvoices] = useState<Invoice[]>([]);
-    const [expenses, setExpenses] = useState<Expense[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [isImportModalOpen, setImportModalOpen] = useState(false);
+    const navigate = useNavigate();
+    const location = useLocation();
 
-    // Fetch initial identities
-    useEffect(() => {
-        const fetchIdentities = async () => {
-            const { data } = await supabase.from('trading_identities').select('*');
-            if (data) setIdentities(data);
-        };
-        fetchIdentities();
+    const fetchTradingIdentities = useCallback(async () => {
+        const { data, error } = await supabase.from('trading_identities').select('*');
+        if (error) {
+            console.error('Error fetching trading identities:', error);
+        } else {
+            setTradingIdentities(data || []);
+        }
     }, []);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            // Construct queries based on selection
-            let projectsQuery = supabase.from('projects').select('*').order('name');
-            let invoicesQuery = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
-            let expensesQuery = supabase.from('expenses').select('*').order('start_date', { ascending: false });
-
-            // Apply filters if specific entity selected
-            if (selectedEntityId !== 'all') {
-                projectsQuery = projectsQuery.eq('entity_id', selectedEntityId);
-                invoicesQuery = invoicesQuery.eq('entity_id', selectedEntityId);
-                expensesQuery = expensesQuery.eq('entity_id', selectedEntityId);
-            }
-            
-            const [{ data: projectsData, error: projectsError }, { data: invoicesData, error: invoicesError }, { data: expensesData, error: expensesError }] = await Promise.all([projectsQuery, invoicesQuery, expensesQuery]);
-
-            if (projectsError) throw projectsError;
-            if (invoicesError) throw invoicesError;
-            if (expensesError) throw expensesError;
-
-            setProjects(projectsData || []);
-            setInvoices(invoicesData as Invoice[] || []);
-            setExpenses(expensesData || []);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    }, [selectedEntityId]);
-
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
-
+        fetchTradingIdentities();
+    }, [fetchTradingIdentities]);
+    
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate('/login');
     };
 
-    const navItems = [
-        { path: "/dashboard", label: "Overview" },
-        { path: "/dashboard/projects", label: "Projects" },
-        { path: "/dashboard/invoices", label: "Invoices" },
-        { path: "/dashboard/expenses", label: "Expenses" },
-    ];
+    const refreshData = () => {
+        // In a real app, this would re-fetch data for the current view
+        console.log("Refreshing data...");
+        fetchTradingIdentities();
+    };
 
     return (
         <div className="min-h-screen bg-slate-900 text-slate-300 flex">
-            <aside className="w-64 bg-slate-800 p-6 border-r border-slate-700 flex-col hidden md:flex">
-                <h1 className="text-xl font-bold text-white mb-8">Admin Dashboard</h1>
-                
-                {/* Identity Switcher */}
-                <div className="mb-8">
-                    <label className="block text-xs uppercase text-slate-500 font-semibold mb-2">View Data For</label>
-                    <div className="relative">
-                        <select 
-                            value={selectedEntityId} 
-                            onChange={(e) => setSelectedEntityId(e.target.value)}
-                            className="w-full appearance-none bg-slate-900 border border-slate-600 hover:border-cyan-500 text-white py-2 px-3 rounded leading-tight focus:outline-none focus:shadow-outline transition-colors cursor-pointer"
+            <aside className="w-64 bg-slate-800 p-4 border-r border-slate-700 flex flex-col">
+                <h1 className="text-xl font-bold text-white mb-6">Dashboard</h1>
+                <h2 className="text-xs uppercase text-slate-400 font-bold mb-2">Trading Identities</h2>
+                <ul className="space-y-1">
+                    <li key="all">
+                        <button 
+                            onClick={() => setSelectedEntityId('all')}
+                            className={`w-full text-left px-3 py-2 rounded text-sm ${selectedEntityId === 'all' ? 'bg-cyan-500/20 text-cyan-300' : 'hover:bg-slate-700'}`}
                         >
-                            <option value="all">All Group Data</option>
-                            {(identities as TradingIdentity[]).map(id => (
-                                <option key={id.id} value={id.id}>{id.name}</option>
-                            ))}
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                        </div>
-                    </div>
-                </div>
+                            All Identities
+                        </button>
+                    </li>
+                    {tradingIdentities.map(entity => (
+                        <li key={entity.id}>
+                            <button
+                                onClick={() => setSelectedEntityId(entity.id)}
+                                className={`w-full text-left px-3 py-2 rounded text-sm ${selectedEntityId === entity.id ? 'bg-cyan-500/20 text-cyan-300' : 'hover:bg-slate-700'}`}
+                            >
+                                {entity.name}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
 
-                <nav className="flex-grow">
-                    <ul>
-                        {navItems.map(item => (
-                             <li key={item.path} className="mb-2">
-                                <Link to={item.path} className={`block px-4 py-2 rounded-md transition-colors ${location.pathname === item.path ? 'bg-cyan-500 text-white' : 'hover:bg-slate-700'}`}>
-                                    {item.label}
-                                </Link>
-                            </li>
-                        ))}
-                    </ul>
+                <nav className="mt-8">
+                    <Link to="/dashboard" className={`block px-3 py-2 rounded text-sm ${location.pathname === '/dashboard' ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>Overview</Link>
+                    <Link to="/dashboard/expenses" className={`block px-3 py-2 rounded text-sm ${location.pathname.startsWith('/dashboard/expenses') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>Expenses</Link>
+                    <Link to="/dashboard/invoices" className={`block px-3 py-2 rounded text-sm ${location.pathname.startsWith('/dashboard/invoices') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>Invoices</Link>
                 </nav>
-                 <div>
-                    <button onClick={handleLogout} className="w-full text-left px-4 py-2 rounded-md hover:bg-slate-700 transition-colors">Logout</button>
+
+                <div className="mt-auto">
+                    <button onClick={handleLogout} className="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-700">
+                        Logout
+                    </button>
                 </div>
             </aside>
 
-            <main className="flex-1 p-4 sm:p-8 overflow-y-auto">
-                 {loading && <div className="text-center">Loading dashboard data...</div>}
-                 {error && <div className="text-center text-red-400">Error: {error}</div>}
-                 {!loading && !error && (
-                    <Routes>
-                        <Route index element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
-                        <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                    </Routes>
-                 )}
+            <main className="flex-1 p-8 overflow-y-auto">
+                 <header className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-white">Overview</h2>
+                    <button onClick={() => setImportModalOpen(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                        Import Expenses
+                    </button>
+                </header>
+                <Routes>
+                    <Route path="/" element={<DashboardContent selectedEntityId={selectedEntityId} />} />
+                    <Route path="/expenses" element={<DashboardContent selectedEntityId={selectedEntityId} />} />
+                    <Route path="/invoices" element={<DashboardContent selectedEntityId={selectedEntityId} />} />
+                </Routes>
             </main>
+            
+            {isImportModalOpen && (
+                <Modal title="Import Expenses" onClose={() => setImportModalOpen(false)}>
+                    <ImportFlow 
+                        selectedEntityId={selectedEntityId}
+                        onClose={() => setImportModalOpen(false)}
+                        refreshData={refreshData}
+                    />
+                </Modal>
+            )}
         </div>
     );
 };
