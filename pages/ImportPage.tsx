@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -128,27 +129,33 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
                     expense.type = expense.type === 'subscription' ? 'subscription' : 'manual';
 
                     let calculatedStatus: ExpenseStatus;
-                    const todayString = new Date().toISOString().split('T')[0];
+                    const today = new Date();
+                    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+                    if (!expense.start_date) throw new Error(`Row ${index + 2} needs a Start Date.`);
+                    
+                    const startDateParts = expense.start_date.split('-').map(Number);
+                    const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
 
                     if (expense.type === 'subscription') {
-                        const startDateString = expense.start_date;
-                        const endDateString = expense.end_date;
-
-                        if (endDateString && endDateString < todayString) {
+                        const endDate = expense.end_date ? (() => {
+                            const endDateParts = expense.end_date.split('-').map(Number);
+                            return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+                        })() : null;
+                        
+                        if (endDate && endDate < todayDateOnly) {
                             calculatedStatus = 'inactive';
-                        } else if (startDateString && startDateString > todayString) {
+                        } else if (startDate > todayDateOnly) {
                             calculatedStatus = 'upcoming';
                         } else {
                             calculatedStatus = 'active';
                         }
                     } else {
-                        const isCompleted = expense.start_date && expense.start_date <= todayString;
-                        calculatedStatus = isCompleted ? 'completed' : 'upcoming';
+                        calculatedStatus = startDate <= todayDateOnly ? 'completed' : 'upcoming';
                     }
 
                     if (!expense.description && !expense.name) throw new Error(`Row ${index + 2} needs a Name or Description.`);
                     if (expense.amount === undefined || expense.amount === '') throw new Error(`Row ${index + 2} needs an Amount.`);
-                    if (!expense.start_date) throw new Error(`Row ${index + 2} needs a Start Date.`);
                     if (expense.type === 'subscription' && !expense.billing_cycle) throw new Error(`Row ${index + 2} is a subscription but is missing a Billing Cycle.`);
                     
                     return {
@@ -184,20 +191,36 @@ const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refr
         }
         
         if (['type', 'start_date', 'end_date'].includes(field as string)) {
-            const todayString = new Date().toISOString().split('T')[0];
+            const today = new Date();
+            const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
             if (currentExpense.type === 'subscription') {
-                const startDateString = currentExpense.start_date;
-                const endDateString = currentExpense.end_date;
-                if (endDateString && endDateString < todayString) {
+                let startDate = new Date(8.64e15); // A very large date
+                if (currentExpense.start_date) {
+                    const startDateParts = currentExpense.start_date.split('-').map(Number);
+                    startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
+                }
+                
+                const endDate = currentExpense.end_date ? (() => {
+                    const endDateParts = (currentExpense.end_date as string).split('-').map(Number);
+                    return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+                })() : null;
+
+                if (endDate && endDate < todayDateOnly) {
                     currentExpense.status = 'inactive';
-                } else if (startDateString && startDateString > todayString) {
+                } else if (startDate > todayDateOnly) {
                     currentExpense.status = 'upcoming';
                 } else {
                     currentExpense.status = 'active';
                 }
             } else { // manual
-                const isPast = currentExpense.start_date && currentExpense.start_date <= todayString;
-                currentExpense.status = isPast ? 'completed' : 'upcoming';
+                if (currentExpense.start_date) {
+                    const startDateParts = currentExpense.start_date.split('-').map(Number);
+                    const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
+                    currentExpense.status = startDate <= todayDateOnly ? 'completed' : 'upcoming';
+                } else {
+                    currentExpense.status = 'upcoming';
+                }
             }
         }
 

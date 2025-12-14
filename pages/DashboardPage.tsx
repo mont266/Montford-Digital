@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -953,22 +954,27 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
         e.preventDefault();
 
         let status: ExpenseStatus;
-        const todayString = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD' format
+        const today = new Date();
+        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+        const startDateParts = formData.start_date.split('-').map(Number);
+        const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
 
         if (formData.type === 'subscription') {
-            const startDateString = formData.start_date;
-            const endDateString = formData.end_date;
+            const endDate = formData.end_date ? (() => {
+                const endDateParts = formData.end_date.split('-').map(Number);
+                return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+            })() : null;
             
-            if (endDateString && endDateString < todayString) {
+            if (endDate && endDate < todayDateOnly) {
                 status = 'inactive';
-            } else if (startDateString > todayString) {
+            } else if (startDate > todayDateOnly) {
                 status = 'upcoming';
             } else {
                 status = 'active';
             }
         } else { // manual
-            const isCompleted = formData.start_date <= todayString;
-            status = isCompleted ? 'completed' : 'upcoming';
+            status = startDate <= todayDateOnly ? 'completed' : 'upcoming';
         }
         
         const expenseData = {
@@ -1101,6 +1107,42 @@ const DashboardPage: React.FC = () => {
         fetchData();
     }, [fetchData]);
 
+    const processedExpenses = useMemo(() => {
+        const today = new Date();
+        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+        return expenses.map(exp => {
+            if (!exp.start_date) return exp; // Guard against invalid data
+
+            const startDateParts = exp.start_date.split('-').map(Number);
+            const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
+            
+            const endDate = exp.end_date ? (() => {
+                const endDateParts = exp.end_date.split('-').map(Number);
+                return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
+            })() : null;
+
+            let status: ExpenseStatus;
+
+            if (exp.type === 'subscription') {
+                if (endDate && endDate < todayDateOnly) {
+                    status = 'inactive';
+                } else if (startDate > todayDateOnly) {
+                    status = 'upcoming';
+                } else {
+                    status = 'active';
+                }
+            } else { // manual
+                status = startDate <= todayDateOnly ? 'completed' : 'upcoming';
+            }
+            
+            if (exp.status !== status) {
+                return { ...exp, status };
+            }
+            return exp;
+        });
+    }, [expenses]);
+
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate('/login');
@@ -1159,10 +1201,10 @@ const DashboardPage: React.FC = () => {
                  {error && <div className="text-center text-red-400">Error: {error}</div>}
                  {!loading && !error && (
                     <Routes>
-                        <Route index element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
+                        <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} />} />
                         <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                         <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                        <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                     </Routes>
                  )}
             </main>
