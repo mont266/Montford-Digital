@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import ImportPage from './ImportPage';
+import ImportFlow from './ImportPage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -41,6 +41,8 @@ interface Invoice {
   entity_id: string;
 }
 
+type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
+
 interface Expense {
   id: string;
   name?: string;
@@ -53,7 +55,7 @@ interface Expense {
   end_date?: string;
   expense_type: 'one-time' | 'subscription';
   billing_cycle?: 'monthly' | 'annually';
-  is_active: boolean;
+  status: ExpenseStatus;
   entity_id: string;
 }
 
@@ -72,7 +74,7 @@ const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }
 
 const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string }> = ({ children, onClose, title }) => (
     <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-start p-4 overflow-y-auto" onClick={onClose}>
-        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-2xl my-8 p-6" onClick={e => e.stopPropagation()}>
+        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-4xl my-8 p-6" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-white">{title}</h3>
                 <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
@@ -132,7 +134,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     
     const oneTimePayments = filteredExpenses.filter(e => e.expense_type === 'one-time').reduce((sum, e) => sum + e.amount_gbp, 0);
     const monthlySubscriptions = expenses
-        .filter(e => e.expense_type === 'subscription' && e.is_active)
+        .filter(e => e.expense_type === 'subscription' && e.status === 'active')
         .reduce((sum, e) => {
             if (e.billing_cycle === 'annually') {
                 return sum + (e.amount_gbp / 12);
@@ -160,7 +162,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
                 <StatCard title="Net Profit" value={formatCurrency(netProfit)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                 <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                 <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
-                <StatCard title="Monthly Subscriptions" value={`${formatCurrency(monthlySubscriptions)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
+                <StatCard title="Active Subscriptions" value={`${formatCurrency(monthlySubscriptions)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
                 <StatCard title="One-Time Payments" value={formatCurrency(oneTimePayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
             </div>
         </div>
@@ -419,7 +421,19 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
 
 const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string }> = ({ expenses, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
-    
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const handleDocumentClick = (e: MouseEvent) => {
+            if (!(e.target as HTMLElement).closest('.actions-dropdown-container')) {
+                setOpenDropdownId(null);
+            }
+        };
+        if (openDropdownId) { document.addEventListener('click', handleDocumentClick); }
+        return () => { document.removeEventListener('click', handleDocumentClick); };
+    }, [openDropdownId]);
+
     const handleDelete = async (id: string) => {
         if (window.confirm("Are you sure you want to delete this expense record permanently?")) {
             const { error } = await supabase.from('expenses').delete().eq('id', id);
@@ -428,15 +442,15 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         }
     };
     
-    const handleToggleSubscription = async (id: string, currentIsActive: boolean) => {
-        const { error } = await supabase.from('expenses').update({ is_active: !currentIsActive }).eq('id', id);
-        if (error) console.error("Error updating subscription status:", error);
+    const handleStatusChange = async (id: string, status: ExpenseStatus) => {
+        const { error } = await supabase.from('expenses').update({ status }).eq('id', id);
+        if (error) console.error("Error updating expense status:", error);
         else refreshData();
     };
 
     const expectedThisMonth = useMemo(() => {
         return expenses
-            .filter(e => e.expense_type === 'subscription' && e.is_active)
+            .filter(e => e.expense_type === 'subscription' && e.status === 'active')
             .reduce((sum, e) => {
                 if (e.billing_cycle === 'annually') {
                     return sum + (e.amount_gbp / 12);
@@ -452,16 +466,26 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         return expenses
             .filter(e => {
                 const expenseDate = new Date(e.start_date);
-                return expenseDate >= startOfMonth && expenseDate <= endOfMonth;
+                return expenseDate >= startOfMonth && expenseDate <= endOfMonth && e.status !== 'inactive';
             })
             .reduce((sum, e) => sum + e.amount_gbp, 0);
     }, [expenses]);
+    
+    const statusChipStyles: { [key in ExpenseStatus]: string } = {
+        active: 'bg-green-500/20 text-green-300',
+        inactive: 'bg-gray-600/20 text-gray-400 line-through',
+        completed: 'bg-blue-500/20 text-blue-300',
+        upcoming: 'bg-yellow-500/20 text-yellow-300',
+    };
 
     return (
          <div>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white">Expenses</h2>
-                <button onClick={() => setShowModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
+                 <div className="flex space-x-2">
+                    <button onClick={() => setShowImportModal(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Import Expenses</button>
+                    <button onClick={() => setShowModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Add Expense</button>
+                </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
@@ -479,39 +503,63 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Description</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Type</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Amount (GBP)</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
                         {expenses.map(exp => (
-                            <tr key={exp.id} className={`${exp.expense_type === 'subscription' && !exp.is_active ? 'opacity-50' : ''}`}>
+                            <tr key={exp.id} className={`${['inactive', 'completed'].includes(exp.status) ? 'opacity-60' : ''}`}>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatDate(exp.start_date)}</td>
-                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.expense_type === 'subscription' && !exp.is_active ? 'line-through' : ''}`}>{exp.name || exp.description}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                        exp.expense_type === 'subscription' 
-                                            ? (exp.is_active ? 'bg-purple-500/20 text-purple-300' : 'bg-gray-600/20 text-gray-400')
-                                            : 'bg-slate-700 text-slate-300'
-                                    }`}>
-                                      {exp.expense_type === 'subscription' && !exp.is_active ? 'Canceled' : exp.expense_type}
+                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${exp.status === 'inactive' ? 'line-through' : ''}`}>{exp.name || exp.description}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>
+                                      {exp.status}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(exp.amount_gbp)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
-                                    {exp.expense_type === 'subscription' && (
-                                        exp.is_active
-                                            ? <button onClick={() => handleToggleSubscription(exp.id, exp.is_active)} className="text-yellow-400 hover:text-yellow-300">Cancel</button>
-                                            : <button onClick={() => handleToggleSubscription(exp.id, exp.is_active)} className="text-green-400 hover:text-green-300">Reactivate</button>
-                                    )}
-                                    <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
+                                    <div className="relative inline-block text-left actions-dropdown-container">
+                                        <button onClick={() => setOpenDropdownId(openDropdownId === exp.id ? null : exp.id)} className="p-2 rounded-full hover:bg-slate-700">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+                                        </button>
+                                         {openDropdownId === exp.id && (
+                                            <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
+                                                <div className="py-1" role="menu">
+                                                    <span className="block px-4 pt-2 pb-1 text-xs text-slate-500">Change Status</span>
+                                                    {exp.expense_type === 'subscription' ? (
+                                                        <>
+                                                            <button onClick={() => { handleStatusChange(exp.id, 'active'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Active</button>
+                                                            <button onClick={() => { handleStatusChange(exp.id, 'inactive'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Inactive</button>
+                                                        </>
+                                                    ) : (
+                                                         <>
+                                                            <button onClick={() => { handleStatusChange(exp.id, 'upcoming'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Upcoming</button>
+                                                            <button onClick={() => { handleStatusChange(exp.id, 'completed'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">Completed</button>
+                                                        </>
+                                                    )}
+                                                    <div className="border-t border-slate-700 my-1"></div>
+                                                    <button onClick={() => { handleDelete(exp.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300">Delete</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+            {showImportModal && (
+                <Modal onClose={() => setShowImportModal(false)} title="Import Expenses from CSV">
+                    <ImportFlow 
+                        selectedEntityId={selectedEntityId}
+                        onClose={() => setShowImportModal(false)}
+                        refreshData={refreshData}
+                    />
+                </Modal>
+            )}
             {showModal && <ExpenseForm onClose={() => setShowModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
@@ -730,7 +778,7 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
         category: string;
         start_date: string;
         end_date: string;
-        expense_type: string;
+        expense_type: 'one-time' | 'subscription';
         billing_cycle: string | null;
     }>({ 
         name: '',
@@ -760,13 +808,20 @@ const ExpenseForm: React.FC<{ onClose: () => void; refreshData: () => void; sele
             alert("Please select a specific Trading Identity from the sidebar before adding expenses.");
             return;
         }
+
+        // Determine default status
+        let status: ExpenseStatus = 'upcoming';
+        if (formData.expense_type === 'subscription') {
+            status = 'active';
+        } else if (formData.start_date && new Date(formData.start_date) <= new Date()) {
+            status = 'completed';
+        }
         
-        // The database trigger will handle amount_gbp calculation.
         const submissionData = {
             ...formData,
+            status,
             currency: formData.currency.toUpperCase(),
             end_date: formData.end_date || null,
-            is_active: true, 
             entity_id: selectedEntityId
         };
 
@@ -885,7 +940,6 @@ const DashboardPage: React.FC = () => {
         { path: "/dashboard/projects", label: "Projects" },
         { path: "/dashboard/invoices", label: "Invoices" },
         { path: "/dashboard/expenses", label: "Expenses" },
-        { path: "/dashboard/import", label: "Import Expenses" },
     ];
 
     return (
@@ -938,7 +992,6 @@ const DashboardPage: React.FC = () => {
                         <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                         <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                         <Route path="expenses" element={<ExpensesPage expenses={expenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="import" element={<ImportPage selectedEntityId={selectedEntityId} />} />
                     </Routes>
                  )}
             </main>

@@ -1,258 +1,290 @@
 
-
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-/**
- * Parses a date string from DD/MM/YYYY or YYYY-MM-DD into YYYY-MM-DD format.
- * @param dateString The date string from the CSV.
- * @returns A string in YYYY-MM-DD format, or null if the format is invalid.
- */
+// --- Type Definitions ---
+type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
+
+interface StagedExpense {
+    name: string;
+    description: string;
+    amount: number | string;
+    currency: string;
+    start_date: string;
+    end_date: string | null;
+    expense_type: 'one-time' | 'subscription';
+    billing_cycle: 'monthly' | 'annually' | null;
+    status: ExpenseStatus;
+    [key: string]: any; // Allow other properties
+}
+
+interface ImportFlowProps {
+  selectedEntityId: string;
+  onClose: () => void;
+  refreshData: () => void;
+}
+
+// --- Helper Functions ---
 const parseDateToYYYYMMDD = (dateString: string): string | null => {
     if (!dateString || dateString.toLowerCase() === 'null') return null;
-
-    // Try parsing DD/MM/YYYY or DD-MM-YYYY
     const dmyParts = dateString.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
     if (dmyParts) {
         const [, day, month, year] = dmyParts;
-        const parsedDay = parseInt(day, 10);
-        const parsedMonth = parseInt(month, 10);
-        if (parsedDay > 31 || parsedMonth > 12 || parsedDay < 1 || parsedMonth < 1) return null;
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
-
-    // Try parsing YYYY-MM-DD (already in the correct format)
     const ymdParts = dateString.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
     if (ymdParts) {
         const [, year, month, day] = ymdParts;
-        const parsedMonth = parseInt(month, 10);
-        const parsedDay = parseInt(day, 10);
-        if (parsedMonth > 12 || parsedDay > 31 || parsedMonth < 1 || parsedDay < 1) return null;
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
-
-    // Fallback for JS Date parsing, though less reliable for ambiguous formats
     const date = new Date(dateString);
     if (!isNaN(date.getTime())) {
         return date.toISOString().split('T')[0];
     }
-    
-    return null; // Return null if no format matches
+    return null;
 };
 
-
-const ImportPage: React.FC<{ selectedEntityId: string }> = ({ selectedEntityId }) => {
+// --- Main Component ---
+const ImportFlow: React.FC<ImportFlowProps> = ({ selectedEntityId, onClose, refreshData }) => {
+    const [step, setStep] = useState<'upload' | 'review'>('upload');
     const [file, setFile] = useState<File | null>(null);
-    const [isImporting, setIsImporting] = useState(false);
-    const [importStatus, setImportStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [stagedExpenses, setStagedExpenses] = useState<StagedExpense[]>([]);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             setFile(e.target.files[0]);
-            setImportStatus(null);
+            setStatus(null);
         }
     };
 
-    const parseCSV = (csvText: string) => {
-        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
-        if (lines.length < 2) {
-            throw new Error("CSV must have a header row and at least one data row.");
-        }
-        
-        const header = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-        
-        const parseRow = (rowString: string) => {
-            const values = [];
-            let currentVal = '';
-            let inQuotes = false;
-            for (let i = 0; i < rowString.length; i++) {
-                const char = rowString[i];
-                if (char === '"' && (i === 0 || rowString[i - 1] !== '\\')) {
-                    if (inQuotes && i < rowString.length - 1 && rowString[i+1] === '"') {
-                        currentVal += '"';
-                        i++; 
-                    } else {
-                        inQuotes = !inQuotes;
-                    }
-                } else if (char === ',' && !inQuotes) {
-                    values.push(currentVal.trim());
-                    currentVal = '';
-                } else {
-                    currentVal += char;
-                }
-            }
-            values.push(currentVal.trim());
-            return values.map(v => v.replace(/^"|"$/g, '')); // Remove surrounding quotes from values
-        }
-
-        const rows = lines.slice(1).map(line => {
-            const values = parseRow(line);
-            const rowData: { [key: string]: string } = {};
-            header.forEach((key, index) => {
-                rowData[key] = values[index];
-            });
-            return rowData;
-        });
-        
-        return { header, rows };
-    };
-    
-    const headerMapping: { [key: string]: string } = {
-        'name': 'name',
-        'title': 'name',
-        'description': 'description',
-        'amount': 'amount',
-        'currency': 'currency',
-        'category': 'category',
-        'start date': 'start_date',
-        'expense date': 'start_date',
-        'end date': 'end_date',
-        'expense type': 'expense_type',
-        'type': 'expense_type',
-        'billing cycle': 'billing_cycle',
-        'cycle': 'billing_cycle',
-    };
-
-    const handleImport = async () => {
+    const handleParseFile = () => {
         if (!file) {
-            setImportStatus({ message: 'Please select a file to import.', type: 'error' });
+            setStatus({ message: 'Please select a file to import.', type: 'error' });
             return;
         }
         if (selectedEntityId === 'all') {
-            setImportStatus({ message: 'Please select a specific Trading Identity from the sidebar before importing.', type: 'error' });
+            setStatus({ message: 'Please select a specific Trading Identity from the sidebar before importing.', type: 'error' });
             return;
         }
 
-        setIsImporting(true);
-        setImportStatus(null);
+        setIsProcessing(true);
+        setStatus(null);
 
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
                 const csvText = event.target?.result as string;
-                const { header, rows } = parseCSV(csvText);
-
-                const mappedHeader = header.map(h => headerMapping[h.toLowerCase()]);
+                const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+                if (lines.length < 2) throw new Error("CSV must have a header and at least one data row.");
                 
-                if (mappedHeader.some(h => h === undefined)) {
-                    const unknownHeaders = header.filter(h => !headerMapping[h.toLowerCase()]);
-                    throw new Error(`Unknown CSV headers: ${unknownHeaders.join(', ')}. Expected headers like Name, Description, Amount, etc.`);
-                }
+                const header = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
                 
-                const expensesToInsert = rows.map((row, index) => {
-                    const expense: any = {
-                        entity_id: selectedEntityId,
-                        is_active: true,
-                    };
+                const headerMapping: { [key: string]: string } = {
+                    'name': 'name', 'title': 'name', 'description': 'description', 'amount': 'amount',
+                    'currency': 'currency', 'category': 'category',
+                    'start date': 'start_date', 'start_date': 'start_date', 'expense date': 'start_date',
+                    'end date': 'end_date', 'end_date': 'end_date',
+                    'expense type': 'expense_type', 'type': 'expense_type',
+                    'billing cycle': 'billing_cycle', 'cycle': 'billing_cycle',
+                    'status': 'status'
+                };
+                
+                const rows = lines.slice(1);
+                const expensesToStage: StagedExpense[] = rows.map((rowStr, index) => {
+                    const values = rowStr.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                    const rowData: { [key: string]: any } = {};
+                    header.forEach((h, i) => { rowData[h] = values[i] });
 
-                    header.forEach(h => {
-                        const dbColumn = headerMapping[h.toLowerCase()];
+                    const expense: any = {};
+                    Object.keys(rowData).forEach(key => {
+                        const dbColumn = headerMapping[key];
                         if (dbColumn) {
-                            let value: any = row[h];
-                            if (dbColumn === 'amount') {
-                                value = parseFloat(value);
-                                if (isNaN(value)) throw new Error(`Invalid amount on row ${index + 2}.`);
-                            }
+                            let value: any = rowData[key];
+                             if (dbColumn === 'amount') value = parseFloat(value) || '';
                             if (dbColumn === 'start_date' || dbColumn === 'end_date') {
-                                const formattedDate = parseDateToYYYYMMDD(value);
-                                if (value && !formattedDate) { // only throw error if there was a value but it couldn't be parsed
-                                     throw new Error(`Invalid or unsupported date format for "${h}" ('${value}') on row ${index + 2}. Please use DD/MM/YYYY or YYYY-MM-DD.`);
-                                }
-                                value = formattedDate;
+                                const formatted = parseDateToYYYYMMDD(value);
+                                if (value && !formatted) throw new Error(`Invalid date format for "${key}" on row ${index + 2}.`);
+                                value = formatted;
                             }
-                            if (dbColumn === 'expense_type' && value && !['one-time', 'subscription'].includes(value.toLowerCase())) {
-                                throw new Error(`Invalid Expense Type on row ${index + 2}. Must be 'one-time' or 'subscription'.`);
-                            }
-                            if (dbColumn === 'billing_cycle' && value && !['monthly', 'annually', 'yearly'].includes(value.toLowerCase())) {
-                                throw new Error(`Invalid Billing Cycle on row ${index + 2}. Must be 'monthly' or 'annually'.`);
-                            }
-                             if(dbColumn === 'billing_cycle' && value && value.toLowerCase() === 'yearly') {
-                                value = 'annually';
-                            }
-                            
-                            expense[dbColumn] = value === null ? null : (value || null);
+                            if (dbColumn === 'billing_cycle' && value?.toLowerCase() === 'yearly') value = 'annually';
+                            if (dbColumn === 'status') value = value.toLowerCase();
+                            expense[dbColumn] = value;
                         }
                     });
-                    
-                    if (!expense.description && !expense.name) throw new Error(`Row ${index + 2} must have a Name or Description.`);
-                    if (expense.amount === undefined || expense.amount === null) throw new Error(`Row ${index + 2} is missing an Amount.`);
-                    if (!expense.start_date) throw new Error(`Row ${index + 2} is missing a Start Date.`);
-                    
-                    if (!expense.expense_type) expense.expense_type = 'one-time';
-                    
-                    if (expense.expense_type === 'subscription' && !expense.billing_cycle) {
-                         throw new Error(`Row ${index + 2} is a subscription but is missing a Billing Cycle.`);
+
+                    // Infer status if not provided in CSV
+                    if (!expense.status) {
+                        if (expense.expense_type === 'subscription') {
+                            expense.status = 'active';
+                        } else {
+                            expense.status = (expense.start_date && new Date(expense.start_date) <= new Date()) ? 'completed' : 'upcoming';
+                        }
                     }
 
-                    return expense;
+                    if (!expense.description && !expense.name) throw new Error(`Row ${index + 2} needs a Name or Description.`);
+                    if (expense.amount === undefined || expense.amount === '') throw new Error(`Row ${index + 2} needs an Amount.`);
+                    if (!expense.start_date) throw new Error(`Row ${index + 2} needs a Start Date.`);
+                    if (expense.expense_type === 'subscription' && !expense.billing_cycle) throw new Error(`Row ${index + 2} is a subscription but is missing a Billing Cycle.`);
+                    
+                    return {
+                        name: expense.name || '',
+                        description: expense.description || '',
+                        amount: expense.amount || '',
+                        currency: expense.currency || 'GBP',
+                        start_date: expense.start_date || '',
+                        end_date: expense.end_date || null,
+                        expense_type: expense.expense_type || 'one-time',
+                        billing_cycle: expense.billing_cycle || null,
+                        status: expense.status,
+                    };
                 });
-                
-                const { error } = await supabase.from('expenses').insert(expensesToInsert);
-                
-                if (error) throw error;
-
-                setImportStatus({ message: `Successfully imported ${rows.length} expenses.`, type: 'success' });
-                setFile(null);
-                const fileInput = document.getElementById('file-input') as HTMLInputElement;
-                if (fileInput) fileInput.value = '';
-
+                setStagedExpenses(expensesToStage);
+                setStep('review');
             } catch (err: any) {
-                setImportStatus({ message: err.message || 'An unknown error occurred during import.', type: 'error' });
+                setStatus({ message: err.message, type: 'error' });
             } finally {
-                setIsImporting(false);
+                setIsProcessing(false);
             }
         };
-
         reader.readAsText(file);
     };
 
+    const handleStagedChange = (index: number, field: keyof StagedExpense, value: any) => {
+        const newStagedExpenses = [...stagedExpenses];
+        const currentExpense = { ...newStagedExpenses[index], [field]: value };
+        
+        if (field === 'expense_type' && value === 'one-time') {
+            currentExpense.billing_cycle = null;
+            currentExpense.status = 'completed';
+        }
+         if (field === 'expense_type' && value === 'subscription') {
+            currentExpense.status = 'active';
+        }
+
+        newStagedExpenses[index] = currentExpense;
+        setStagedExpenses(newStagedExpenses);
+    };
+    
+    const removeStagedRow = (index: number) => {
+        setStagedExpenses(stagedExpenses.filter((_, i) => i !== index));
+    };
+
+    const handleConfirmImport = async () => {
+        setIsProcessing(true);
+        setStatus(null);
+        try {
+            const expensesToInsert = stagedExpenses.map(exp => ({
+                name: exp.name,
+                description: exp.description,
+                amount: exp.amount,
+                currency: exp.currency.toUpperCase(),
+                start_date: exp.start_date,
+                end_date: exp.end_date || null,
+                expense_type: exp.expense_type,
+                billing_cycle: exp.billing_cycle,
+                status: exp.status,
+                entity_id: selectedEntityId,
+            }));
+
+            const { error } = await supabase.from('expenses').insert(expensesToInsert);
+            if (error) throw error;
+
+            setStatus({ message: `Successfully imported ${stagedExpenses.length} expenses!`, type: 'success' });
+            refreshData();
+            setTimeout(onClose, 1500);
+        } catch (err: any) {
+            setStatus({ message: err.message, type: 'error' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+    
+    const tableHeaders: { key: keyof StagedExpense, label: string, type: string, className?: string, options?: {value: any, label: string}[] }[] = [
+        { key: 'name', label: 'Name', type: 'text', className: 'w-1/6' },
+        { key: 'description', label: 'Description', type: 'text', className: 'w-1/4' },
+        { key: 'amount', label: 'Amount', type: 'number', className: 'w-24' },
+        { key: 'start_date', label: 'Start Date', type: 'date', className: 'w-36' },
+        { key: 'status', label: 'Status', type: 'select', className: 'w-32', options: [{value: 'upcoming', label: 'Upcoming'}, {value: 'completed', label: 'Completed'}, {value: 'active', label: 'Active'}, {value: 'inactive', label: 'Inactive'}] },
+        { key: 'expense_type', label: 'Type', type: 'select', className: 'w-32', options: [{value: 'one-time', label: 'One-Time'}, {value: 'subscription', label: 'Subscription'}] },
+    ];
+
     return (
         <div>
-            <h2 className="text-2xl font-bold text-white mb-4">Import Expenses</h2>
-            <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                <div className="mb-6 space-y-2 text-slate-300">
-                    <p>Import expenses from a CSV file. This is useful for migrating data from other systems like Stoutly.</p>
-                    <p>
-                        Your CSV file must contain a header row with column names like:
-                        <code className="text-cyan-400 bg-slate-900 p-1 rounded-md text-sm mx-1">Name</code>,
-                        <code className="text-cyan-400 bg-slate-900 p-1 rounded-md text-sm mx-1">Description</code>,
-                        <code className="text-cyan-400 bg-slate-900 p-1 rounded-md text-sm mx-1">Amount</code>,
-                        <code className="text-cyan-400 bg-slate-900 p-1 rounded-md text-sm mx-1">Currency</code>,
-                        <code className="text-cyan-400 bg-slate-900 p-1 rounded-md text-sm mx-1">Start Date</code>,
-                        etc.
-                    </p>
-                     <p className="font-semibold text-yellow-400">Date columns must be in <code className="text-amber-300 bg-slate-900 p-1 rounded-md text-sm mx-1">DD/MM/YYYY</code> or <code className="text-amber-300 bg-slate-900 p-1 rounded-md text-sm mx-1">YYYY-MM-DD</code> format.</p>
-                    <p className="font-semibold text-yellow-400">Important: Please select the correct Trading Identity in the sidebar before importing. All imported expenses will be assigned to it.</p>
-                </div>
+            {step === 'upload' && (
                 <div className="space-y-4">
+                     <div className="space-y-2 text-slate-300 text-sm">
+                        <p>Import expenses from a CSV file. The importer will match columns like 'Name', 'Amount', 'Status', 'Start Date' etc., and ignore any unrecognised columns.</p>
+                         <p className="font-semibold text-yellow-400">Date columns must be in DD/MM/YYYY or YYYY-MM-DD format.</p>
+                        <p className="font-semibold text-yellow-400">All imported expenses will be assigned to the currently selected Trading Identity.</p>
+                    </div>
                     <div>
                         <label htmlFor="file-input" className="block text-sm font-medium text-slate-300 mb-2">CSV File</label>
-                        <input 
-                            id="file-input"
-                            type="file" 
-                            accept=".csv"
-                            onChange={handleFileChange} 
-                            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-500 file:text-white hover:file:bg-cyan-600 cursor-pointer" 
-                        />
+                        <input id="file-input" type="file" accept=".csv" onChange={handleFileChange} className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-500 file:text-white hover:file:bg-cyan-600 cursor-pointer" />
                     </div>
-
-                    <button 
-                        onClick={handleImport} 
-                        disabled={isImporting || !file}
-                        className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isImporting ? 'Importing...' : 'Import Expenses'}
+                    <button onClick={handleParseFile} disabled={isProcessing || !file} className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        {isProcessing ? 'Parsing...' : 'Review Data'}
                     </button>
-                    
-                    {importStatus && (
-                         <div className={`mt-4 p-4 rounded-md text-sm ${importStatus.type === 'success' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                            {importStatus.message}
-                        </div>
-                    )}
                 </div>
-            </div>
+            )}
+
+            {step === 'review' && (
+                <div className="space-y-4">
+                     <p className="text-slate-300 text-sm">Review, edit, or remove expenses below before finalising the import.</p>
+                    <div className="max-h-[50vh] overflow-auto border border-slate-700 rounded-lg">
+                        <table className="min-w-full text-sm">
+                            <thead className="bg-slate-900/50 sticky top-0">
+                                <tr>
+                                    {tableHeaders.map(h => <th key={h.key} className={`p-2 text-left font-medium text-slate-400 ${h.className}`}>{h.label}</th>)}
+                                    <th className="p-2 w-16"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                                {stagedExpenses.map((exp, index) => (
+                                    <tr key={index} className="hover:bg-slate-700/50">
+                                        {tableHeaders.map(h => (
+                                            <td key={h.key} className="p-1 align-top">
+                                                 {h.type === 'select' ? (
+                                                    <select 
+                                                        value={exp[h.key] || ''} 
+                                                        onChange={e => handleStagedChange(index, h.key, e.target.value)} 
+                                                        className="w-full bg-slate-700 border-slate-600 rounded p-1.5 text-white text-xs capitalize"
+                                                    >
+                                                        {h.options?.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <input type={h.type} value={exp[h.key] || ''} onChange={e => handleStagedChange(index, h.key, h.type === 'number' ? parseFloat(e.target.value) || '' : e.target.value)} className="w-full bg-slate-700 border-slate-600 rounded p-1.5 text-white text-xs" />
+                                                )}
+                                            </td>
+                                        ))}
+                                        <td className="p-1 align-top text-center">
+                                            <button onClick={() => removeStagedRow(index)} className="text-red-400 hover:text-red-300 p-1.5 leading-none text-2xl" title="Remove row">&times;</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-4 border-t border-slate-700">
+                        <p className="text-slate-400 mb-2 sm:mb-0">Found {stagedExpenses.length} expenses to import.</p>
+                        <div className="flex space-x-2">
+                             <button onClick={() => setStep('upload')} disabled={isProcessing} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors disabled:opacity-50">Back</button>
+                            <button onClick={handleConfirmImport} disabled={isProcessing || stagedExpenses.length === 0} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors disabled:opacity-50">
+                                {isProcessing ? 'Importing...' : `Confirm & Import ${stagedExpenses.length} items`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {status && (
+                <div className={`mt-4 p-3 rounded-md text-sm text-center ${status.type === 'success' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                    {status.message}
+                </div>
+            )}
         </div>
     );
 };
 
-export default ImportPage;
+export default ImportFlow;
