@@ -4,6 +4,8 @@
 
 
 
+
+
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -49,6 +51,15 @@ interface Invoice {
 
 type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
 
+interface ExpenseAttachment {
+    id: string;
+    expense_id: string;
+    file_path: string;
+    file_name: string;
+    payment_date: string;
+    uploaded_at: string;
+}
+
 interface Expense {
   id: string;
   name?: string;
@@ -63,6 +74,7 @@ interface Expense {
   billing_cycle?: 'monthly' | 'annually';
   status: ExpenseStatus;
   entity_id: string;
+  expense_attachments: { count: number }[];
 }
 
 type OutgoingTimeSpan = '7d' | '30d' | '90d' | '1y' | 'all';
@@ -78,17 +90,24 @@ const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode }
   </div>
 );
 
-const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string }> = ({ children, onClose, title }) => (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-start p-4 overflow-y-auto" onClick={onClose}>
-        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-4xl my-8 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-white">{title}</h3>
-                <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string, size?: 'md' | 'lg' | 'xl' }> = ({ children, onClose, title, size = 'lg' }) => {
+    const sizeClasses = {
+        md: 'max-w-2xl',
+        lg: 'max-w-4xl',
+        xl: 'max-w-6xl',
+    };
+    return (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-start p-4 overflow-y-auto" onClick={onClose}>
+            <div className={`bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full ${sizeClasses[size]} my-8 p-6`} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-white">{title}</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+                {children}
             </div>
-            {children}
         </div>
-    </div>
-);
+    );
+};
 
 const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -613,6 +632,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
     const [showModal, setShowModal] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [attachmentModalExpense, setAttachmentModalExpense] = useState<Expense | null>(null);
     const [timeSpan, setTimeSpan] = useState<OutgoingTimeSpan>('all');
 
     const handleEdit = (expense: Expense) => {
@@ -628,6 +648,10 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
     const handleCloseModal = () => {
         setShowModal(false);
         setEditingExpense(null);
+    };
+    
+    const handleOpenAttachments = (expense: Expense) => {
+        setAttachmentModalExpense(expense);
     };
 
     const handleDelete = async (id: string) => {
@@ -913,6 +937,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                     <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Date Range</th>
                                     <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Status</th>
                                     <th className="px-4 py-3 text-right font-medium text-slate-400 uppercase">Cost</th>
+                                    <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Attachments</th>
                                     <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Actions</th>
                                 </tr>
                             </thead>
@@ -924,6 +949,12 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                         <td className="px-4 py-3">{formatDate(exp.start_date)} - {exp.end_date ? formatDate(exp.end_date) : 'Present'}</td>
                                         <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>{exp.status}</span></td>
                                         <td className="px-4 py-3"><CostDisplay expense={exp} /></td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button onClick={() => handleOpenAttachments(exp)} className="flex items-center justify-center gap-2 mx-auto px-3 py-1 text-xs rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
+                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                 <span>{exp.expense_attachments[0]?.count || 0}</span>
+                                            </button>
+                                        </td>
                                         <td className="px-4 py-3 text-center"><button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button></td>
                                     </tr>
                                 ))}
@@ -941,6 +972,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                     <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Category</th>
                                     <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Purchase Date</th>
                                     <th className="px-4 py-3 text-right font-medium text-slate-400 uppercase">Amount</th>
+                                     <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Attachments</th>
                                     <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Actions</th>
                                 </tr>
                             </thead>
@@ -951,6 +983,12 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                         <td className="px-4 py-3">{exp.category}</td>
                                         <td className="px-4 py-3">{formatDate(exp.start_date)}</td>
                                         <td className="px-4 py-3"><CostDisplay expense={exp} /></td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button onClick={() => handleOpenAttachments(exp)} className="flex items-center justify-center gap-2 mx-auto px-3 py-1 text-xs rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
+                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                 <span>{exp.expense_attachments[0]?.count || 0}</span>
+                                            </button>
+                                        </td>
                                         <td className="px-4 py-3 text-center"><button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button></td>
                                     </tr>
                                 ))}
@@ -970,6 +1008,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 </Modal>
             )}
             {showModal && <ExpenseForm expenseToEdit={editingExpense} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={refreshData} />}
         </div>
     );
 };
@@ -1303,7 +1342,7 @@ const DashboardPage: React.FC = () => {
             // Construct queries based on selection
             let projectsQuery = supabase.from('projects').select('*').order('name');
             let invoicesQuery = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
-            let expensesQuery = supabase.from('expenses').select('*').order('start_date', { ascending: false });
+            let expensesQuery = supabase.from('expenses').select('*, expense_attachments(count)').order('start_date', { ascending: false });
 
             // Apply filters if specific entity selected
             if (selectedEntityId !== 'all') {
@@ -1320,7 +1359,7 @@ const DashboardPage: React.FC = () => {
 
             setProjects(projectsData || []);
             setInvoices(invoicesData as Invoice[] || []);
-            setExpenses(expensesData || []);
+            setExpenses(expensesData as Expense[] || []);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -1438,3 +1477,195 @@ const DashboardPage: React.FC = () => {
 };
 
 export default DashboardPage;
+const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refreshData: () => void }> = ({ expense, onClose, refreshData }) => {
+    const [attachments, setAttachments] = useState<ExpenseAttachment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [uploading, setUploading] = useState<string | null>(null); // Holds the date string of the period being uploaded to
+
+    const fetchAttachments = useCallback(async () => {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('expense_attachments')
+            .select('*')
+            .eq('expense_id', expense.id)
+            .order('payment_date', { ascending: false });
+        
+        if (error) {
+            setError(error.message);
+        } else {
+            setAttachments(data);
+        }
+        setLoading(false);
+    }, [expense.id]);
+
+    useEffect(() => {
+        fetchAttachments();
+    }, [fetchAttachments]);
+
+    const handleUpload = async (file: File, paymentDate: Date) => {
+        if (!file) return;
+
+        const paymentDateString = paymentDate.toISOString().split('T')[0];
+        setUploading(paymentDateString);
+        setError(null);
+
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${paymentDateString}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+            const filePath = `${expense.entity_id}/${expense.id}/${Date.now()}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('expense-invoices')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { error: dbError } = await supabase.from('expense_attachments').insert({
+                expense_id: expense.id,
+                file_path: filePath,
+                file_name: fileName,
+                payment_date: paymentDateString,
+            });
+
+            if (dbError) throw dbError;
+
+            await fetchAttachments(); // Refresh list
+            refreshData(); // Refresh main dashboard data to update counts
+
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setUploading(null);
+        }
+    };
+    
+    const handleDelete = async (attachment: ExpenseAttachment) => {
+        if (!window.confirm(`Are you sure you want to delete "${attachment.file_name}"?`)) return;
+
+        try {
+            const { error: storageError } = await supabase.storage
+                .from('expense-invoices')
+                .remove([attachment.file_path]);
+
+            if (storageError) throw storageError;
+
+            const { error: dbError } = await supabase
+                .from('expense_attachments')
+                .delete()
+                .eq('id', attachment.id);
+
+            if (dbError) throw dbError;
+
+            await fetchAttachments();
+            refreshData();
+        } catch (err: any) {
+            setError(err.message);
+        }
+    }
+
+    const getPublicUrl = (filePath: string) => {
+        const { data } = supabase.storage.from('expense-invoices').getPublicUrl(filePath);
+        return data.publicUrl;
+    };
+
+    const paymentPeriods = useMemo(() => {
+        if (expense.type === 'manual') {
+            return [{ date: new Date(expense.start_date), label: 'Invoice(s)' }];
+        }
+        
+        const periods: { date: Date, label: string }[] = [];
+        const today = new Date();
+        let currentDate = new Date(expense.start_date);
+        const endDate = expense.end_date ? new Date(expense.end_date) : today;
+
+        while (currentDate <= endDate) {
+            periods.push({
+                date: new Date(currentDate),
+                label: currentDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+            });
+            if (expense.billing_cycle === 'monthly') {
+                currentDate.setMonth(currentDate.getMonth() + 1);
+            } else if (expense.billing_cycle === 'annually') {
+                currentDate.setFullYear(currentDate.getFullYear() + 1);
+            } else {
+                break; // Should not happen for subscriptions
+            }
+        }
+        return periods.reverse(); // Show most recent first
+    }, [expense]);
+
+    const FileInput: React.FC<{ paymentDate: Date }> = ({ paymentDate }) => {
+        const id = `file-upload-${paymentDate.toISOString()}`;
+        return (
+            <>
+                <input
+                    type="file"
+                    id={id}
+                    className="hidden"
+                    onChange={(e) => e.target.files && handleUpload(e.target.files[0], paymentDate)}
+                    disabled={uploading !== null}
+                />
+                <label htmlFor={id} className="cursor-pointer bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-bold py-1 px-3 rounded-md transition-colors">
+                    Upload
+                </label>
+            </>
+        )
+    };
+    
+    return (
+        <Modal onClose={onClose} title={`Attachments for: ${expense.name || expense.description}`} size="xl">
+            {error && <p className="mb-4 text-center text-red-400 bg-red-500/10 p-2 rounded-md">{error}</p>}
+            <div className="max-h-[60vh] overflow-y-auto">
+                {loading ? <p>Loading attachments...</p> : (
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-900/50 sticky top-0">
+                            <tr>
+                                <th className="p-3">Period / Invoice Date</th>
+                                <th className="p-3">Attached File</th>
+                                <th className="p-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700">
+                            {paymentPeriods.map(period => {
+                                const periodAttachments = attachments.filter(a => a.payment_date === period.date.toISOString().split('T')[0]);
+                                if (periodAttachments.length > 0) {
+                                    return periodAttachments.map((att, index) => (
+                                         <tr key={att.id}>
+                                            <td className="p-3">{index === 0 ? period.label : ''}</td>
+                                            <td className="p-3">
+                                                <a href={getPublicUrl(att.file_path)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">{att.file_name}</a>
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                <button onClick={() => handleDelete(att)} className="text-red-400 hover:text-red-300">Delete</button>
+                                            </td>
+                                        </tr>
+                                    ));
+                                }
+                                // Render a row for periods with no attachments yet
+                                return (
+                                    <tr key={period.date.toISOString()}>
+                                        <td className="p-3">{period.label}</td>
+                                        <td className="p-3 text-slate-500 italic">No invoice uploaded</td>
+                                        <td className="p-3 text-right">
+                                            {uploading === period.date.toISOString().split('T')[0] ? 'Uploading...' : <FileInput paymentDate={period.date} />}
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                             {expense.type === 'manual' && (
+                                <tr>
+                                    <td className="p-3"></td>
+                                    <td className="p-3"></td>
+                                    <td className="p-3 text-right">
+                                         {uploading ? 'Uploading...' : <FileInput paymentDate={new Date(expense.start_date)} />}
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </Modal>
+    );
+};
