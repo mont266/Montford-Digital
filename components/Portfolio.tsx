@@ -15,6 +15,7 @@ interface Project {
     android?: string;
     ios?: string;
   };
+  isPlaceholder?: boolean;
 }
 
 // Data is now hardcoded in the component for easy manual updates.
@@ -36,78 +37,49 @@ const projects: Project[] = [
     }
   },
   {
-    "imageSrc": "https://picsum.photos/seed/flow-commerce/600/400",
-    "title": "Flow Commerce",
-    "category": "E-commerce Platform",
-    "description": "An intuitive e-commerce site with seamless checkout.",
-    "detailedDescription": "For Flow Commerce, we built a custom e-commerce solution from the ground up. The platform supports thousands of products, features a streamlined multi-step checkout process, and integrates with major payment gateways. Advanced features include personalized recommendations and a powerful admin dashboard for inventory management.",
-    "tags": [
-      "E-commerce",
-      "Retail",
-      "Inventory Management"
-    ],
-    "links": {
-      "webapp": "https://example.com"
-    }
+    imageSrc: "https://picsum.photos/seed/future-project-1/600/400",
+    title: "Coming Soon",
+    category: "Future Project",
+    description: "We're working on something amazing. Stay tuned!",
+    detailedDescription: "",
+    tags: [],
+    isPlaceholder: true,
   },
   {
-    "imageSrc": "https://picsum.photos/seed/artisan-cafe/600/400",
-    "title": "Artisan Cafe",
-    "category": "Local Business Site",
-    "description": "A charming website showcasing a local cafe's menu and story.",
-    "detailedDescription": "We helped Artisan Cafe brew up a new online presence. The website features a warm, inviting design that reflects their brand, a dynamic menu that's easy to update, and an integrated online ordering system that helped increase their takeaway sales by 40%.",
-    "tags": [
-      "Hospitality",
-      "Local Business",
-      "Online Ordering"
-    ],
-    "links": {
-      "webapp": "https://example.com"
-    }
+    imageSrc: "https://picsum.photos/seed/future-project-2/600/400",
+    title: "Coming Soon",
+    category: "Future Project",
+    description: "We're working on something amazing. Stay tuned!",
+    detailedDescription: "",
+    tags: [],
+    isPlaceholder: true,
   },
   {
-    "imageSrc": "https://picsum.photos/seed/connect-app/600/400",
-    "title": "ConnectApp",
-    "category": "iOS & Android App",
-    "description": "A vibrant social app to connect with like-minded people.",
-    "detailedDescription": "ConnectApp is a social networking platform designed to connect people with shared interests and hobbies. We developed native iOS and Android applications with a focus on a fluid user interface, real-time chat, and an intelligent recommendation engine. The launch was supported by a high-converting landing page.",
-    "tags": [
-      "Social Media",
-      "Real-time Chat",
-      "Mobile App"
-    ],
-    "links": {
-      "webapp": "#",
-      "ios": "#",
-      "android": "#"
-    }
+    imageSrc: "https://picsum.photos/seed/future-project-3/600/400",
+    title: "Coming Soon",
+    category: "Future Project",
+    description: "We're working on something amazing. Stay tuned!",
+    detailedDescription: "",
+    tags: [],
+    isPlaceholder: true,
   },
   {
-    "imageSrc": "https://picsum.photos/seed/data-visualize/600/400",
-    "title": "DataVisualize",
-    "category": "Data Dashboard",
-    "description": "An interactive dashboard for complex data analysis.",
-    "detailedDescription": "DataVisualize provides a powerful B2B service for data analysis. We built a highly interactive and performant dashboard application that allows users to connect various data sources, create custom visualizations, and generate insightful reports in real-time.",
-    "tags": [
-      "SaaS",
-      "Analytics",
-      "B2B"
-    ]
+    imageSrc: "https://picsum.photos/seed/future-project-4/600/400",
+    title: "Coming Soon",
+    category: "Future Project",
+    description: "We're working on something amazing. Stay tuned!",
+    detailedDescription: "",
+    tags: [],
+    isPlaceholder: true,
   },
   {
-    "imageSrc": "https://picsum.photos/seed/nomad-blog/600/400",
-    "title": "Nomad Blog",
-    "category": "Personal Blog",
-    "description": "A clean and fast blog platform for a travel writer.",
-    "detailedDescription": "We created a lightning-fast, SEO-optimized blog for a renowned travel writer. The site is built on a modern Jamstack architecture, ensuring excellent performance and security. It features a clean, reader-focused design, an easy-to-use CMS for publishing content, and an interactive map to document their travels.",
-    "tags": [
-      "Blog",
-      "Travel",
-      "Content Platform"
-    ],
-    "links": {
-      "webapp": "https://example.com"
-    }
+    imageSrc: "https://picsum.photos/seed/future-project-5/600/400",
+    title: "Coming Soon",
+    category: "Future Project",
+    description: "We're working on something amazing. Stay tuned!",
+    detailedDescription: "",
+    tags: [],
+    isPlaceholder: true,
   }
 ];
 
@@ -117,18 +89,33 @@ interface PortfolioItemProps {
   onSelect: () => void;
 }
 
-const PortfolioItem: React.FC<PortfolioItemProps> = ({ project, onSelect }) => (
-  <div onClick={onSelect} className="group relative overflow-hidden rounded-lg shadow-lg cursor-pointer">
-    <img src={project.imageSrc} alt={project.title} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
-    <div className="absolute inset-0 bg-black bg-opacity-50 group-hover:bg-opacity-70 transition-all duration-300 flex flex-col justify-end p-6">
-      <div className="transform translate-y-8 group-hover:translate-y-0 transition-transform duration-500">
-        <h3 className="text-2xl font-bold text-white">{project.title}</h3>
-        <p className="text-cyan-400 font-semibold">{project.category}</p>
-        <p className="text-slate-200 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">{project.description}</p>
+const PortfolioItem: React.FC<PortfolioItemProps> = ({ project, onSelect }) => {
+  if (project.isPlaceholder) {
+    return (
+      <div className="group relative overflow-hidden rounded-lg shadow-lg cursor-not-allowed">
+        <img src={project.imageSrc} alt={project.title} className="w-full h-full object-cover filter grayscale" />
+        <div className="absolute inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center p-6 text-center">
+          <h3 className="text-2xl font-bold text-white">{project.title}</h3>
+          <p className="text-cyan-400 font-semibold mt-1">{project.category}</p>
+          <p className="text-slate-300 mt-2 text-sm">{project.description}</p>
+        </div>
       </div>
-    </div>
-  </div>
-);
+    );
+  }
+  
+  return (
+      <div onClick={onSelect} className="group relative overflow-hidden rounded-lg shadow-lg cursor-pointer">
+        <img src={project.imageSrc} alt={project.title} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
+        <div className="absolute inset-0 bg-black bg-opacity-50 group-hover:bg-opacity-70 transition-all duration-300 flex flex-col justify-end p-6">
+          <div className="transform translate-y-8 group-hover:translate-y-0 transition-transform duration-500">
+            <h3 className="text-2xl font-bold text-white">{project.title}</h3>
+            <p className="text-cyan-400 font-semibold">{project.category}</p>
+            <p className="text-slate-200 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">{project.description}</p>
+          </div>
+        </div>
+      </div>
+  );
+};
 
 const Portfolio: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
