@@ -25,6 +25,8 @@ interface Invoice {
     client_name: string;
   } | null;
   invoice_items: InvoiceItem[];
+  split_group_id?: string | null;
+  split_part?: number | null;
 }
 
 
@@ -49,6 +51,7 @@ const formatDate = (dateString: string) => new Date(dateString).toLocaleDateStri
 const InvoicePublicPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [siblingInvoice, setSiblingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showBankModal, setShowBankModal] = useState(false);
@@ -69,8 +72,22 @@ const InvoicePublicPage: React.FC = () => {
           .single();
 
         if (error) throw error;
-        if (data) setInvoice(data as Invoice);
-        else setError("Invoice not found.");
+        if (data) {
+            setInvoice(data as Invoice);
+            if (data.split_group_id) {
+                const { data: siblingData } = await supabase
+                    .from('invoices')
+                    .select('*')
+                    .eq('split_group_id', data.split_group_id)
+                    .neq('id', data.id)
+                    .single();
+                if (siblingData) {
+                    setSiblingInvoice(siblingData as Invoice);
+                }
+            }
+        } else {
+            setError("Invoice not found.");
+        }
 
       } catch (err: any) {
         setError(err.message || 'An error occurred while fetching the invoice.');
@@ -117,6 +134,14 @@ const InvoicePublicPage: React.FC = () => {
               {error && <p className="text-center text-red-400">{error}</p>}
               {invoice && (
                   <div>
+                      {invoice.split_group_id && (
+                        <div className="bg-slate-700/50 p-4 rounded-md mb-8 border border-slate-600 text-center">
+                            <p className="font-semibold text-white">This is Part {invoice.split_part} of 2</p>
+                            <p className="text-sm text-slate-300">
+                                This invoice is for 50% of the total project cost of {formatCurrency(invoice.amount + (siblingInvoice?.amount || invoice.amount))}.
+                            </p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mb-8">
                           <div>
                               <p className="text-sm text-slate-400 mb-1">Billed To</p>

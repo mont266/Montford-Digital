@@ -1,11 +1,4 @@
 
-
-
-
-
-
-
-
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -47,6 +40,8 @@ interface Invoice {
   projects: { name: string } | null;
   invoice_items: InvoiceItem[];
   entity_id: string;
+  split_group_id?: string | null;
+  split_part?: number | null;
 }
 
 type ExpenseStatus = 'upcoming' | 'completed' | 'active' | 'inactive';
@@ -454,6 +449,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+    const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
     const TAX_YEAR_START = useMemo(() => new Date('2024-04-06'), []);
 
     useEffect(() => {
@@ -476,10 +472,20 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
         else refreshData();
     };
 
-    const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this invoice?")) {
-            const { error } = await supabase.from('invoices').delete().eq('id', id);
-            if (error) console.error("Error deleting invoice:", error);
+    const handleDelete = async (id: string, groupId?: string | null) => {
+        const confirmMessage = groupId
+            ? "This is part of a split invoice. Are you sure you want to delete BOTH parts?"
+            : "Are you sure you want to delete this invoice?";
+
+        if (window.confirm(confirmMessage)) {
+            let query = supabase.from('invoices').delete();
+            if (groupId) {
+                query = query.eq('split_group_id', groupId);
+            } else {
+                query = query.eq('id', id);
+            }
+            const { error } = await query;
+            if (error) console.error("Error deleting invoice(s):", error);
             else refreshData();
         }
     };
@@ -487,7 +493,91 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
     // We need to sort paid invoices by date to correctly calculate running total
     const sortedInvoices = useMemo(() => [...invoices].sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime()), [invoices]);
     
+    const processedInvoices = useMemo(() => {
+        const splitInvoices = new Map<string, Invoice[]>();
+        const regularInvoices: Invoice[] = [];
+
+        sortedInvoices.forEach(inv => {
+            if (inv.split_group_id) {
+                if (!splitInvoices.has(inv.split_group_id)) {
+                    splitInvoices.set(inv.split_group_id, []);
+                }
+                splitInvoices.get(inv.split_group_id)!.push(inv);
+            } else {
+                regularInvoices.push(inv);
+            }
+        });
+        
+        splitInvoices.forEach(parts => parts.sort((a, b) => (a.split_part || 0) - (b.split_part || 0)));
+        
+        return { regularInvoices, splitInvoices };
+    }, [sortedInvoices]);
+
+    const toggleSplitExpansion = (groupId: string) => {
+        setExpandedSplits(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(groupId)) newSet.delete(groupId);
+            else newSet.add(groupId);
+            return newSet;
+        });
+    };
+
     let runningPaidTotalThisYear = 0;
+    
+    const InvoiceRow = ({ invoice, isSubRow = false }: { invoice: Invoice; isSubRow?: boolean }) => {
+        const isPaidThisYear = invoice.status === 'paid' && new Date(invoice.issue_date) >= TAX_YEAR_START;
+        const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
+
+        const calculatedStripeFee = (invoice.amount * 0.025) + 0.20;
+        const effectiveStripeFee = calculatedStripeFee > 50 ? 0 : calculatedStripeFee;
+        const totalTax = taxCalculation.totalTax;
+        const takeHome = invoice.amount - effectiveStripeFee - totalTax;
+        
+        if (isPaidThisYear) {
+            runningPaidTotalThisYear += invoice.amount;
+        }
+
+        return (
+            <tr className={isSubRow ? "bg-slate-800/50" : "hover:bg-slate-800/50"}>
+                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${isSubRow ? 'pl-10' : ''}`}>
+                    <div className="flex items-center">
+                        {isSubRow && <span className="mr-2 text-slate-500">↳</span>}
+                        {invoice.invoice_number}
+                    </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.created_at).toLocaleDateString('en-GB')}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString('en-GB')}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
+                <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
+                    <div className="flex flex-col">
+                        <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(effectiveStripeFee)}</span></span>
+                        <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
+                        <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
+                    </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
+                    <div className="relative inline-block text-left actions-dropdown-container">
+                        <button onClick={() => setOpenDropdownId(openDropdownId === invoice.id ? null : invoice.id)} className="inline-flex justify-center w-full rounded-full p-2 text-sm font-medium text-slate-400 hover:bg-slate-700 focus:outline-none">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+                        </button>
+                        {openDropdownId === invoice.id && (
+                            <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
+                                <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                                    <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
+                                    {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
+                                    {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
+                                    <div className="border-t border-slate-700 my-1"></div>
+                                    <button onClick={() => { handleDelete(invoice.id, invoice.split_group_id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </td>
+            </tr>
+        );
+    };
 
     return (
         <div>
@@ -515,61 +605,36 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
-                        {sortedInvoices.map(invoice => {
-                            const isPaidThisYear = invoice.status === 'paid' && new Date(invoice.issue_date) >= TAX_YEAR_START;
-                            
-                            const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
-
-                            const calculatedStripeFee = (invoice.amount * 0.025) + 0.20;
-                            const effectiveStripeFee = calculatedStripeFee > 50 ? 0 : calculatedStripeFee;
-                            const totalTax = taxCalculation.totalTax;
-                            const takeHome = invoice.amount - effectiveStripeFee - totalTax;
-                            
-                            if (isPaidThisYear) {
-                                runningPaidTotalThisYear += invoice.amount;
-                            }
+                        {processedInvoices.regularInvoices.map(invoice => <InvoiceRow key={invoice.id} invoice={invoice} />)}
+                        {Array.from(processedInvoices.splitInvoices.entries()).map(([groupId, parts]) => {
+                            const totalAmount = parts.reduce((sum, p) => sum + p.amount, 0);
+                            const mainPart = parts[0];
+                            const isExpanded = expandedSplits.has(groupId);
+                            const overallStatus = parts.every(p => p.status === 'paid') ? 'Paid' : parts.some(p => p.status === 'sent' && new Date(p.due_date) < new Date()) ? 'Overdue' : 'In Progress';
+                             const baseInvoiceNumber = mainPart.invoice_number.split('-').slice(0, 2).join('-');
 
                             return (
-                                <tr key={invoice.id} className="hover:bg-slate-800/50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{invoice.invoice_number}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.created_at).toLocaleDateString('en-GB')}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString('en-GB')}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
-                                        <div className="flex flex-col">
-                                            <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(effectiveStripeFee)}</span></span>
-                                            <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
-                                            <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                                        <div className="relative inline-block text-left actions-dropdown-container">
-                                            <button
-                                                onClick={() => setOpenDropdownId(openDropdownId === invoice.id ? null : invoice.id)}
-                                                className="inline-flex justify-center w-full rounded-full p-2 text-sm font-medium text-slate-400 hover:bg-slate-700 focus:outline-none"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                                                </svg>
+                                <React.Fragment key={groupId}>
+                                    <tr className="hover:bg-slate-800/50 cursor-pointer" onClick={() => toggleSplitExpansion(groupId)}>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white flex items-center">
+                                            {baseInvoiceNumber}
+                                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-700 text-slate-300">SPLIT</span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{mainPart.projects?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 font-bold">{formatCurrency(totalAmount)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(mainPart.created_at).toLocaleDateString('en-GB')}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">-</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">{overallStatus}</td>
+                                        <td className="px-6 py-4"></td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button className={`transition-transform transform ${isExpanded ? 'rotate-90' : ''}`}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
                                             </button>
-
-                                            {openDropdownId === invoice.id && (
-                                                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
-                                                    <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
-                                                        {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
-                                                        {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
-                                                        <div className="border-t border-slate-700 my-1"></div>
-                                                        <button onClick={() => { handleDelete(invoice.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            )
+                                        </td>
+                                    </tr>
+                                    {isExpanded && parts.map(part => <InvoiceRow key={part.id} invoice={part} isSubRow />)}
+                                </React.Fragment>
+                            );
                         })}
                     </tbody>
                 </table>
@@ -1016,7 +1081,16 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
 
 // --- FORMS ---
 const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; selectedEntityId: string }> = ({ projects, onClose, refreshData, onAddNewProject, selectedEntityId }) => {
-    const [formData, setFormData] = useState({ project_id: '', invoice_number: '', issue_date: '', due_date: '', status: 'draft' });
+    const [formData, setFormData] = useState({ 
+        project_id: '', 
+        invoice_number: '', 
+        issue_date: '', 
+        due_date: '', 
+        due_date_part1: '',
+        due_date_part2: '',
+        status: 'draft' 
+    });
+    const [isSplitInvoice, setIsSplitInvoice] = useState(false);
     const [items, setItems] = useState<InvoiceItem[]>([{ description: '', quantity: 1, unit_price: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1077,7 +1151,6 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
         e.preventDefault();
         setIsSubmitting(true);
         
-        // Find entity from selected project if available, otherwise use global selected or error
         const selectedProject = projects.find(p => p.id === formData.project_id);
         const entityIdToUse = selectedProject ? selectedProject.entity_id : (selectedEntityId !== 'all' ? selectedEntityId : null);
 
@@ -1087,34 +1160,38 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
             return;
         }
 
-        const invoiceData = { ...formData, amount: totalAmount, entity_id: entityIdToUse };
+        if (isSplitInvoice) {
+            const splitGroupId = crypto.randomUUID();
+            const splitAmount = totalAmount / 2;
 
-        const { data: newInvoice, error: invoiceError } = await supabase
-            .from('invoices')
-            .insert(invoiceData)
-            .select()
-            .single();
+            const invoiceData1 = { ...formData, due_date: formData.due_date_part1, amount: splitAmount, entity_id: entityIdToUse, split_group_id: splitGroupId, split_part: 1, invoice_number: `${formData.invoice_number}-A` };
+            const invoiceData2 = { ...formData, due_date: formData.due_date_part2, amount: splitAmount, entity_id: entityIdToUse, split_group_id: splitGroupId, split_part: 2, invoice_number: `${formData.invoice_number}-B` };
+            
+            const { data: newInvoice1, error: invoiceError1 } = await supabase.from('invoices').insert(invoiceData1).select().single();
+            if (invoiceError1) { console.error("Error creating invoice part 1:", invoiceError1); setIsSubmitting(false); return; }
 
-        if (invoiceError || !newInvoice) {
-            console.error("Error creating invoice:", invoiceError);
-            setIsSubmitting(false);
-            return;
-        }
+            const { data: newInvoice2, error: invoiceError2 } = await supabase.from('invoices').insert(invoiceData2).select().single();
+            if (invoiceError2) { console.error("Error creating invoice part 2:", invoiceError2); await supabase.from('invoices').delete().eq('id', newInvoice1.id); setIsSubmitting(false); return; }
 
-        const itemsToInsert = items.map(item => ({
-            ...item,
-            invoice_id: newInvoice.id,
-        }));
+            const itemsPart1 = items.map(item => ({ ...item, unit_price: item.unit_price / 2, invoice_id: newInvoice1.id }));
+            const itemsPart2 = items.map(item => ({ ...item, unit_price: item.unit_price / 2, invoice_id: newInvoice2.id }));
 
-        const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+            const { error: itemsError1 } = await supabase.from('invoice_items').insert(itemsPart1);
+            if (itemsError1) { console.error("Error creating items for part 1:", itemsError1); await supabase.from('invoices').delete().eq('split_group_id', splitGroupId); setIsSubmitting(false); return; }
 
-        if (itemsError) {
-            console.error("Error creating invoice items:", itemsError);
-            await supabase.from('invoices').delete().eq('id', newInvoice.id);
+            const { error: itemsError2 } = await supabase.from('invoice_items').insert(itemsPart2);
+            if (itemsError2) { console.error("Error creating items for part 2:", itemsError2); await supabase.from('invoices').delete().eq('split_group_id', splitGroupId); await supabase.from('invoice_items').delete().eq('invoice_id', newInvoice1.id); setIsSubmitting(false); return; }
         } else {
-            refreshData();
-            onClose();
+            const invoiceData = { ...formData, amount: totalAmount, entity_id: entityIdToUse };
+            const { data: newInvoice, error: invoiceError } = await supabase.from('invoices').insert(invoiceData).select().single();
+            if (invoiceError || !newInvoice) { console.error("Error creating invoice:", invoiceError); setIsSubmitting(false); return; }
+            const itemsToInsert = items.map(item => ({ ...item, invoice_id: newInvoice.id }));
+            const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+            if (itemsError) { console.error("Error creating invoice items:", itemsError); await supabase.from('invoices').delete().eq('id', newInvoice.id); }
         }
+
+        refreshData();
+        onClose();
         setIsSubmitting(false);
     };
 
@@ -1140,8 +1217,21 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                     </div>
                     <div><label className="block text-sm font-medium text-slate-300">Invoice Number</label><input type="text" name="invoice_number" value={formData.invoice_number} readOnly className="mt-1 w-full bg-slate-900 border-slate-700 rounded-md p-2 text-slate-400 cursor-not-allowed" /></div>
                     <div><label className="block text-sm font-medium text-slate-300">Issue Date</label><input type="date" name="issue_date" value={formData.issue_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                    <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                     <div className="flex items-center space-x-2 pt-6">
+                        <input id="split-invoice-checkbox" type="checkbox" checked={isSplitInvoice} onChange={(e) => setIsSplitInvoice(e.target.checked)} className="h-4 w-4 rounded border-slate-500 text-cyan-600 focus:ring-cyan-500" />
+                        <label htmlFor="split-invoice-checkbox" className="text-sm font-medium text-slate-300">Create 50/50 Split Invoice</label>
+                    </div>
                 </div>
+
+                {isSplitInvoice && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-900/50 rounded-md border border-slate-700">
+                        <div><label className="block text-sm font-medium text-slate-300">Upfront 50% Due Date</label><input type="date" name="due_date_part1" value={formData.due_date_part1} onChange={handleFormChange} required={isSplitInvoice} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                        <div><label className="block text-sm font-medium text-slate-300">Completion 50% Due Date</label><input type="date" name="due_date_part2" value={formData.due_date_part2} onChange={handleFormChange} required={isSplitInvoice} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                    </div>
+                )}
+                {!isSplitInvoice && (
+                     <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required={!isSplitInvoice} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                )}
                 
                 <div className="border-t border-b border-slate-700 py-4 space-y-3">
                     <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
@@ -1162,7 +1252,9 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                 </div>
                 
                 <div className="text-right space-y-1 text-slate-300">
-                    <p className="text-xl font-bold text-white border-t border-slate-600 pt-2 mt-2">Total: <span className="">{formatCurrency(totalAmount)}</span></p>
+                    <p className="text-sm">Total Project Value:</p>
+                    <p className="text-xl font-bold text-white border-t border-slate-600 pt-2 mt-2">{formatCurrency(totalAmount)}</p>
+                    {isSplitInvoice && <p className="text-sm text-cyan-400">2 x Invoices of {formatCurrency(totalAmount / 2)}</p>}
                 </div>
 
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md mt-6" disabled={isSubmitting}>
