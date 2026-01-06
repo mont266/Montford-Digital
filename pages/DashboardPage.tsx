@@ -1164,8 +1164,29 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
             const splitGroupId = crypto.randomUUID();
             const splitAmount = totalAmount / 2;
 
-            const invoiceData1 = { ...formData, due_date: formData.due_date_part1, amount: splitAmount, entity_id: entityIdToUse, split_group_id: splitGroupId, split_part: 1, invoice_number: `${formData.invoice_number}-A` };
-            const invoiceData2 = { ...formData, due_date: formData.due_date_part2, amount: splitAmount, entity_id: entityIdToUse, split_group_id: splitGroupId, split_part: 2, invoice_number: `${formData.invoice_number}-B` };
+            // Explicitly build the objects to avoid sending formData's extra fields
+            const invoiceData1 = {
+                project_id: formData.project_id,
+                invoice_number: `${formData.invoice_number}-A`,
+                issue_date: formData.issue_date,
+                due_date: formData.due_date_part1,
+                status: formData.status,
+                amount: splitAmount,
+                entity_id: entityIdToUse,
+                split_group_id: splitGroupId,
+                split_part: 1,
+            };
+            const invoiceData2 = {
+                project_id: formData.project_id,
+                invoice_number: `${formData.invoice_number}-B`,
+                issue_date: formData.issue_date,
+                due_date: formData.due_date_part2,
+                status: formData.status,
+                amount: splitAmount,
+                entity_id: entityIdToUse,
+                split_group_id: splitGroupId,
+                split_part: 2,
+            };
             
             const { data: newInvoice1, error: invoiceError1 } = await supabase.from('invoices').insert(invoiceData1).select().single();
             if (invoiceError1) { console.error("Error creating invoice part 1:", invoiceError1); setIsSubmitting(false); return; }
@@ -1173,8 +1194,9 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
             const { data: newInvoice2, error: invoiceError2 } = await supabase.from('invoices').insert(invoiceData2).select().single();
             if (invoiceError2) { console.error("Error creating invoice part 2:", invoiceError2); await supabase.from('invoices').delete().eq('id', newInvoice1.id); setIsSubmitting(false); return; }
 
-            const itemsPart1 = items.map(item => ({ ...item, unit_price: item.unit_price / 2, invoice_id: newInvoice1.id }));
-            const itemsPart2 = items.map(item => ({ ...item, unit_price: item.unit_price / 2, invoice_id: newInvoice2.id }));
+            // Explicitly build item objects to avoid sending transient state fields like 'id'
+            const itemsPart1 = items.map(item => ({ description: item.description, quantity: item.quantity, unit_price: item.unit_price / 2, invoice_id: newInvoice1.id }));
+            const itemsPart2 = items.map(item => ({ description: item.description, quantity: item.quantity, unit_price: item.unit_price / 2, invoice_id: newInvoice2.id }));
 
             const { error: itemsError1 } = await supabase.from('invoice_items').insert(itemsPart1);
             if (itemsError1) { console.error("Error creating items for part 1:", itemsError1); await supabase.from('invoices').delete().eq('split_group_id', splitGroupId); setIsSubmitting(false); return; }
@@ -1182,10 +1204,21 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
             const { error: itemsError2 } = await supabase.from('invoice_items').insert(itemsPart2);
             if (itemsError2) { console.error("Error creating items for part 2:", itemsError2); await supabase.from('invoices').delete().eq('split_group_id', splitGroupId); await supabase.from('invoice_items').delete().eq('invoice_id', newInvoice1.id); setIsSubmitting(false); return; }
         } else {
-            const invoiceData = { ...formData, amount: totalAmount, entity_id: entityIdToUse };
+            // Explicitly build the object to avoid sending formData's extra fields
+            const invoiceData = {
+                project_id: formData.project_id,
+                invoice_number: formData.invoice_number,
+                issue_date: formData.issue_date,
+                due_date: formData.due_date,
+                status: formData.status,
+                amount: totalAmount,
+                entity_id: entityIdToUse,
+            };
             const { data: newInvoice, error: invoiceError } = await supabase.from('invoices').insert(invoiceData).select().single();
             if (invoiceError || !newInvoice) { console.error("Error creating invoice:", invoiceError); setIsSubmitting(false); return; }
-            const itemsToInsert = items.map(item => ({ ...item, invoice_id: newInvoice.id }));
+
+            // Explicitly build item objects
+            const itemsToInsert = items.map(item => ({ description: item.description, quantity: item.quantity, unit_price: item.unit_price, invoice_id: newInvoice.id }));
             const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
             if (itemsError) { console.error("Error creating invoice items:", itemsError); await supabase.from('invoices').delete().eq('id', newInvoice.id); }
         }
