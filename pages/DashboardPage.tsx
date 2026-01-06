@@ -1,9 +1,11 @@
 
+
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import ImportFlow from './ImportPage';
+import TaxCentrePage from './TaxCentrePage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -64,9 +66,10 @@ interface Expense {
   amount_gbp: number; // Standardized amount in GBP
   category: string;
   start_date: string;
-  end_date?: string;
+  // Fix: Allow null for end_date and billing_cycle to match form submission logic.
+  end_date?: string | null;
   type: 'manual' | 'subscription';
-  billing_cycle?: 'monthly' | 'annually';
+  billing_cycle?: 'monthly' | 'annually' | null;
   status: ExpenseStatus;
   entity_id: string;
   expense_attachments: { count: number }[];
@@ -661,7 +664,7 @@ const calculateTotalSpend = (expense: Expense): number => {
     }
 
     const theoreticalEndDate = expense.end_date ? (() => {
-        const endDateParts = expense.end_date.split('-').map(Number);
+        const endDateParts = (expense.end_date as string).split('-').map(Number);
         return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
     })() : todayDateOnly;
 
@@ -693,11 +696,10 @@ const calculateTotalSpend = (expense: Expense): number => {
     return cycles * expense.amount_gbp;
 };
 
-const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string }> = ({ expenses, refreshData, selectedEntityId }) => {
+const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string; setAttachmentModalExpense: (expense: Expense | null) => void; }> = ({ expenses, refreshData, selectedEntityId, setAttachmentModalExpense }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [attachmentModalExpense, setAttachmentModalExpense] = useState<Expense | null>(null);
     const [timeSpan, setTimeSpan] = useState<OutgoingTimeSpan>('all');
 
     const handleEdit = (expense: Expense) => {
@@ -813,7 +815,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
             const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
             
             const endDate = exp.end_date ? (() => {
-                const endDateParts = exp.end_date.split('-').map(Number);
+                const endDateParts = (exp.end_date as string).split('-').map(Number);
                 return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
             })() : null;
 
@@ -1073,7 +1075,6 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 </Modal>
             )}
             {showModal && <ExpenseForm expenseToEdit={editingExpense} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
-            {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={refreshData} />}
         </div>
     );
 };
@@ -1450,6 +1451,8 @@ const DashboardPage: React.FC = () => {
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [attachmentModalExpense, setAttachmentModalExpense] = useState<Expense | null>(null);
+
 
     // Fetch initial identities
     useEffect(() => {
@@ -1507,7 +1510,7 @@ const DashboardPage: React.FC = () => {
             const startDate = new Date(startDateParts[0], startDateParts[1] - 1, startDateParts[2]);
             
             const endDate = exp.end_date ? (() => {
-                const endDateParts = exp.end_date.split('-').map(Number);
+                const endDateParts = (exp.end_date as string).split('-').map(Number);
                 return new Date(endDateParts[0], endDateParts[1] - 1, endDateParts[2]);
             })() : null;
 
@@ -1542,6 +1545,7 @@ const DashboardPage: React.FC = () => {
         { path: "/dashboard/projects", label: "Projects" },
         { path: "/dashboard/invoices", label: "Invoices" },
         { path: "/dashboard/expenses", label: "Outgoings" },
+        { path: "/dashboard/tax", label: "Tax Centre" },
     ];
 
     return (
@@ -1589,12 +1593,16 @@ const DashboardPage: React.FC = () => {
                  {loading && <div className="text-center">Loading dashboard data...</div>}
                  {error && <div className="text-center text-red-400">Error: {error}</div>}
                  {!loading && !error && (
-                    <Routes>
-                        <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} />} />
-                        <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                        <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                    </Routes>
+                    <>
+                        <Routes>
+                            <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} />} />
+                            <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                            <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                            <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} setAttachmentModalExpense={setAttachmentModalExpense} />} />
+                            <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
+                        </Routes>
+                        {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={fetchData} />}
+                    </>
                  )}
             </main>
         </div>
