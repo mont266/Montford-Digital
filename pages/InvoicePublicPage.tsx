@@ -55,6 +55,7 @@ const InvoicePublicPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showBankModal, setShowBankModal] = useState(false);
+  const [isReceiptView, setIsReceiptView] = useState(false);
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -65,13 +66,14 @@ const InvoicePublicPage: React.FC = () => {
       }
 
       try {
-        const { data, error } = await supabase
+        // FIX: Renamed `error` from supabase to `dbError` to avoid shadowing the state variable.
+        const { data, error: dbError } = await supabase
           .from('invoices')
           .select(`*, projects ( name, client_name ), invoice_items ( * )`)
           .eq('id', id)
           .single();
 
-        if (error) throw error;
+        if (dbError) throw dbError;
         if (data) {
             setInvoice(data as Invoice);
             if (data.split_group_id) {
@@ -102,6 +104,10 @@ const InvoicePublicPage: React.FC = () => {
       alert("Payment processing would be initiated here!");
   };
 
+  const handleSavePdf = () => {
+      window.print();
+  };
+
   const getStatusChip = (status: string, dueDate: string) => {
     const isOverdue = new Date(dueDate) < new Date() && status !== 'paid';
     if (status === 'paid') return 'bg-green-500/20 text-green-300 border-green-500/30';
@@ -119,12 +125,12 @@ const InvoicePublicPage: React.FC = () => {
           <header className="bg-slate-900 p-8 flex justify-between items-start">
               <div>
                   <Logo className="h-9 w-auto" />
-                  <p className="text-slate-400 mt-2">Invoice</p>
+                  <p className="text-slate-400 mt-2">{isReceiptView ? 'Receipt' : 'Invoice'}</p>
               </div>
               {invoice && (
                   <div className="text-right">
-                      <h2 className="text-3xl font-bold text-white">{formatCurrency(invoice.amount)}</h2>
-                      <p className="text-slate-400">Due on {formatDate(invoice.due_date)}</p>
+                      <h2 className="text-3xl font-bold text-white">{isReceiptView ? 'Paid in Full' : formatCurrency(invoice.amount)}</h2>
+                      <p className="text-slate-400">{isReceiptView ? `Paid on ${formatDate(invoice.issue_date)}` : `Due on ${formatDate(invoice.due_date)}`}</p>
                   </div>
               )}
           </header>
@@ -194,6 +200,17 @@ const InvoicePublicPage: React.FC = () => {
                           </div>
                       </div>
                       
+                      {/* This block will only be visible when printing or saving as PDF */}
+                      <div className="hidden print-show mt-8 pt-6 border-t border-slate-700">
+                          <h3 className="text-lg font-semibold text-white mb-4">Bank Transfer Details</h3>
+                           <div className="text-base space-y-2 bg-slate-900/50 p-4 rounded-md border border-slate-700">
+                                <p><span className="text-slate-400">Account Name:</span> <span className="text-white font-mono">Scott Montford</span></p>
+                                <p><span className="text-slate-400">Sort Code:</span> <span className="text-white font-mono">04-00-75</span></p>
+                                <p><span className="text-slate-400">Account Number:</span> <span className="text-white font-mono">41017137</span></p>
+                           </div>
+                           <p className="text-xs text-slate-500 mt-2">Please use invoice number {invoice.invoice_number} as the payment reference.</p>
+                      </div>
+
                       <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
                           <div className="flex items-center mb-4 sm:mb-0 print-hide">
                              <span className="text-slate-400 mr-2">Status:</span>
@@ -203,30 +220,44 @@ const InvoicePublicPage: React.FC = () => {
                           </div>
                           
                           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto print-hide">
-                              <button
-                                  onClick={() => window.print()}
-                                  className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors"
-                              >
-                                  Print Invoice
-                              </button>
-                              {invoice.status !== 'paid' && (
-                                  <>
-                                      <button
-                                          onClick={() => setShowBankModal(true)}
-                                          className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors"
-                                      >
-                                          Pay by Bank Transfer
-                                      </button>
-                                      {stripeFee <= 50 && (
-                                        <button
-                                            onClick={handlePayment}
-                                            className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20"
-                                        >
-                                            Pay with Card
+                            {isReceiptView ? (
+                                <>
+                                    <button onClick={() => setIsReceiptView(false)} className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                        Back to Invoice
+                                    </button>
+                                    <button onClick={() => window.print()} className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                        Print Receipt
+                                    </button>
+                                    <button onClick={handleSavePdf} className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                        Save Receipt as PDF
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={() => window.print()} className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                        Print Invoice
+                                    </button>
+                                    <button onClick={handleSavePdf} className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                        Save as PDF
+                                    </button>
+                                    {invoice.status === 'paid' ? (
+                                        <button onClick={() => setIsReceiptView(true)} className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
+                                            View Receipt
                                         </button>
-                                      )}
-                                  </>
-                              )}
+                                    ) : (
+                                        <>
+                                            <button onClick={() => setShowBankModal(true)} className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                                Pay by Bank Transfer
+                                            </button>
+                                            {stripeFee <= 50 && (
+                                                <button onClick={handlePayment} className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
+                                                    Pay with Card
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                </>
+                            )}
                           </div>
                       </div>
                   </div>
