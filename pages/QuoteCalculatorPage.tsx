@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 // --- Configuration ---
 const PRICING_CONFIG = {
     BASE_SETUP_FEE: 150,
-    COST_PER_POINT: 40, // Lowered from 45
+    COST_PER_POINT: 10, // Lowered from 40
     
     // Points represent relative complexity/effort
     FEATURE_POINTS: {
