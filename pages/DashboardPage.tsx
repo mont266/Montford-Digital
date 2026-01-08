@@ -1,5 +1,4 @@
 
-
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -355,9 +354,9 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     return (
         <div className="space-y-10">
             <div>
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
                      <h2 className="text-2xl font-bold text-white">Overview</h2>
-                     <div className="flex space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
+                     <div className="flex flex-wrap justify-end space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
                          {(['7d', 'mtd', 'tfy', 'lfy', 'all'] as const).map(span => (
                              <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
                                 {timeSpanLabels[span]}
@@ -419,8 +418,8 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; sel
                 <h2 className="text-2xl font-bold text-white">Projects</h2>
                 <button onClick={handleAddNew} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Project</button>
             </div>
-            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-700">
+            <div className="bg-slate-800 md:border md:border-slate-700 md:rounded-lg overflow-x-auto">
+                <table className="min-w-full md:divide-y md:divide-slate-700 responsive-table">
                     <thead className="bg-slate-900/50">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Project Name</th>
@@ -428,14 +427,16 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; sel
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-700">
+                    <tbody className="md:divide-y md:divide-slate-700">
                         {projects.map(project => (
                             <tr key={project.id}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{project.client_name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
-                                    <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
-                                    <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                <td data-label="Project Name" className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
+                                <td data-label="Client Name" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{project.client_name}</td>
+                                <td data-label="Actions" className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <div className="actions-cell">
+                                        <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
+                                        <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -527,7 +528,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
 
     let runningPaidTotalThisYear = 0;
     
-    const InvoiceRow = ({ invoice, isSubRow = false }: { invoice: Invoice; isSubRow?: boolean }) => {
+    const InvoiceRow: React.FC<{ invoice: Invoice; isSubRow?: boolean }> = ({ invoice, isSubRow = false }) => {
         const isPaidThisYear = invoice.status === 'paid' && new Date(invoice.issue_date) >= TAX_YEAR_START;
         const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
 
@@ -542,40 +543,46 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
 
         return (
             <tr className={isSubRow ? "bg-slate-800/50" : "hover:bg-slate-800/50"}>
-                <td className={`px-6 py-4 whitespace-nowrap text-sm text-white ${isSubRow ? 'pl-10' : ''}`}>
-                    <div className="flex items-center">
-                        {isSubRow && <span className="mr-2 text-slate-500">↳</span>}
+                <td data-label="Number" className={`px-6 py-4 whitespace-nowrap text-sm text-white ${isSubRow ? 'md:pl-10' : ''}`}>
+                    <div className="flex items-center justify-end md:justify-start">
+                        {isSubRow && <span className="mr-2 text-slate-500 hidden md:inline">↳</span>}
                         {invoice.invoice_number}
                     </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.created_at).toLocaleDateString('en-GB')}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString('en-GB')}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span></td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
-                    <div className="flex flex-col">
+                <td data-label="Project" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{invoice.projects?.name || 'N/A'}</td>
+                <td data-label="Amount" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{formatCurrency(invoice.amount)}</td>
+                <td data-label="Created" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.created_at).toLocaleDateString('en-GB')}</td>
+                <td data-label="Due Date" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(invoice.due_date).toLocaleDateString('en-GB')}</td>
+                <td data-label="Status" className="px-6 py-4 whitespace-nowrap text-sm">
+                    <div className="status-cell">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${invoice.status === 'paid' ? 'bg-green-500/20 text-green-300' : (invoice.status === 'sent' && new Date(invoice.due_date) < new Date()) ? 'bg-red-500/20 text-red-300' : invoice.status === 'draft' ? 'bg-gray-500/20 text-gray-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{invoice.status}</span>
+                    </div>
+                </td>
+                <td data-label="Financials" className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
+                    <div className="financials-cell">
                         <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(effectiveStripeFee)}</span></span>
                         <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
                         <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
                     </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
-                    <div className="relative inline-block text-left actions-dropdown-container">
-                        <button onClick={() => setOpenDropdownId(openDropdownId === invoice.id ? null : invoice.id)} className="inline-flex justify-center w-full rounded-full p-2 text-sm font-medium text-slate-400 hover:bg-slate-700 focus:outline-none">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
-                        </button>
-                        {openDropdownId === invoice.id && (
-                            <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
-                                <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                    <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
-                                    {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
-                                    {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
-                                    <div className="border-t border-slate-700 my-1"></div>
-                                    <button onClick={() => { handleDelete(invoice.id, invoice.split_group_id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
+                <td data-label="Actions" className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                     <div className="actions-cell">
+                        <div className="relative inline-block text-left actions-dropdown-container">
+                            <button onClick={() => setOpenDropdownId(openDropdownId === invoice.id ? null : invoice.id)} className="inline-flex justify-center w-full rounded-full p-2 text-sm font-medium text-slate-400 hover:bg-slate-700 focus:outline-none">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+                            </button>
+                            {openDropdownId === invoice.id && (
+                                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
+                                    <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
+                                        {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
+                                        {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
+                                        <div className="border-t border-slate-700 my-1"></div>
+                                        <button onClick={() => { handleDelete(invoice.id, invoice.split_group_id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </td>
             </tr>
@@ -588,8 +595,8 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                 <h2 className="text-2xl font-bold text-white">Invoices</h2>
                 <button onClick={() => setShowInvoiceModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Invoice</button>
             </div>
-            <div className={`bg-slate-800 border border-slate-700 rounded-lg ${openDropdownId ? 'overflow-visible' : 'overflow-x-auto'}`}>
-                <table className="min-w-full divide-y divide-slate-700">
+            <div className={`bg-slate-800 md:border md:border-slate-700 md:rounded-lg ${openDropdownId ? 'overflow-visible' : 'overflow-x-auto'}`}>
+                <table className="min-w-full md:divide-y md:divide-slate-700 responsive-table">
                     <thead className="bg-slate-900/50">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Number</th>
@@ -607,7 +614,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             <th className="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-700">
+                    <tbody className="md:divide-y md:divide-slate-700">
                         {processedInvoices.regularInvoices.map(invoice => <InvoiceRow key={invoice.id} invoice={invoice} />)}
                         {Array.from(processedInvoices.splitInvoices.entries()).map(([groupId, parts]) => {
                             const totalAmount = parts.reduce((sum, p) => sum + p.amount, 0);
@@ -619,17 +626,19 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                             return (
                                 <React.Fragment key={groupId}>
                                     <tr className="hover:bg-slate-800/50 cursor-pointer" onClick={() => toggleSplitExpansion(groupId)}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white flex items-center">
-                                            {baseInvoiceNumber}
-                                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-700 text-slate-300">SPLIT</span>
+                                        <td data-label="Number" className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                                            <div className="actions-cell">
+                                                {baseInvoiceNumber}
+                                                <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-700 text-slate-300">SPLIT</span>
+                                            </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{mainPart.projects?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 font-bold">{formatCurrency(totalAmount)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(mainPart.created_at).toLocaleDateString('en-GB')}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">-</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">{overallStatus}</td>
-                                        <td className="px-6 py-4"></td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td data-label="Project" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{mainPart.projects?.name || 'N/A'}</td>
+                                        <td data-label="Amount" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300 font-bold">{formatCurrency(totalAmount)}</td>
+                                        <td data-label="Created" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{new Date(mainPart.created_at).toLocaleDateString('en-GB')}</td>
+                                        <td data-label="Due Date" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">-</td>
+                                        <td data-label="Status" className="px-6 py-4 whitespace-nowrap text-sm">{overallStatus}</td>
+                                        <td data-label="Financials" className="px-6 py-4"></td>
+                                        <td data-label="Actions" className="px-6 py-4 text-right">
                                             <button className={`transition-transform transform ${isExpanded ? 'rotate-90' : ''}`}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
                                             </button>
@@ -924,7 +933,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M20 4h-5l-1 1M4 20h5l1-1M12 4V2M12 22v-2M20 12h2M2 12h2" /></svg>
                     </button>
                 </div>
-                 <div className="flex items-center gap-2 flex-wrap">
+                 <div className="flex items-center gap-2 flex-wrap justify-end">
                      <div className="flex space-x-1 bg-slate-800 border border-slate-700 rounded-md p-1 text-sm">
                          {(['7d', '30d', '90d', '1y', 'all'] as const).map(span => (
                              <button key={span} onClick={() => setTimeSpan(span)} className={`px-3 py-1 font-semibold rounded transition-colors ${timeSpan === span ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
@@ -995,8 +1004,8 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
             <div className="space-y-8">
                 <div>
                     <h3 className="text-xl font-bold text-white mb-4">Subscriptions</h3>
-                     <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-700 text-sm">
+                     <div className="bg-slate-800 md:border md:border-slate-700 md:rounded-lg overflow-x-auto">
+                        <table className="min-w-full md:divide-y md:divide-slate-700 text-sm responsive-table">
                             <thead className="bg-slate-900/50">
                                 <tr>
                                     <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Service</th>
@@ -1008,21 +1017,27 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                     <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700">
+                            <tbody className="md:divide-y md:divide-slate-700">
                                 {subscriptionOutgoings.map(exp => (
                                     <tr key={exp.id} className={exp.status === 'inactive' ? 'opacity-50' : ''}>
-                                        <td className="px-4 py-3 text-white font-semibold">{exp.name || exp.description}</td>
-                                        <td className="px-4 py-3">{exp.category}</td>
-                                        <td className="px-4 py-3">{formatDate(exp.start_date)} - {exp.end_date ? formatDate(exp.end_date) : 'Present'}</td>
-                                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>{exp.status}</span></td>
-                                        <td className="px-4 py-3"><CostDisplay expense={exp} /></td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button onClick={() => handleOpenAttachments(exp)} className="flex items-center justify-center gap-2 mx-auto px-3 py-1 text-xs rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
-                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                                                 <span>{exp.expense_attachments[0]?.count || 0}</span>
-                                            </button>
+                                        <td data-label="Service" className="px-4 py-3 text-white font-semibold">{exp.name || exp.description}</td>
+                                        <td data-label="Category" className="px-4 py-3">{exp.category}</td>
+                                        <td data-label="Date Range" className="px-4 py-3">{formatDate(exp.start_date)} - {exp.end_date ? formatDate(exp.end_date) : 'Present'}</td>
+                                        <td data-label="Status" className="px-4 py-3"><div className="status-cell"><span className={`px-2 py-0.5 text-xs font-semibold rounded-full capitalize ${statusChipStyles[exp.status]}`}>{exp.status}</span></div></td>
+                                        <td data-label="Cost" className="px-4 py-3"><CostDisplay expense={exp} /></td>
+                                        <td data-label="Attachments" className="px-4 py-3 text-center">
+                                            <div className="actions-cell justify-center md:justify-end">
+                                                <button onClick={() => handleOpenAttachments(exp)} className="flex items-center justify-center gap-2 mx-auto px-3 py-1 text-xs rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                    <span>{exp.expense_attachments[0]?.count || 0}</span>
+                                                </button>
+                                            </div>
                                         </td>
-                                        <td className="px-4 py-3 text-center"><button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button></td>
+                                        <td data-label="Actions" className="px-4 py-3 text-center">
+                                            <div className="actions-cell justify-center md:justify-end">
+                                                <button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -1031,8 +1046,8 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 </div>
                  <div>
                     <h3 className="text-xl font-bold text-white mb-4">Manual Outgoings</h3>
-                     <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-700 text-sm">
+                     <div className="bg-slate-800 md:border md:border-slate-700 md:rounded-lg overflow-x-auto">
+                        <table className="min-w-full md:divide-y md:divide-slate-700 text-sm responsive-table">
                             <thead className="bg-slate-900/50">
                                 <tr>
                                     <th className="px-4 py-3 text-left font-medium text-slate-400 uppercase">Item/Service</th>
@@ -1043,20 +1058,27 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                                     <th className="px-4 py-3 text-center font-medium text-slate-400 uppercase">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700">
+                            <tbody className="md:divide-y md:divide-slate-700">
                                 {manualOutgoings.map(exp => (
                                     <tr key={exp.id} className={exp.status === 'completed' ? 'opacity-70' : ''}>
-                                        <td className="px-4 py-3 text-white font-semibold">{exp.name || exp.description}</td>
-                                        <td className="px-4 py-3">{exp.category}</td>
-                                        <td className="px-4 py-3">{formatDate(exp.start_date)}</td>
-                                        <td className="px-4 py-3"><CostDisplay expense={exp} /></td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button onClick={() => handleOpenAttachments(exp)} className="flex items-center justify-center gap-2 mx-auto px-3 py-1 text-xs rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
-                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                                                 <span>{exp.expense_attachments[0]?.count || 0}</span>
-                                            </button>
+                                        <td data-label="Item/Service" className="px-4 py-3 text-white font-semibold">{exp.name || exp.description}</td>
+                                        <td data-label="Category" className="px-4 py-3">{exp.category}</td>
+                                        <td data-label="Purchase Date" className="px-4 py-3">{formatDate(exp.start_date)}</td>
+                                        <td data-label="Amount" className="px-4 py-3"><CostDisplay expense={exp} /></td>
+                                        <td data-label="Attachments" className="px-4 py-3 text-center">
+                                            <div className="actions-cell justify-center md:justify-end">
+                                                <button onClick={() => handleOpenAttachments(exp)} className="flex items-center justify-center gap-2 mx-auto px-3 py-1 text-xs rounded-full bg-slate-700 hover:bg-slate-600 transition-colors">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                    <span>{exp.expense_attachments[0]?.count || 0}</span>
+                                                </button>
+                                            </div>
                                         </td>
-                                        <td className="px-4 py-3 text-center"><button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button></td>
+                                        <td data-label="Actions" className="px-4 py-3 text-center">
+                                            <div className="actions-cell justify-center md:justify-end">
+                                                <button onClick={() => handleEdit(exp)} className="p-2 rounded-full hover:bg-slate-700"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z" /></svg></button>
+                                                <button onClick={() => handleDelete(exp.id)} className="p-2 rounded-full hover:bg-slate-700 text-red-400"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -1452,6 +1474,7 @@ const DashboardPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [attachmentModalExpense, setAttachmentModalExpense] = useState<Expense | null>(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
 
     // Fetch initial identities
@@ -1547,10 +1570,20 @@ const DashboardPage: React.FC = () => {
         { path: "/dashboard/expenses", label: "Outgoings" },
         { path: "/dashboard/tax", label: "Tax Centre" },
     ];
+    
+    const pageTitles: { [key:string]: string } = {
+        "/dashboard": "Overview",
+        "/dashboard/projects": "Projects",
+        "/dashboard/invoices": "Invoices",
+        "/dashboard/expenses": "Outgoings",
+        "/dashboard/tax": "Tax Centre"
+    };
+    
+    const currentPageTitle = pageTitles[location.pathname] || "Dashboard";
 
     return (
-        <div className="min-h-screen bg-slate-900 text-slate-300 flex">
-            <aside className="w-64 bg-slate-800 p-6 border-r border-slate-700 flex-col hidden md:flex">
+        <div className="min-h-screen bg-slate-900 text-slate-300 flex flex-col md:flex-row">
+            <aside className={`fixed top-0 left-0 h-full w-64 bg-slate-800 p-6 border-r border-slate-700 flex flex-col z-40 transform transition-transform md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <h1 className="text-xl font-bold text-white mb-8">Admin Dashboard</h1>
                 
                 {/* Identity Switcher */}
@@ -1577,7 +1610,7 @@ const DashboardPage: React.FC = () => {
                     <ul>
                         {navItems.map(item => (
                              <li key={item.path} className="mb-2">
-                                <Link to={item.path} className={`block px-4 py-2 rounded-md transition-colors ${location.pathname === item.path ? 'bg-cyan-500 text-white' : 'hover:bg-slate-700'}`}>
+                                <Link to={item.path} onClick={() => setIsSidebarOpen(false)} className={`block px-4 py-2 rounded-md transition-colors ${location.pathname === item.path ? 'bg-cyan-500 text-white' : 'hover:bg-slate-700'}`}>
                                     {item.label}
                                 </Link>
                             </li>
@@ -1588,23 +1621,34 @@ const DashboardPage: React.FC = () => {
                     <button onClick={handleLogout} className="w-full text-left px-4 py-2 rounded-md hover:bg-slate-700 transition-colors">Logout</button>
                 </div>
             </aside>
+            
+            <div className="flex-1 flex flex-col">
+                 <div className="md:hidden bg-slate-800 p-4 border-b border-slate-700 flex justify-between items-center sticky top-0 z-30">
+                    <h1 className="text-lg font-bold text-white">{currentPageTitle}</h1>
+                    <button onClick={() => setIsSidebarOpen(true)} aria-label="Open menu">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
+                </div>
 
-            <main className="flex-1 p-4 sm:p-8 overflow-y-auto">
-                 {loading && <div className="text-center">Loading dashboard data...</div>}
-                 {error && <div className="text-center text-red-400">Error: {error}</div>}
-                 {!loading && !error && (
-                    <>
-                        <Routes>
-                            <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} />} />
-                            <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                            <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                            <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} setAttachmentModalExpense={setAttachmentModalExpense} />} />
-                            <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
-                        </Routes>
-                        {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={fetchData} />}
-                    </>
-                 )}
-            </main>
+                <main className="flex-1 p-4 sm:p-8 overflow-y-auto relative">
+                    {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-30 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
+
+                    {loading && <div className="text-center">Loading dashboard data...</div>}
+                    {error && <div className="text-center text-red-400">Error: {error}</div>}
+                    {!loading && !error && (
+                        <>
+                            <Routes>
+                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} />} />
+                                <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                                <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                                <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} setAttachmentModalExpense={setAttachmentModalExpense} />} />
+                                <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
+                            </Routes>
+                            {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={fetchData} />}
+                        </>
+                    )}
+                </main>
+            </div>
         </div>
     );
 };
@@ -1786,10 +1830,10 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
                                     </tr>
                                 )
                             })}
-                             {expense.type === 'manual' && (
+                             {expense.type === 'manual' && attachments.length === 0 && (
                                 <tr>
-                                    <td className="p-3"></td>
-                                    <td className="p-3"></td>
+                                    <td className="p-3">{formatDate(expense.start_date)}</td>
+                                    <td className="p-3 text-slate-500 italic">No invoice uploaded</td>
                                     <td className="p-3 text-right">
                                          {uploading ? 'Uploading...' : <FileInput paymentDate={new Date(expense.start_date)} />}
                                     </td>

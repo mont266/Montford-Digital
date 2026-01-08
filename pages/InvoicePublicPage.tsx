@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -122,13 +123,13 @@ const InvoicePublicPage: React.FC = () => {
     <>
       <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
         <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden invoice-card">
-          <header className="bg-slate-900 p-8 flex justify-between items-start">
-              <div>
-                  <Logo className="h-9 w-auto" />
+          <header className="bg-slate-900 p-8 flex flex-col sm:flex-row justify-between items-center gap-6 text-center sm:text-left">
+              <div className="w-full sm:w-auto">
+                  <Logo className="h-9 w-auto mx-auto sm:mx-0" />
                   <p className="text-slate-400 mt-2">{isReceiptView ? 'Receipt' : 'Invoice'}</p>
               </div>
               {invoice && (
-                  <div className="text-right">
+                  <div className="sm:text-right">
                       <h2 className="text-3xl font-bold text-white">{isReceiptView ? 'Paid in Full' : formatCurrency(invoice.amount)}</h2>
                       <p className="text-slate-400">{isReceiptView ? `Paid on ${formatDate(invoice.issue_date)}` : `Due on ${formatDate(invoice.due_date)}`}</p>
                   </div>
@@ -148,7 +149,7 @@ const InvoicePublicPage: React.FC = () => {
                             </p>
                         </div>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mb-8">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                           <div>
                               <p className="text-sm text-slate-400 mb-1">Billed To</p>
                               <p className="font-semibold text-white">{invoice.projects?.client_name || 'N/A'}</p>

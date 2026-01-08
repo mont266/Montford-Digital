@@ -40,6 +40,56 @@
           display: block !important;
         }
       }
+      
+      /* Custom styles for responsive tables in dashboard */
+      @media (max-width: 767px) {
+        .responsive-table thead {
+          display: none;
+        }
+        .responsive-table tr {
+          display: block;
+          margin-bottom: 1rem;
+          border: 1px solid #334155; /* slate-700 */
+          border-radius: 0.5rem;
+          overflow: hidden;
+        }
+        .responsive-table td {
+          display: block;
+          padding: 1rem;
+          text-align: right;
+          position: relative;
+          border-bottom: 1px solid #334155; /* slate-700 */
+        }
+        .responsive-table td:last-child {
+          border-bottom: none;
+        }
+        .responsive-table td::before {
+          content: attr(data-label);
+          position: absolute;
+          left: 1rem;
+          top: 50%;
+          transform: translateY(-50%);
+          font-weight: 600;
+          color: #94a3b8; /* slate-400 */
+          text-align: left;
+        }
+        /* Specific adjustments for complex cells */
+        .responsive-table td .actions-cell {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 1rem;
+        }
+        .responsive-table td .financials-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .responsive-table td .status-cell {
+            display: flex;
+            justify-content: flex-end;
+        }
+      }
     </style>
   <script type="importmap">
 {
