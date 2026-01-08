@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 
 // --- Configuration ---
 const PRICING_CONFIG = {
-    BASE_SETUP_FEE: 250,
-    COST_PER_POINT: 50,
+    BASE_SETUP_FEE: 150,
+    COST_PER_POINT: 45,
     
     // Points represent relative complexity/effort
     FEATURE_POINTS: {
@@ -16,15 +16,19 @@ const PRICING_CONFIG = {
         realtime: 25,   // Real-time features (e.g., chat)
         search: 10,     // Advanced Search & Filtering
     },
-    
-    // Points added per major custom feature requested
-    CUSTOM_FEATURE_POINTS: 20,
 
     // Multiplier based on client's business stage
     CLIENT_PROFILE_MULTIPLIER: {
         startup: 1.0,   // Solo founders, startups
         smb: 1.5,       // Small Businesses (2-10 employees)
-        established: 2.0, // Larger companies (10+ employees)
+        established: 2.2, // Larger companies (10+ employees)
+    },
+
+    // Multiplier based on project urgency
+    TIMELINE_MULTIPLIER: {
+        standard: 1.0,    // 8-12 Weeks
+        expedited: 1.25,  // 4-7 Weeks
+        urgent: 1.5,      // 2-3 Weeks
     },
     
     PLATFORM_MULTIPLIER: {
@@ -38,6 +42,7 @@ const PRICING_CONFIG = {
 type ProjectType = 'website' | 'webapp' | 'mobileapp';
 type ClientProfile = 'startup' | 'smb' | 'established';
 type MobilePlatform = 'ios' | 'android' | 'both';
+type Timeline = 'standard' | 'expedited' | 'urgent';
 
 // --- Helper & Reusable Components ---
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
@@ -69,7 +74,7 @@ const QuoteCalculatorPage: React.FC = () => {
     const [projectType, setProjectType] = useState<ProjectType>('website');
     const [clientProfile, setClientProfile] = useState<ClientProfile>('startup');
     const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform>('ios');
-    const [customFeatureCount, setCustomFeatureCount] = useState<number>(1);
+    const [timeline, setTimeline] = useState<Timeline>('standard');
     const [features, setFeatures] = useState({
         auth: false,
         profile: false,
@@ -92,15 +97,14 @@ const QuoteCalculatorPage: React.FC = () => {
             }
         }
         
-        totalPoints += customFeatureCount * PRICING_CONFIG.CUSTOM_FEATURE_POINTS;
-
         const featureCost = totalPoints * PRICING_CONFIG.COST_PER_POINT;
         const subtotalBeforeMultipliers = PRICING_CONFIG.BASE_SETUP_FEE + featureCost;
         
+        const timelineMultiplier = PRICING_CONFIG.TIMELINE_MULTIPLIER[timeline];
         const platformMultiplier = projectType === 'mobileapp' ? PRICING_CONFIG.PLATFORM_MULTIPLIER[mobilePlatform] : 1;
         const clientProfileMultiplier = PRICING_CONFIG.CLIENT_PROFILE_MULTIPLIER[clientProfile];
         
-        const subtotal = subtotalBeforeMultipliers * platformMultiplier * clientProfileMultiplier;
+        const subtotal = subtotalBeforeMultipliers * timelineMultiplier * platformMultiplier * clientProfileMultiplier;
         
         const discount = matesRates ? subtotal * PRICING_CONFIG.MATES_RATES_DISCOUNT : 0;
         
@@ -110,12 +114,15 @@ const QuoteCalculatorPage: React.FC = () => {
             high: finalPrice * 1.1,
         };
 
-        return { totalPoints, featureCost, platformMultiplier, clientProfileMultiplier, subtotal, discount, finalPrice, priceRange };
+        return { totalPoints, featureCost, platformMultiplier, clientProfileMultiplier, timelineMultiplier, subtotal, discount, finalPrice, priceRange };
 
-    }, [projectType, clientProfile, mobilePlatform, customFeatureCount, features, matesRates]);
+    }, [projectType, clientProfile, mobilePlatform, timeline, features, matesRates]);
     
     const clientProfileLabels: Record<ClientProfile, string> = { 'startup': 'Startup / Solo', 'smb': 'Small Business', 'established': 'Established Co.' };
     const platformLabels: Record<MobilePlatform, string> = { 'ios': 'iOS', 'android': 'Android', 'both': 'iOS & Android' };
+    const timelineLabels: Record<Timeline, string> = { 'standard': 'Standard', 'expedited': 'Expedited', 'urgent': 'Urgent' };
+    const timelineDescriptions: Record<Timeline, string> = { 'standard': '8-12 Weeks', 'expedited': '4-7 Weeks', 'urgent': '2-3 Weeks' };
+
 
     return (
         <div className="space-y-8">
@@ -177,11 +184,18 @@ const QuoteCalculatorPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Custom Features */}
+                    {/* Timeline */}
                     <div>
-                         <label htmlFor="customFeatureCount" className="text-lg font-semibold text-white mb-2 block">Major Custom Features <span className="text-cyan-400 font-bold">{customFeatureCount}</span></label>
-                         <p className="text-sm text-slate-400 mb-3">Estimate the number of unique, complex features not listed above (e.g., a custom booking engine, a unique algorithm, etc.).</p>
-                        <input type="range" id="customFeatureCount" min="0" max="10" step="1" value={customFeatureCount} onChange={e => setCustomFeatureCount(parseInt(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer range-thumb:bg-cyan-500" />
+                        <h3 className="text-lg font-semibold text-white mb-2">Project Timeline</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {(['standard', 'expedited', 'urgent'] as Timeline[]).map(t => (
+                                <label key={t} className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                                    <input type="radio" name="timeline" value={t} checked={timeline === t} onChange={() => setTimeline(t)} className="sr-only" />
+                                    <span className="text-white font-bold capitalize">{timelineLabels[t]}</span>
+                                    <span className="block text-sm text-slate-400">{timelineDescriptions[t]}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -207,6 +221,7 @@ const QuoteCalculatorPage: React.FC = () => {
 
                          <div className="space-y-2 text-slate-300 border-b border-slate-700 pb-4 mb-4">
                             <div className="flex justify-between font-semibold"><span>Subtotal</span> <span>{formatCurrency(PRICING_CONFIG.BASE_SETUP_FEE + priceBreakdown.featureCost)}</span></div>
+                            {priceBreakdown.timelineMultiplier > 1 && <div className="flex justify-between"><span>Timeline ({timelineLabels[timeline]})</span> <span>&times;{priceBreakdown.timelineMultiplier}</span></div>}
                             {priceBreakdown.platformMultiplier > 1 && <div className="flex justify-between"><span>Platform ({platformLabels[mobilePlatform]})</span> <span>&times;{priceBreakdown.platformMultiplier}</span></div>}
                              <div className="flex justify-between"><span>Client Profile ({clientProfileLabels[clientProfile]})</span> <span>&times;{priceBreakdown.clientProfileMultiplier}</span></div>
                         </div>
