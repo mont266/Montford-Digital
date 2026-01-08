@@ -562,7 +562,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                     </div>
                 </td>
                 <td data-label="Financials" className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
-                    <div className="financials-cell">
+                    <div className="financials-cell flex flex-col">
                         <span>Fee (Est.): <span className="font-medium text-slate-300">{formatCurrency(effectiveStripeFee)}</span></span>
                         <span>Tax (Est.): <span className="font-medium text-slate-300">{formatCurrency(totalTax)}</span></span>
                         <span className="font-semibold text-white mt-1 pt-1 border-t border-slate-700">Take-home: {formatCurrency(takeHome)}</span>
