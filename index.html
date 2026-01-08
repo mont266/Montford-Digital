@@ -23,6 +23,7 @@
           box-shadow: none !important;
           border: none !important;
           background-color: #fff !important;
+          page-break-inside: avoid;
         }
         .invoice-card * {
           color: #000 !important;
@@ -39,6 +40,12 @@
         .print-show {
           display: block !important;
         }
+        .invoice-public-page-container {
+          min-height: auto !important;
+          padding: 0 !important;
+          display: block !important;
+          background-color: #fff !important;
+        }
       }
       
       /* Custom styles for responsive tables in dashboard */
@@ -51,7 +58,7 @@
           margin-bottom: 1rem;
           border: 1px solid #334155; /* slate-700 */
           border-radius: 0.5rem;
-          overflow: hidden;
+          position: relative; /* Needed for dropdown positioning context */
         }
         .responsive-table td {
           display: block;

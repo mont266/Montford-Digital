@@ -121,7 +121,7 @@ const InvoicePublicPage: React.FC = () => {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans">
+      <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans invoice-public-page-container">
         <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 overflow-hidden invoice-card">
           <header className="bg-slate-900 p-8 flex flex-col sm:flex-row justify-between items-center gap-6 text-center sm:text-left">
               <div className="w-full sm:w-auto">
