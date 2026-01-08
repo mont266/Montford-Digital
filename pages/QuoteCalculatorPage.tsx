@@ -2,31 +2,31 @@ import React, { useState, useMemo } from 'react';
 
 // --- Configuration ---
 const PRICING_CONFIG = {
-    BASE_COST: {
-        website: 400,
-        webapp: 1500,
-        mobileapp: 2500,
+    BASE_SETUP_FEE: 250,
+    COST_PER_POINT: 50,
+    
+    // Points represent relative complexity/effort
+    FEATURE_POINTS: {
+        auth: 10,       // User Authentication (Login, Register, Reset)
+        profile: 8,     // User Profiles & Settings
+        cms: 15,        // Basic CMS / Admin Panel
+        ecommerce: 30,  // E-commerce with Payments
+        api: 12,        // 3rd Party API Integration
+        dashboard: 20,  // Data Visualization Dashboard
+        realtime: 25,   // Real-time features (e.g., chat)
+        search: 10,     // Advanced Search & Filtering
     },
-    PER_PAGE_COST: { // "Page" also means "Screen" for apps
-        website: 100,
-        webapp: 300,
-        mobileapp: 450,
+    
+    // Points added per major custom feature requested
+    CUSTOM_FEATURE_POINTS: 20,
+
+    // Multiplier based on client's business stage
+    CLIENT_PROFILE_MULTIPLIER: {
+        startup: 1.0,   // Solo founders, startups
+        smb: 1.5,       // Small Businesses (2-10 employees)
+        established: 2.0, // Larger companies (10+ employees)
     },
-    DESIGN_COST: {
-        template: 0,
-        bespoke: 800,
-    },
-    FEATURE_COST: {
-        ecommerce: 1200,
-        auth: 600,
-        cms: 750,
-        api: 900,
-    },
-    COMPLEXITY_MULTIPLIER: {
-        '1': 1.0, // Simple
-        '2': 1.5, // Standard
-        '3': 2.5, // Complex
-    },
+    
     PLATFORM_MULTIPLIER: {
         ios: 1.0,
         android: 1.0,
@@ -36,8 +36,7 @@ const PRICING_CONFIG = {
 };
 
 type ProjectType = 'website' | 'webapp' | 'mobileapp';
-type DesignType = 'template' | 'bespoke';
-type ComplexityLevel = '1' | '2' | '3';
+type ClientProfile = 'startup' | 'smb' | 'established';
 type MobilePlatform = 'ios' | 'android' | 'both';
 
 // --- Helper & Reusable Components ---
@@ -54,12 +53,12 @@ const Toggle: React.FC<{ label: string; checked: boolean; onChange: (checked: bo
     </label>
 );
 
-const FeatureCheckbox: React.FC<{ id: string; label: string; cost: number; checked: boolean; onChange: (id: string, checked: boolean) => void }> = ({ id, label, cost, checked, onChange }) => (
+const FeatureCheckbox: React.FC<{ id: string; label: string; points: number; checked: boolean; onChange: (id: string, checked: boolean) => void }> = ({ id, label, points, checked, onChange }) => (
     <label htmlFor={id} className="flex items-center p-4 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors has-[:checked]:bg-cyan-500/10 has-[:checked]:border-cyan-500/50">
         <input id={id} type="checkbox" checked={checked} onChange={e => onChange(id, e.target.checked)} className="h-5 w-5 rounded border-slate-500 text-cyan-600 focus:ring-cyan-500" />
         <div className="ml-3 flex-grow">
             <span className="block text-white font-semibold">{label}</span>
-            <span className="block text-sm text-slate-400">+{formatCurrency(cost)}</span>
+            <span className="block text-sm text-slate-400">{points} points</span>
         </div>
     </label>
 );
@@ -68,38 +67,40 @@ const FeatureCheckbox: React.FC<{ id: string; label: string; cost: number; check
 const QuoteCalculatorPage: React.FC = () => {
     // --- State Management ---
     const [projectType, setProjectType] = useState<ProjectType>('website');
+    const [clientProfile, setClientProfile] = useState<ClientProfile>('startup');
     const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform>('ios');
-    const [pageCount, setPageCount] = useState<number>(5);
-    const [complexity, setComplexity] = useState<ComplexityLevel>('2');
-    const [designType, setDesignType] = useState<DesignType>('bespoke');
+    const [customFeatureCount, setCustomFeatureCount] = useState<number>(1);
     const [features, setFeatures] = useState({
-        ecommerce: false,
         auth: false,
+        profile: false,
         cms: false,
+        ecommerce: false,
         api: false,
+        dashboard: false,
+        realtime: false,
+        search: false,
     });
     const [matesRates, setMatesRates] = useState(false);
 
     // --- Calculation Logic ---
     const priceBreakdown = useMemo(() => {
-        const baseCost = PRICING_CONFIG.BASE_COST[projectType];
-        const pageCost = pageCount * PRICING_CONFIG.PER_PAGE_COST[projectType];
-        const designCost = PRICING_CONFIG.DESIGN_COST[designType];
+        let totalPoints = 0;
         
-        let featuresCost = 0;
         for (const [key, value] of Object.entries(features)) {
             if (value) {
-                featuresCost += PRICING_CONFIG.FEATURE_COST[key as keyof typeof PRICING_CONFIG.FEATURE_COST];
+                totalPoints += PRICING_CONFIG.FEATURE_POINTS[key as keyof typeof PRICING_CONFIG.FEATURE_POINTS];
             }
         }
+        
+        totalPoints += customFeatureCount * PRICING_CONFIG.CUSTOM_FEATURE_POINTS;
 
-        const subtotalBeforeMultipliers = baseCost + pageCost + designCost + featuresCost;
+        const featureCost = totalPoints * PRICING_CONFIG.COST_PER_POINT;
+        const subtotalBeforeMultipliers = PRICING_CONFIG.BASE_SETUP_FEE + featureCost;
         
         const platformMultiplier = projectType === 'mobileapp' ? PRICING_CONFIG.PLATFORM_MULTIPLIER[mobilePlatform] : 1;
-        const platformAdjustedTotal = subtotalBeforeMultipliers * platformMultiplier;
-
-        const complexityMultiplier = PRICING_CONFIG.COMPLEXITY_MULTIPLIER[complexity];
-        const subtotal = platformAdjustedTotal * complexityMultiplier;
+        const clientProfileMultiplier = PRICING_CONFIG.CLIENT_PROFILE_MULTIPLIER[clientProfile];
+        
+        const subtotal = subtotalBeforeMultipliers * platformMultiplier * clientProfileMultiplier;
         
         const discount = matesRates ? subtotal * PRICING_CONFIG.MATES_RATES_DISCOUNT : 0;
         
@@ -109,13 +110,12 @@ const QuoteCalculatorPage: React.FC = () => {
             high: finalPrice * 1.1,
         };
 
-        return { baseCost, pageCost, designCost, featuresCost, platformMultiplier, complexityMultiplier, subtotal, discount, finalPrice, priceRange };
+        return { totalPoints, featureCost, platformMultiplier, clientProfileMultiplier, subtotal, discount, finalPrice, priceRange };
 
-    }, [projectType, mobilePlatform, pageCount, complexity, designType, features, matesRates]);
+    }, [projectType, clientProfile, mobilePlatform, customFeatureCount, features, matesRates]);
     
-    const complexityLabels: Record<ComplexityLevel, string> = { '1': 'Simple', '2': 'Standard', '3': 'Complex' };
+    const clientProfileLabels: Record<ClientProfile, string> = { 'startup': 'Startup / Solo', 'smb': 'Small Business', 'established': 'Established Co.' };
     const platformLabels: Record<MobilePlatform, string> = { 'ios': 'iOS', 'android': 'Android', 'both': 'iOS & Android' };
-
 
     return (
         <div className="space-y-8">
@@ -124,25 +124,27 @@ const QuoteCalculatorPage: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 {/* --- Left Column: Inputs --- */}
                 <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-6">
-                    {/* Project Type */}
-                    <div>
-                        <h3 className="text-lg font-semibold text-white mb-2">Project Type</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <label className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                <input type="radio" name="projectType" value="website" checked={projectType === 'website'} onChange={() => setProjectType('website')} className="sr-only" />
-                                <span className="text-white font-bold">Website</span>
-                                <span className="block text-sm text-slate-400">Marketing or brochure site.</span>
-                            </label>
-                             <label className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                <input type="radio" name="projectType" value="webapp" checked={projectType === 'webapp'} onChange={() => setProjectType('webapp')} className="sr-only" />
-                                <span className="text-white font-bold">Web App</span>
-                                <span className="block text-sm text-slate-400">Dashboards, user accounts.</span>
-                            </label>
-                            <label className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                <input type="radio" name="projectType" value="mobileapp" checked={projectType === 'mobileapp'} onChange={() => setProjectType('mobileapp')} className="sr-only" />
-                                <span className="text-white font-bold">Mobile App</span>
-                                <span className="block text-sm text-slate-400">Native iOS & Android apps.</span>
-                            </label>
+                    {/* Client & Project Type */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h3 className="text-lg font-semibold text-white mb-2">Client Profile</h3>
+                            <div className="flex gap-2 bg-slate-900/50 border border-slate-700 rounded-lg p-1">
+                                {(['startup', 'smb', 'established'] as ClientProfile[]).map(profile => (
+                                    <button key={profile} onClick={() => setClientProfile(profile)} className={`w-full px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${clientProfile === profile ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:bg-slate-700'}`}>
+                                        {clientProfileLabels[profile]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-semibold text-white mb-2">Project Type</h3>
+                            <div className="flex gap-2 bg-slate-900/50 border border-slate-700 rounded-lg p-1">
+                                {(['website', 'webapp', 'mobileapp'] as ProjectType[]).map(type => (
+                                    <button key={type} onClick={() => setProjectType(type)} className={`w-full px-3 py-1.5 text-sm font-semibold rounded-md transition-colors capitalize ${projectType === type ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:bg-slate-700'}`}>
+                                        {type}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                     
@@ -150,61 +152,37 @@ const QuoteCalculatorPage: React.FC = () => {
                     {projectType === 'mobileapp' && (
                         <div>
                             <h3 className="text-lg font-semibold text-white mb-2">Platform</h3>
-                            <div className="flex gap-4">
-                                <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                    <input type="radio" name="mobilePlatform" value="ios" checked={mobilePlatform === 'ios'} onChange={() => setMobilePlatform('ios')} className="sr-only" />
-                                    <span className="text-white font-bold text-center block">iOS</span>
-                                </label>
-                                <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                    <input type="radio" name="mobilePlatform" value="android" checked={mobilePlatform === 'android'} onChange={() => setMobilePlatform('android')} className="sr-only" />
-                                    <span className="text-white font-bold text-center block">Android</span>
-                                </label>
-                                 <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                    <input type="radio" name="mobilePlatform" value="both" checked={mobilePlatform === 'both'} onChange={() => setMobilePlatform('both')} className="sr-only" />
-                                    <span className="text-white font-bold text-center block">Both</span>
-                                </label>
+                             <div className="flex gap-2 bg-slate-900/50 border border-slate-700 rounded-lg p-1">
+                                {(['ios', 'android', 'both'] as MobilePlatform[]).map(platform => (
+                                     <button key={platform} onClick={() => setMobilePlatform(platform)} className={`w-full px-3 py-1.5 text-sm font-semibold rounded-md transition-colors capitalize ${mobilePlatform === platform ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:bg-slate-700'}`}>
+                                        {platformLabels[platform]}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Pages & Complexity */}
-                    <div className="grid sm:grid-cols-2 gap-6">
-                        <div>
-                             <label htmlFor="pageCount" className="text-lg font-semibold text-white mb-2 block">{projectType === 'website' ? 'Number of Pages' : 'Number of Screens'}</label>
-                            <input type="number" id="pageCount" value={pageCount} onChange={e => setPageCount(Math.max(1, parseInt(e.target.value) || 1))} className="w-full bg-slate-700 p-2 rounded-md border border-slate-600 focus:border-cyan-500 outline-none" />
-                        </div>
-                         <div>
-                            <label htmlFor="complexity" className="text-lg font-semibold text-white mb-2 block">Project Complexity <span className="text-cyan-400 font-bold">{complexityLabels[complexity]}</span></label>
-                            <input type="range" id="complexity" min="1" max="3" step="1" value={complexity} onChange={e => setComplexity(e.target.value as ComplexityLevel)} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer range-thumb:bg-cyan-500" />
-                        </div>
-                    </div>
-
-                    {/* Design Type */}
-                     <div>
-                        <h3 className="text-lg font-semibold text-white mb-2">Design</h3>
-                        <div className="flex gap-4">
-                             <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                <input type="radio" name="designType" value="template" checked={designType === 'template'} onChange={() => setDesignType('template')} className="sr-only" />
-                                <span className="text-white font-bold">Template-based</span>
-                            </label>
-                             <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
-                                <input type="radio" name="designType" value="bespoke" checked={designType === 'bespoke'} onChange={() => setDesignType('bespoke')} className="sr-only" />
-                                <span className="text-white font-bold">Bespoke UI/UX</span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    {/* Features */}
+                    {/* Core Features */}
                     <div>
-                        <h3 className="text-lg font-semibold text-white mb-2">Additional Features</h3>
-                        <div className="grid sm:grid-cols-2 gap-4">
-                            <FeatureCheckbox id="ecommerce" label="E-commerce" cost={PRICING_CONFIG.FEATURE_COST.ecommerce} checked={features.ecommerce} onChange={() => setFeatures(f => ({...f, ecommerce: !f.ecommerce}))} />
-                            <FeatureCheckbox id="auth" label="User Logins" cost={PRICING_CONFIG.FEATURE_COST.auth} checked={features.auth} onChange={() => setFeatures(f => ({...f, auth: !f.auth}))} />
-                            <FeatureCheckbox id="cms" label="Admin Dashboard / CMS" cost={PRICING_CONFIG.FEATURE_COST.cms} checked={features.cms} onChange={() => setFeatures(f => ({...f, cms: !f.cms}))} />
-                            <FeatureCheckbox id="api" label="Third-party API Integrations" cost={PRICING_CONFIG.FEATURE_COST.api} checked={features.api} onChange={() => setFeatures(f => ({...f, api: !f.api}))} />
+                        <h3 className="text-lg font-semibold text-white mb-2">Core Features</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <FeatureCheckbox id="auth" label="User Authentication" points={PRICING_CONFIG.FEATURE_POINTS.auth} checked={features.auth} onChange={() => setFeatures(f => ({...f, auth: !f.auth}))} />
+                            <FeatureCheckbox id="profile" label="User Profiles" points={PRICING_CONFIG.FEATURE_POINTS.profile} checked={features.profile} onChange={() => setFeatures(f => ({...f, profile: !f.profile}))} />
+                            <FeatureCheckbox id="cms" label="Admin / CMS" points={PRICING_CONFIG.FEATURE_POINTS.cms} checked={features.cms} onChange={() => setFeatures(f => ({...f, cms: !f.cms}))} />
+                            <FeatureCheckbox id="ecommerce" label="E-commerce" points={PRICING_CONFIG.FEATURE_POINTS.ecommerce} checked={features.ecommerce} onChange={() => setFeatures(f => ({...f, ecommerce: !f.ecommerce}))} />
+                            <FeatureCheckbox id="api" label="API Integrations" points={PRICING_CONFIG.FEATURE_POINTS.api} checked={features.api} onChange={() => setFeatures(f => ({...f, api: !f.api}))} />
+                            <FeatureCheckbox id="dashboard" label="Data Dashboard" points={PRICING_CONFIG.FEATURE_POINTS.dashboard} checked={features.dashboard} onChange={() => setFeatures(f => ({...f, dashboard: !f.dashboard}))} />
+                            <FeatureCheckbox id="realtime" label="Real-time Chat/Data" points={PRICING_CONFIG.FEATURE_POINTS.realtime} checked={features.realtime} onChange={() => setFeatures(f => ({...f, realtime: !f.realtime}))} />
+                            <FeatureCheckbox id="search" label="Advanced Search" points={PRICING_CONFIG.FEATURE_POINTS.search} checked={features.search} onChange={() => setFeatures(f => ({...f, search: !f.search}))} />
                         </div>
                     </div>
 
+                    {/* Custom Features */}
+                    <div>
+                         <label htmlFor="customFeatureCount" className="text-lg font-semibold text-white mb-2 block">Major Custom Features <span className="text-cyan-400 font-bold">{customFeatureCount}</span></label>
+                         <p className="text-sm text-slate-400 mb-3">Estimate the number of unique, complex features not listed above (e.g., a custom booking engine, a unique algorithm, etc.).</p>
+                        <input type="range" id="customFeatureCount" min="0" max="10" step="1" value={customFeatureCount} onChange={e => setCustomFeatureCount(parseInt(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer range-thumb:bg-cyan-500" />
+                    </div>
                 </div>
 
                 {/* --- Right Column: Results --- */}
@@ -217,16 +195,24 @@ const QuoteCalculatorPage: React.FC = () => {
                         <h3 className="text-xl font-bold text-white mb-4">Price Estimate</h3>
                         
                         <div className="space-y-2 text-slate-300 border-b border-slate-700 pb-4 mb-4">
-                             <div className="flex justify-between"><span>Base Cost</span> <span>{formatCurrency(priceBreakdown.baseCost)}</span></div>
-                            <div className="flex justify-between"><span>{projectType === 'website' ? `${pageCount} Pages` : `${pageCount} Screens`}</span> <span>{formatCurrency(priceBreakdown.pageCost)}</span></div>
-                            {priceBreakdown.designCost > 0 && <div className="flex justify-between"><span>Bespoke Design</span> <span>{formatCurrency(priceBreakdown.designCost)}</span></div>}
-                            {priceBreakdown.featuresCost > 0 && <div className="flex justify-between"><span>Additional Features</span> <span>{formatCurrency(priceBreakdown.featuresCost)}</span></div>}
+                             <div className="flex justify-between"><span>Base Setup Fee</span> <span>{formatCurrency(PRICING_CONFIG.BASE_SETUP_FEE)}</span></div>
+                             <div className="flex justify-between">
+                                <span>Feature Cost ({priceBreakdown.totalPoints} points)</span> 
+                                <span>{formatCurrency(priceBreakdown.featureCost)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-slate-400 pl-4">
+                                <span>@ {formatCurrency(PRICING_CONFIG.COST_PER_POINT)} / point</span>
+                            </div>
+                        </div>
+
+                         <div className="space-y-2 text-slate-300 border-b border-slate-700 pb-4 mb-4">
+                            <div className="flex justify-between font-semibold"><span>Subtotal</span> <span>{formatCurrency(PRICING_CONFIG.BASE_SETUP_FEE + priceBreakdown.featureCost)}</span></div>
                             {priceBreakdown.platformMultiplier > 1 && <div className="flex justify-between"><span>Platform ({platformLabels[mobilePlatform]})</span> <span>&times;{priceBreakdown.platformMultiplier}</span></div>}
-                            {priceBreakdown.complexityMultiplier > 1 && <div className="flex justify-between"><span>Complexity ({complexityLabels[complexity]})</span> <span>&times;{priceBreakdown.complexityMultiplier}</span></div>}
+                             <div className="flex justify-between"><span>Client Profile ({clientProfileLabels[clientProfile]})</span> <span>&times;{priceBreakdown.clientProfileMultiplier}</span></div>
                         </div>
                         
                         <div className="space-y-2 text-slate-300">
-                             <div className="flex justify-between font-semibold"><span>Subtotal</span> <span>{formatCurrency(priceBreakdown.subtotal)}</span></div>
+                             <div className="flex justify-between font-semibold"><span>Adjusted Subtotal</span> <span>{formatCurrency(priceBreakdown.subtotal)}</span></div>
                             {priceBreakdown.discount > 0 && <div className="flex justify-between text-green-400"><span>Mates Rates (20%)</span> <span>-{formatCurrency(priceBreakdown.discount)}</span></div>}
                         </div>
 
