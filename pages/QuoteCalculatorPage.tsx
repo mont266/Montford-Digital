@@ -3,34 +3,42 @@ import React, { useState, useMemo } from 'react';
 // --- Configuration ---
 const PRICING_CONFIG = {
     BASE_COST: {
-        website: 500,
-        webapp: 2000,
+        website: 400,
+        webapp: 1500,
+        mobileapp: 2500,
     },
-    PER_PAGE_COST: {
-        website: 150,
-        webapp: 400,
+    PER_PAGE_COST: { // "Page" also means "Screen" for apps
+        website: 100,
+        webapp: 300,
+        mobileapp: 450,
     },
     DESIGN_COST: {
         template: 0,
-        bespoke: 1000,
+        bespoke: 800,
     },
     FEATURE_COST: {
-        ecommerce: 1500,
-        auth: 750,
-        cms: 1000,
-        api: 1200,
+        ecommerce: 1200,
+        auth: 600,
+        cms: 750,
+        api: 900,
     },
     COMPLEXITY_MULTIPLIER: {
         '1': 1.0, // Simple
         '2': 1.5, // Standard
         '3': 2.5, // Complex
     },
+    PLATFORM_MULTIPLIER: {
+        ios: 1.0,
+        android: 1.0,
+        both: 1.8, // Not quite 2x to account for shared logic
+    },
     MATES_RATES_DISCOUNT: 0.20, // 20%
 };
 
-type ProjectType = 'website' | 'webapp';
+type ProjectType = 'website' | 'webapp' | 'mobileapp';
 type DesignType = 'template' | 'bespoke';
 type ComplexityLevel = '1' | '2' | '3';
+type MobilePlatform = 'ios' | 'android' | 'both';
 
 // --- Helper & Reusable Components ---
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
@@ -60,6 +68,7 @@ const FeatureCheckbox: React.FC<{ id: string; label: string; cost: number; check
 const QuoteCalculatorPage: React.FC = () => {
     // --- State Management ---
     const [projectType, setProjectType] = useState<ProjectType>('website');
+    const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform>('ios');
     const [pageCount, setPageCount] = useState<number>(5);
     const [complexity, setComplexity] = useState<ComplexityLevel>('2');
     const [designType, setDesignType] = useState<DesignType>('bespoke');
@@ -84,9 +93,13 @@ const QuoteCalculatorPage: React.FC = () => {
             }
         }
 
-        const complexityMultiplier = PRICING_CONFIG.COMPLEXITY_MULTIPLIER[complexity];
+        const subtotalBeforeMultipliers = baseCost + pageCost + designCost + featuresCost;
         
-        const subtotal = (baseCost + pageCost + designCost + featuresCost) * complexityMultiplier;
+        const platformMultiplier = projectType === 'mobileapp' ? PRICING_CONFIG.PLATFORM_MULTIPLIER[mobilePlatform] : 1;
+        const platformAdjustedTotal = subtotalBeforeMultipliers * platformMultiplier;
+
+        const complexityMultiplier = PRICING_CONFIG.COMPLEXITY_MULTIPLIER[complexity];
+        const subtotal = platformAdjustedTotal * complexityMultiplier;
         
         const discount = matesRates ? subtotal * PRICING_CONFIG.MATES_RATES_DISCOUNT : 0;
         
@@ -96,11 +109,13 @@ const QuoteCalculatorPage: React.FC = () => {
             high: finalPrice * 1.1,
         };
 
-        return { baseCost, pageCost, designCost, featuresCost, complexityMultiplier, subtotal, discount, finalPrice, priceRange };
+        return { baseCost, pageCost, designCost, featuresCost, platformMultiplier, complexityMultiplier, subtotal, discount, finalPrice, priceRange };
 
-    }, [projectType, pageCount, complexity, designType, features, matesRates]);
+    }, [projectType, mobilePlatform, pageCount, complexity, designType, features, matesRates]);
     
     const complexityLabels: Record<ComplexityLevel, string> = { '1': 'Simple', '2': 'Standard', '3': 'Complex' };
+    const platformLabels: Record<MobilePlatform, string> = { 'ios': 'iOS', 'android': 'Android', 'both': 'iOS & Android' };
+
 
     return (
         <div className="space-y-8">
@@ -112,24 +127,50 @@ const QuoteCalculatorPage: React.FC = () => {
                     {/* Project Type */}
                     <div>
                         <h3 className="text-lg font-semibold text-white mb-2">Project Type</h3>
-                        <div className="flex gap-4">
-                            <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <label className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
                                 <input type="radio" name="projectType" value="website" checked={projectType === 'website'} onChange={() => setProjectType('website')} className="sr-only" />
                                 <span className="text-white font-bold">Website</span>
-                                <span className="block text-sm text-slate-400">Brochure, portfolio, or marketing site.</span>
+                                <span className="block text-sm text-slate-400">Marketing or brochure site.</span>
                             </label>
-                             <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                             <label className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
                                 <input type="radio" name="projectType" value="webapp" checked={projectType === 'webapp'} onChange={() => setProjectType('webapp')} className="sr-only" />
                                 <span className="text-white font-bold">Web App</span>
-                                <span className="block text-sm text-slate-400">Complex functionality, dashboards, user accounts.</span>
+                                <span className="block text-sm text-slate-400">Dashboards, user accounts.</span>
+                            </label>
+                            <label className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                                <input type="radio" name="projectType" value="mobileapp" checked={projectType === 'mobileapp'} onChange={() => setProjectType('mobileapp')} className="sr-only" />
+                                <span className="text-white font-bold">Mobile App</span>
+                                <span className="block text-sm text-slate-400">Native iOS & Android apps.</span>
                             </label>
                         </div>
                     </div>
+                    
+                    {/* Mobile Platform Selection */}
+                    {projectType === 'mobileapp' && (
+                        <div>
+                            <h3 className="text-lg font-semibold text-white mb-2">Platform</h3>
+                            <div className="flex gap-4">
+                                <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                                    <input type="radio" name="mobilePlatform" value="ios" checked={mobilePlatform === 'ios'} onChange={() => setMobilePlatform('ios')} className="sr-only" />
+                                    <span className="text-white font-bold text-center block">iOS</span>
+                                </label>
+                                <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                                    <input type="radio" name="mobilePlatform" value="android" checked={mobilePlatform === 'android'} onChange={() => setMobilePlatform('android')} className="sr-only" />
+                                    <span className="text-white font-bold text-center block">Android</span>
+                                </label>
+                                 <label className="flex-1 p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
+                                    <input type="radio" name="mobilePlatform" value="both" checked={mobilePlatform === 'both'} onChange={() => setMobilePlatform('both')} className="sr-only" />
+                                    <span className="text-white font-bold text-center block">Both</span>
+                                </label>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Pages & Complexity */}
                     <div className="grid sm:grid-cols-2 gap-6">
                         <div>
-                             <label htmlFor="pageCount" className="text-lg font-semibold text-white mb-2 block">{projectType === 'website' ? 'Number of Pages' : 'Number of Screens/Features'}</label>
+                             <label htmlFor="pageCount" className="text-lg font-semibold text-white mb-2 block">{projectType === 'website' ? 'Number of Pages' : 'Number of Screens'}</label>
                             <input type="number" id="pageCount" value={pageCount} onChange={e => setPageCount(Math.max(1, parseInt(e.target.value) || 1))} className="w-full bg-slate-700 p-2 rounded-md border border-slate-600 focus:border-cyan-500 outline-none" />
                         </div>
                          <div>
@@ -180,7 +221,8 @@ const QuoteCalculatorPage: React.FC = () => {
                             <div className="flex justify-between"><span>{projectType === 'website' ? `${pageCount} Pages` : `${pageCount} Screens`}</span> <span>{formatCurrency(priceBreakdown.pageCost)}</span></div>
                             {priceBreakdown.designCost > 0 && <div className="flex justify-between"><span>Bespoke Design</span> <span>{formatCurrency(priceBreakdown.designCost)}</span></div>}
                             {priceBreakdown.featuresCost > 0 && <div className="flex justify-between"><span>Additional Features</span> <span>{formatCurrency(priceBreakdown.featuresCost)}</span></div>}
-                             {priceBreakdown.complexityMultiplier > 1 && <div className="flex justify-between"><span>Complexity ({complexityLabels[complexity]})</span> <span>&times;{priceBreakdown.complexityMultiplier}</span></div>}
+                            {priceBreakdown.platformMultiplier > 1 && <div className="flex justify-between"><span>Platform ({platformLabels[mobilePlatform]})</span> <span>&times;{priceBreakdown.platformMultiplier}</span></div>}
+                            {priceBreakdown.complexityMultiplier > 1 && <div className="flex justify-between"><span>Complexity ({complexityLabels[complexity]})</span> <span>&times;{priceBreakdown.complexityMultiplier}</span></div>}
                         </div>
                         
                         <div className="space-y-2 text-slate-300">
