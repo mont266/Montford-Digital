@@ -3,18 +3,18 @@ import React, { useState, useMemo } from 'react';
 // --- Configuration ---
 const PRICING_CONFIG = {
     BASE_SETUP_FEE: 150,
-    COST_PER_POINT: 45,
+    COST_PER_POINT: 40, // Lowered from 45
     
     // Points represent relative complexity/effort
     FEATURE_POINTS: {
-        auth: 10,       // User Authentication (Login, Register, Reset)
-        profile: 8,     // User Profiles & Settings
-        cms: 15,        // Basic CMS / Admin Panel
-        ecommerce: 30,  // E-commerce with Payments
-        api: 12,        // 3rd Party API Integration
-        dashboard: 20,  // Data Visualization Dashboard
-        realtime: 25,   // Real-time features (e.g., chat)
-        search: 10,     // Advanced Search & Filtering
+        auth: 8,        // User Authentication (Login, Register, Reset) - was 10
+        profile: 6,     // User Profiles & Settings - was 8
+        cms: 18,        // Basic CMS / Admin Panel - was 15
+        ecommerce: 35,  // E-commerce with Payments - was 30
+        api: 15,        // 3rd Party API Integration - was 12
+        dashboard: 22,  // Data Visualization Dashboard - was 20
+        realtime: 28,   // Real-time features (e.g., chat) - was 25
+        search: 12,     // Advanced Search & Filtering - was 10
     },
 
     // Multiplier based on client's business stage
@@ -32,9 +32,9 @@ const PRICING_CONFIG = {
     },
     
     PLATFORM_MULTIPLIER: {
-        ios: 1.0,
-        android: 1.0,
-        both: 1.8, // Not quite 2x to account for shared logic
+        ios: 1.2,       // Slightly more expensive
+        android: 1.0,   // Baseline
+        both: 2.0,      // Combined with a slight discount
     },
     MATES_RATES_DISCOUNT: 0.20, // 20%
 };
