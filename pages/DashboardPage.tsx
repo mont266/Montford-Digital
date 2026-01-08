@@ -6,6 +6,7 @@ import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient';
 import ImportFlow from './ImportPage';
 import TaxCentrePage from './TaxCentrePage';
+import QuoteCalculatorPage from './QuoteCalculatorPage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -1572,6 +1573,7 @@ const DashboardPage: React.FC = () => {
         { path: "/dashboard/invoices", label: "Invoices" },
         { path: "/dashboard/expenses", label: "Outgoings" },
         { path: "/dashboard/tax", label: "Tax Centre" },
+        { path: "/dashboard/calculator", label: "Quote Calculator" },
     ];
     
     const pageTitles: { [key:string]: string } = {
@@ -1579,7 +1581,8 @@ const DashboardPage: React.FC = () => {
         "/dashboard/projects": "Projects",
         "/dashboard/invoices": "Invoices",
         "/dashboard/expenses": "Outgoings",
-        "/dashboard/tax": "Tax Centre"
+        "/dashboard/tax": "Tax Centre",
+        "/dashboard/calculator": "Quote Calculator",
     };
     
     const currentPageTitle = pageTitles[location.pathname] || "Dashboard";
@@ -1646,6 +1649,7 @@ const DashboardPage: React.FC = () => {
                                 <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                                 <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
+                                <Route path="calculator" element={<QuoteCalculatorPage />} />
                             </Routes>
                             {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={fetchData} />}
                         </>
