@@ -54,6 +54,19 @@ const getTaxYearBoundaries = (taxYear: string) => {
   };
 };
 
+// --- Reusable Components ---
+const InfoTooltip: React.FC<{ text: string }> = ({ text }) => (
+  <div className="relative inline-block ml-2 group align-middle">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-64 p-2 bg-slate-900 text-slate-300 text-xs rounded-md border border-slate-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+      {text}
+    </div>
+  </div>
+);
+
+
 const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAttachmentModalExpense }) => {
     const [searchTerm, setSearchTerm] = useState('');
     
@@ -75,24 +88,46 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
             return inv.status === 'paid' && issueDate >= start && issueDate <= end;
         });
 
-        const filteredExpenses = expenses.filter(exp => {
-             const startDate = new Date(exp.start_date);
-             if (exp.type === 'manual') {
-                 return startDate >= start && startDate <= end;
-             }
-             if (exp.type === 'subscription') {
-                const subEndDate = exp.end_date ? new Date(exp.end_date) : end;
-                if (startDate > end || subEndDate < start) return false;
-                return true;
-             }
-             return false;
-        });
-
         const totalTurnover = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0);
-        const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + exp.amount_gbp, 0);
+
+        const totalExpenses = expenses.reduce((sum, exp) => {
+            if (exp.type === 'manual') {
+                const expenseDate = new Date(exp.start_date);
+                if (expenseDate >= start && expenseDate <= end) {
+                    return sum + exp.amount_gbp;
+                }
+                return sum;
+            }
+
+            if (exp.type === 'subscription' && exp.billing_cycle) {
+                let spendInPeriod = 0;
+                const subStartDate = new Date(exp.start_date);
+                const subEndDate = exp.end_date ? new Date(exp.end_date) : end;
+
+                let paymentDate = new Date(subStartDate);
+                while (paymentDate <= subEndDate && paymentDate <= end) {
+                    if (paymentDate >= start) {
+                         spendInPeriod += exp.amount_gbp;
+                    }
+                    
+                    if (exp.billing_cycle === 'monthly') {
+                        paymentDate.setMonth(paymentDate.getMonth() + 1);
+                    } else { // annually
+                        paymentDate.setFullYear(paymentDate.getFullYear() + 1);
+                    }
+                }
+                return sum + spendInPeriod;
+            }
+            return sum;
+        }, 0);
+
         const taxableProfit = totalTurnover - totalExpenses;
 
-        const searchableExpenses = filteredExpenses.filter(exp => 
+        const displayExpenses = expenses.filter(exp => {
+             const startDate = new Date(exp.start_date);
+             const subEndDate = exp.end_date ? new Date(exp.end_date) : end;
+             return startDate <= end && subEndDate >= start;
+        }).filter(exp => 
            (exp.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
            exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
            exp.category.toLowerCase().includes(searchTerm.toLowerCase())
@@ -102,7 +137,7 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
             totalTurnover,
             totalExpenses,
             taxableProfit,
-            filteredExpenses: searchableExpenses
+            filteredExpenses: displayExpenses,
         };
     }, [selectedTaxYear, invoices, expenses, searchTerm]);
 
@@ -135,17 +170,20 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
                     <p className="text-3xl font-bold text-white">{formatCurrency(taxYearData.totalTurnover)}</p>
                 </div>
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                    <p className="text-sm text-slate-400">Total Expenses</p>
+                    <p className="text-sm text-slate-400">Allowable Expenses</p>
                     <p className="text-3xl font-bold text-white">{formatCurrency(taxYearData.totalExpenses)}</p>
                 </div>
                 <div className={`bg-slate-800 p-6 rounded-lg border ${profitBorder}`}>
-                    <p className="text-sm text-slate-400">Taxable Profit (Estimate)</p>
+                    <div className="flex items-center">
+                        <p className="text-sm text-slate-400">Taxable Profit (Estimate)</p>
+                        <InfoTooltip text="Calculated as: Total Turnover - Allowable Expenses. This is the figure your tax liability is based on." />
+                    </div>
                     <p className={`text-3xl font-bold ${profitColor}`}>{formatCurrency(taxYearData.taxableProfit)}</p>
                 </div>
             </div>
 
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                 <h3 className="text-xl font-bold text-white mb-4">Expenses Breakdown</h3>
+                 <h3 className="text-xl font-bold text-white mb-4">Expenses Breakdown for Tax Year</h3>
                  <input 
                     type="text" 
                     placeholder="Search expenses..."
