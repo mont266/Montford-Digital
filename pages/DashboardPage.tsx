@@ -103,6 +103,8 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
     return incomeTax + nationalInsurance;
 };
 
+// --- Dashboard Sub-pages ---
+
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
     type TimeSpan = 'all' | '7d' | 'mtd' | 'tfy' | 'lfy';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
@@ -195,53 +197,124 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
     );
 };
 
+const InvoicesPage: React.FC = () => (
+    <div>
+        <h2 className="text-2xl font-bold text-white mb-4">Invoices</h2>
+        <div className="bg-slate-800 p-8 rounded-lg border border-slate-700 text-center">
+            <p className="text-slate-400">Invoice management functionality will be here.</p>
+        </div>
+    </div>
+);
+
+const ProjectsPage: React.FC = () => (
+    <div>
+        <h2 className="text-2xl font-bold text-white mb-4">Projects</h2>
+        <div className="bg-slate-800 p-8 rounded-lg border border-slate-700 text-center">
+            <p className="text-slate-400">Project management functionality will be here.</p>
+        </div>
+    </div>
+);
+
+
 const DashboardPage: React.FC = () => {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [tradingIdentities, setTradingIdentities] = useState<TradingIdentity[]>([]);
+    const [selectedEntityId, setSelectedEntityId] = useState<string>('all');
     const [loading, setLoading] = useState(true);
     const location = useLocation();
+    const navigate = useNavigate();
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        const [invRes, expRes] = await Promise.all([
-            supabase.from('invoices').select('*, projects(name)'),
-            supabase.from('expenses').select('*, expense_attachments(count)')
-        ]);
+
+        const identitiesRes = await supabase.from('trading_identities').select('*');
+        if (identitiesRes.data) setTradingIdentities(identitiesRes.data);
+
+        let invQuery = supabase.from('invoices').select('*, projects(name)');
+        let expQuery = supabase.from('expenses').select('*, expense_attachments(count)');
+
+        if (selectedEntityId !== 'all') {
+            invQuery = invQuery.eq('entity_id', selectedEntityId);
+            expQuery = expQuery.eq('entity_id', selectedEntityId);
+        }
+
+        const [invRes, expRes] = await Promise.all([invQuery, expQuery]);
+
         if (invRes.data) setInvoices(invRes.data);
         if (expRes.data) setExpenses(expRes.data as Expense[]);
+        
         setLoading(false);
-    }, []);
+    }, [selectedEntityId]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        navigate('/login');
+    };
+
     if (loading) return <div className="p-8 text-slate-400">Loading Dashboard...</div>;
+
+    const getLinkClass = (path: string) => {
+        const baseClass = 'px-3 py-2 rounded-md text-sm font-medium hover:text-white transition-colors';
+        const fullPath = `/dashboard${path === '/' ? '' : path}`;
+        
+        if (path === '/' && location.pathname === '/dashboard') {
+             return `${baseClass} bg-slate-900 text-white`;
+        }
+        if (path !== '/' && location.pathname.startsWith(fullPath)) {
+            return `${baseClass} bg-slate-900 text-white`;
+        }
+        return `${baseClass} text-slate-300`;
+    };
 
     return (
         <div className="min-h-screen bg-slate-900 text-slate-300">
             <nav className="bg-slate-800 border-b border-slate-700 p-4">
                 <div className="max-w-7xl mx-auto flex justify-between items-center">
                     <div className="flex items-center space-x-8">
-                        <Link to="/dashboard" className="text-xl font-bold text-white flex items-center space-x-2">
+                        <Link to="/dashboard" className="text-xl font-bold text-white flex items-center space-x-2 flex-shrink-0">
                             <span className="text-cyan-400">Montford</span>
                             <span className="text-slate-400 font-normal">Dash</span>
                         </Link>
-                        <div className="flex space-x-4">
-                            <Link to="/dashboard" className={`px-3 py-2 rounded-md text-sm font-medium ${location.pathname === '/dashboard' ? 'bg-slate-900 text-white' : 'hover:text-white'}`}>Overview</Link>
-                            <Link to="/dashboard/tax" className={`px-3 py-2 rounded-md text-sm font-medium ${location.pathname === '/dashboard/tax' ? 'bg-slate-900 text-white' : 'hover:text-white'}`}>Tax Centre</Link>
-                            <Link to="/dashboard/import" className={`px-3 py-2 rounded-md text-sm font-medium ${location.pathname === '/dashboard/import' ? 'bg-slate-900 text-white' : 'hover:text-white'}`}>Import</Link>
+                        <div className="hidden md:flex space-x-2">
+                            <Link to="/dashboard" className={getLinkClass('/')}>Overview</Link>
+                            <Link to="/dashboard/invoices" className={getLinkClass('/invoices')}>Invoices</Link>
+                            <Link to="/dashboard/projects" className={getLinkClass('/projects')}>Projects</Link>
+                            <Link to="/dashboard/tax" className={getLinkClass('/tax')}>Tax Centre</Link>
+                            <Link to="/dashboard/import" className={getLinkClass('/import')}>Import</Link>
                         </div>
                     </div>
-                    <Link to="/" className="text-sm text-slate-400 hover:text-white">Back to Site</Link>
+                    <div className="flex items-center space-x-4">
+                         <select
+                            value={selectedEntityId}
+                            onChange={(e) => setSelectedEntityId(e.target.value)}
+                            className="bg-slate-700 border border-slate-600 text-white text-sm rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-cyan-500 hidden sm:block"
+                            aria-label="Select Trading Identity"
+                        >
+                            <option value="all">All Identities</option>
+                            {tradingIdentities.map(identity => (
+                                <option key={identity.id} value={identity.id}>{identity.name}</option>
+                            ))}
+                        </select>
+                        <Link to="/" className="text-sm text-slate-400 hover:text-white hidden sm:block">Back to Site</Link>
+                        <button onClick={handleLogout} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-3 rounded-md transition-colors text-sm">
+                            Logout
+                        </button>
+                    </div>
                 </div>
             </nav>
 
             <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
                 <Routes>
                     <Route path="/" element={<DashboardOverview invoices={invoices} expenses={expenses} />} />
+                    <Route path="/invoices" element={<InvoicesPage />} />
+                    <Route path="/projects" element={<ProjectsPage />} />
                     <Route path="/tax" element={<TaxCentrePage invoices={invoices} expenses={expenses} setAttachmentModalExpense={() => {}} />} />
-                    <Route path="/import" element={<ImportFlow selectedEntityId="all" onClose={() => {}} refreshData={fetchData} />} />
+                    <Route path="/import" element={<ImportFlow selectedEntityId={selectedEntityId} onClose={() => navigate('/dashboard')} refreshData={fetchData} />} />
                 </Routes>
             </main>
         </div>
@@ -249,5 +322,3 @@ const DashboardPage: React.FC = () => {
 };
 
 export default DashboardPage;
-
-// Minor change for commit.
