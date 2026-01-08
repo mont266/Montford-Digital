@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
@@ -6,6 +5,21 @@ import ImportFlow from './ImportPage';
 import TaxCentrePage from './TaxCentrePage';
 
 // --- Types ---
+interface TradingIdentity {
+  id: string;
+  name: string;
+  slug: string;
+  color_theme: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  client_name: string;
+  client_email?: string;
+  entity_id: string;
+}
+
 interface InvoiceItem {
   id?: string;
   description: string;
@@ -60,7 +74,6 @@ const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode; 
 );
 
 const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
-const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // --- Tax Calculation Logic (Simplified for Estimates) ---
 const BASE_SALARY = 46440;
@@ -127,26 +140,25 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
         const revenue = filteredInvoices.filter(i => i.status === 'paid').reduce((sum, i) => sum + i.amount, 0);
         const expenseTotal = filteredExpenses.reduce((sum, e) => sum + e.amount_gbp, 0);
 
-        // Map taxes to individual invoices
+        // Simple tax estimate mapping
         let runningTotal = 0;
-        const taxMap = new Map<string, number>();
-        filteredInvoices.filter(i => i.status === 'paid').sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime()).forEach(inv => {
+        const taxTotal = filteredInvoices.filter(i => i.status === 'paid').sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime()).reduce((sum, inv) => {
             const tax = calculateTaxForInvoice(inv.amount, BASE_SALARY, runningTotal);
-            taxMap.set(inv.id, tax);
             runningTotal += inv.amount;
-        });
+            return sum + tax;
+        }, 0);
 
-        const taxTotal = Array.from(taxMap.values()).reduce((sum, t) => sum + t, 0);
-
-        return { revenue, expenseTotal, taxTotal, filteredInvoices, taxMap };
+        return { revenue, expenseTotal, taxTotal };
     }, [timeSpan, invoices, expenses]);
 
     const netProfit = filteredData.revenue - filteredData.expenseTotal - filteredData.taxTotal;
+    
+    // Determine color for profit
     const profitColor = netProfit > 0 ? 'text-green-400' : netProfit < 0 ? 'text-red-400' : 'text-slate-400';
 
     return (
-        <div className="space-y-10">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-white">Financial Overview</h2>
                 <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">
                     {(['all', '7d', 'mtd', 'tfy'] as const).map(span => (
@@ -178,65 +190,6 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
                     valueClassName={profitColor}
                     icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} 
                 />
-            </div>
-
-            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-                <div className="p-6 border-b border-slate-700">
-                    <h3 className="text-xl font-bold text-white">Recent Invoices</h3>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left responsive-table">
-                        <thead className="bg-slate-900/50 text-slate-400 uppercase text-xs font-semibold tracking-wider">
-                            <tr>
-                                <th className="px-6 py-4">Invoice / Date</th>
-                                <th className="px-6 py-4 text-center">Status</th>
-                                <th className="px-6 py-4">Financial Breakdown (Desktop Layout)</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700">
-                            {filteredData.filteredInvoices.slice(0, 10).map(inv => {
-                                const tax = filteredData.taxMap.get(inv.id) || 0;
-                                const net = inv.amount - tax;
-                                return (
-                                    <tr key={inv.id} className="hover:bg-slate-700/30 transition-colors">
-                                        <td className="px-6 py-4" data-label="Invoice">
-                                            <div className="flex flex-col">
-                                                <span className="text-white font-bold">{inv.invoice_number}</span>
-                                                <span className="text-slate-500 text-xs">{formatDate(inv.issue_date)}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4" data-label="Status">
-                                            <div className="flex justify-center sm:justify-center">
-                                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${inv.status === 'paid' ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>
-                                                    {inv.status}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4" data-label="Financials">
-                                            <div className="flex flex-col md:flex-row md:items-center md:gap-x-12 gap-y-3">
-                                                <div className="flex flex-col min-w-[80px]">
-                                                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter mb-0.5">Gross</span>
-                                                    <span className="text-white font-semibold text-base">{formatCurrency(inv.amount)}</span>
-                                                </div>
-                                                <div className="flex flex-col min-w-[80px]">
-                                                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter mb-0.5">Est. Tax</span>
-                                                    <span className="text-red-400/80 font-medium text-sm">-{formatCurrency(tax)}</span>
-                                                </div>
-                                                <div className="flex flex-col min-w-[100px] md:border-l md:border-slate-700 md:pl-10">
-                                                    <span className="text-[10px] text-cyan-500/70 uppercase font-bold tracking-tighter mb-0.5">Take-home</span>
-                                                    <span className="text-cyan-400 font-bold text-lg leading-tight">{formatCurrency(net)}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                    {filteredData.filteredInvoices.length === 0 && (
-                        <div className="p-10 text-center text-slate-500">No invoices found for this period.</div>
-                    )}
-                </div>
             </div>
         </div>
     );
