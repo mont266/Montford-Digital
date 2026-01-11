@@ -112,7 +112,6 @@ const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberForm
 const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
 // --- Tax Calculation Logic ---
-const BASE_SALARY = 43000 + (43000 * 0.08); // 46440
 // Tax Bands (England 2024/2025)
 const PA_THRESHOLD = 12570;
 const BASIC_RATE_THRESHOLD = 50270;
@@ -130,10 +129,11 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
     let incomeTax = 0;
     let nationalInsurance = 0;
     const startingIncome = baseIncome + alreadyEarnedThisYear;
-    // A simplified marginal tax calculation, iterating pound by pound
+    
     for (let i = 1; i <= Math.floor(invoiceAmount); i++) {
         const currentTotalIncome = startingIncome + i;
-        // Income Tax Calculation for this pound
+        
+        // Income Tax Calculation for this pound (based on total income)
         if (currentTotalIncome > HIGHER_RATE_THRESHOLD) {
             incomeTax += ADDITIONAL_RATE;
         } else if (currentTotalIncome > BASIC_RATE_THRESHOLD) {
@@ -141,13 +141,16 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
         } else if (currentTotalIncome > PA_THRESHOLD) {
             incomeTax += BASIC_RATE;
         }
-        // National Insurance Calculation for this pound
-        if (currentTotalIncome > NI_UPPER_THRESHOLD) {
+
+        // National Insurance Calculation for this pound (based on profit only)
+        const currentProfitSoFar = alreadyEarnedThisYear + i;
+        if (currentProfitSoFar > NI_UPPER_THRESHOLD) {
             nationalInsurance += NI_HIGHER_RATE;
-        } else if (currentTotalIncome > NI_LOWER_THRESHOLD) {
+        } else if (currentProfitSoFar > NI_LOWER_THRESHOLD) {
             nationalInsurance += NI_LOWER_RATE;
         }
     }
+    
     return {
         incomeTax,
         nationalInsurance,
@@ -156,7 +159,7 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
 };
 
 // --- Page Components ---
-const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> = ({ invoices, expenses }) => {
+const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; payeSalary: number }> = ({ invoices, expenses, payeSalary }) => {
     type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
 
@@ -318,13 +321,13 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[] }> 
             fyInvoices.sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime());
             let runningTotal = 0;
             fyInvoices.forEach(inv => {
-                const taxInfo = calculateTaxForInvoice(inv.amount, BASE_SALARY, runningTotal);
+                const taxInfo = calculateTaxForInvoice(inv.amount, payeSalary, runningTotal);
                 taxMap.set(inv.id, taxInfo.totalTax);
                 runningTotal += inv.amount;
             });
         });
         return taxMap;
-    }, [invoices]);
+    }, [invoices, payeSalary]);
     
     const totalTaxPaid = filteredInvoices
         .filter(inv => inv.status === 'paid')
@@ -453,7 +456,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; sel
 };
 
 
-const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; selectedEntityId: string }> = ({ invoices, projects, refreshData, selectedEntityId }) => {
+const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; selectedEntityId: string; payeSalary: number }> = ({ invoices, projects, refreshData, selectedEntityId, payeSalary }) => {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
@@ -534,7 +537,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
     
     const InvoiceRow: React.FC<{ invoice: Invoice; isSubRow?: boolean }> = ({ invoice, isSubRow = false }) => {
         const isPaidThisYear = invoice.status === 'paid' && new Date(invoice.issue_date) >= TAX_YEAR_START;
-        const taxCalculation = calculateTaxForInvoice(invoice.amount, BASE_SALARY, runningPaidTotalThisYear);
+        const taxCalculation = calculateTaxForInvoice(invoice.amount, payeSalary, runningPaidTotalThisYear);
 
         const calculatedStripeFee = (invoice.amount * 0.025) + 0.20;
         const effectiveStripeFee = calculatedStripeFee > 50 ? 0 : calculatedStripeFee;
@@ -1479,6 +1482,21 @@ const DashboardPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [attachmentModalExpense, setAttachmentModalExpense] = useState<Expense | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [payeSalary, setPayeSalary] = useState<number>(() => {
+        const savedSalary = localStorage.getItem('payeSalary');
+        return savedSalary ? JSON.parse(savedSalary) : 0;
+    });
+
+    // Listen for changes in PAYE salary from other components/tabs
+    useEffect(() => {
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'payeSalary') {
+                setPayeSalary(e.newValue ? JSON.parse(e.newValue) : 0);
+            }
+        };
+        window.addEventListener('storage', handleStorageChange);
+        return () => window.removeEventListener('storage', handleStorageChange);
+    }, []);
 
 
     // Fetch initial identities
@@ -1644,9 +1662,9 @@ const DashboardPage: React.FC = () => {
                     {!loading && !error && (
                         <>
                             <Routes>
-                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} />} />
+                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} />} />
                                 <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                                <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                                <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />
                                 <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="calculator" element={<QuoteCalculatorPage />} />

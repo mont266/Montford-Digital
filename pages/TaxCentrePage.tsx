@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 // --- Types ---
@@ -54,6 +54,50 @@ const getTaxYearBoundaries = (taxYear: string) => {
   };
 };
 
+// --- Tax Calculation Logic (from DashboardPage) ---
+const PA_THRESHOLD = 12570;
+const BASIC_RATE_THRESHOLD = 50270;
+const HIGHER_RATE_THRESHOLD = 125140;
+const BASIC_RATE = 0.20;
+const HIGHER_RATE = 0.40;
+const ADDITIONAL_RATE = 0.45;
+const NI_LOWER_THRESHOLD = 12570;
+const NI_UPPER_THRESHOLD = 50270;
+const NI_LOWER_RATE = 0.06;
+const NI_HIGHER_RATE = 0.02;
+
+const calculateFullYearTax = (taxableProfit: number, payeSalary: number) => {
+    let incomeTax = 0;
+    let nationalInsurance = 0;
+    const startingIncome = payeSalary;
+    
+    for (let i = 1; i <= Math.floor(taxableProfit); i++) {
+        const currentTotalIncome = startingIncome + i;
+        if (currentTotalIncome > HIGHER_RATE_THRESHOLD) {
+            incomeTax += ADDITIONAL_RATE;
+        } else if (currentTotalIncome > BASIC_RATE_THRESHOLD) {
+            incomeTax += HIGHER_RATE;
+        } else if (currentTotalIncome > PA_THRESHOLD) {
+            incomeTax += BASIC_RATE;
+        }
+    }
+    
+    if (taxableProfit > NI_LOWER_THRESHOLD) {
+        const niableInLowerBand = Math.min(taxableProfit, NI_UPPER_THRESHOLD) - NI_LOWER_THRESHOLD;
+        nationalInsurance += Math.max(0, niableInLowerBand) * NI_LOWER_RATE;
+    }
+    if (taxableProfit > NI_UPPER_THRESHOLD) {
+        const niableInHigherBand = taxableProfit - NI_UPPER_THRESHOLD;
+        nationalInsurance += niableInHigherBand * NI_HIGHER_RATE;
+    }
+    
+    return {
+        incomeTax,
+        nationalInsurance,
+        totalTax: incomeTax + nationalInsurance
+    };
+};
+
 // --- Reusable Components ---
 const InfoTooltip: React.FC<{ text: string }> = ({ text }) => (
   <div className="relative inline-block ml-2 group align-middle">
@@ -67,8 +111,16 @@ const InfoTooltip: React.FC<{ text: string }> = ({ text }) => (
 );
 
 
-const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAttachmentModalExpense }) => {
+const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [payeSalary, setPayeSalary] = useState<number>(() => {
+        const savedSalary = localStorage.getItem('payeSalary');
+        return savedSalary ? JSON.parse(savedSalary) : 0;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('payeSalary', JSON.stringify(payeSalary));
+    }, [payeSalary]);
     
     const availableTaxYears = useMemo(() => {
         const years = new Set<string>();
@@ -122,6 +174,7 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
         }, 0);
 
         const taxableProfit = totalTurnover - totalExpenses;
+        const taxCalculation = calculateFullYearTax(taxableProfit, payeSalary);
 
         const displayExpenses = expenses.filter(exp => {
              const startDate = new Date(exp.start_date);
@@ -138,12 +191,12 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
             totalExpenses,
             taxableProfit,
             filteredExpenses: displayExpenses,
+            ...taxCalculation
         };
-    }, [selectedTaxYear, invoices, expenses, searchTerm]);
+    }, [selectedTaxYear, invoices, expenses, searchTerm, payeSalary]);
 
     // Conditional styling for the profit card
     const profitColor = taxYearData.taxableProfit > 0 ? 'text-green-400' : taxYearData.taxableProfit < 0 ? 'text-red-400' : 'text-slate-400';
-    const profitBorder = taxYearData.taxableProfit > 0 ? 'border-green-500/30' : taxYearData.taxableProfit < 0 ? 'border-red-500/30' : 'border-slate-700';
 
     return (
         <div className="space-y-8">
@@ -163,27 +216,51 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
                     </select>
                 </div>
             </div>
+            
+            <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
+                <h3 className="text-xl font-bold text-white mb-4">Tax Settings</h3>
+                <div>
+                    <label htmlFor="paye-salary" className="block text-sm font-medium text-slate-300">Annual PAYE Salary (£)</label>
+                    <input 
+                        type="number"
+                        id="paye-salary"
+                        value={payeSalary || ''}
+                        onChange={e => setPayeSalary(Number(e.target.value))}
+                        className="mt-1 w-full max-w-xs bg-slate-900 border border-slate-600 rounded-md p-2 text-white"
+                        placeholder="e.g., 45000"
+                    />
+                    <p className="text-xs text-slate-500 mt-2">Enter your gross salary from other employment to improve tax estimations.</p>
+                </div>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
                     <p className="text-sm text-slate-400">Total Turnover</p>
-                    <p className="text-3xl font-bold text-white">{formatCurrency(taxYearData.totalTurnover)}</p>
+                    <p className="text-2xl font-bold text-white">{formatCurrency(taxYearData.totalTurnover)}</p>
                 </div>
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
                     <p className="text-sm text-slate-400">Allowable Expenses</p>
-                    <p className="text-3xl font-bold text-white">{formatCurrency(taxYearData.totalExpenses)}</p>
+                    <p className="text-2xl font-bold text-white">{formatCurrency(taxYearData.totalExpenses)}</p>
                 </div>
-                <div className={`bg-slate-800 p-6 rounded-lg border ${profitBorder}`}>
-                    <div className="flex items-center">
-                        <p className="text-sm text-slate-400">Taxable Profit (Estimate)</p>
-                        <InfoTooltip text="Calculated as: Total Turnover - Allowable Expenses. This is the figure your tax liability is based on." />
+                <div className={`bg-slate-800 p-6 rounded-lg border border-slate-700`}>
+                    <p className="text-sm text-slate-400">Taxable Profit</p>
+                    <p className={`text-2xl font-bold ${profitColor}`}>{formatCurrency(taxYearData.taxableProfit)}</p>
+                </div>
+                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
+                    <p className="text-sm text-slate-400">Est. Income Tax</p>
+                    <p className="text-2xl font-bold text-orange-400">{formatCurrency(taxYearData.incomeTax)}</p>
+                </div>
+                <div className="bg-slate-800 p-6 rounded-lg border-2 border-cyan-500/50">
+                     <div className="flex items-center">
+                        <p className="text-sm text-slate-400">Total Tax Due</p>
+                        <InfoTooltip text="Sum of estimated Income Tax and Class 4 National Insurance on your taxable profit." />
                     </div>
-                    <p className={`text-3xl font-bold ${profitColor}`}>{formatCurrency(taxYearData.taxableProfit)}</p>
+                    <p className="text-2xl font-bold text-cyan-400">{formatCurrency(taxYearData.totalTax)}</p>
                 </div>
             </div>
 
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                 <h3 className="text-xl font-bold text-white mb-4">Expenses Breakdown for Tax Year</h3>
+                 <h3 className="text-xl font-bold text-white mb-4">Expenses Breakdown for Tax Year {selectedTaxYear}</h3>
                  <input 
                     type="text" 
                     placeholder="Search expenses..."
@@ -191,9 +268,9 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
                     onChange={e => setSearchTerm(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white mb-4 focus:border-cyan-500 outline-none"
                 />
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-96">
                     <table className="w-full text-sm text-left">
-                        <thead className="border-b border-slate-700 text-slate-400">
+                        <thead className="border-b border-slate-700 text-slate-400 bg-slate-800 sticky top-0">
                             <tr>
                                 <th className="p-2">Date</th>
                                 <th className="p-2">Item/Service</th>
@@ -216,7 +293,7 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses, setAt
                 </div>
             </div>
             <p className="text-xs text-slate-500 text-center italic">
-                Disclaimer: These figures are estimates for planning purposes only and do not constitute professional financial advice.
+                Disclaimer: These figures are estimates for planning purposes only and do not constitute professional financial advice. Based on 2024/25 England tax bands.
             </p>
         </div>
     );
