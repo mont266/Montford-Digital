@@ -1,5 +1,7 @@
 
 
+
+
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -712,7 +714,7 @@ const calculateTotalSpend = (expense: Expense): number => {
     return cycles * expense.amount_gbp;
 };
 
-const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string; setAttachmentModalExpense: (expense: Expense | null) => void; }> = ({ expenses, refreshData, selectedEntityId, setAttachmentModalExpense }) => {
+const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string; selectedEntitySlug: string | null; setAttachmentModalExpense: (expense: Expense | null) => void; }> = ({ expenses, refreshData, selectedEntityId, selectedEntitySlug, setAttachmentModalExpense }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
@@ -1103,7 +1105,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                     />
                 </Modal>
             )}
-            {showModal && <ExpenseForm expenseToEdit={editingExpense} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {showModal && <ExpenseForm expenseToEdit={editingExpense} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} selectedEntitySlug={selectedEntitySlug} />}
         </div>
     );
 };
@@ -1372,7 +1374,7 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
     );
 };
 
-const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ expenseToEdit, onClose, refreshData, selectedEntityId }) => {
+const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => void; refreshData: () => void; selectedEntityId: string; selectedEntitySlug: string | null; }> = ({ expenseToEdit, onClose, refreshData, selectedEntityId, selectedEntitySlug }) => {
     const [formData, setFormData] = useState({
         name: expenseToEdit?.name || '',
         description: expenseToEdit?.description || '', 
@@ -1384,6 +1386,35 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
         type: expenseToEdit?.type || 'manual',
         billing_cycle: expenseToEdit?.billing_cycle || null
     });
+
+    const HMRCCategories = [
+      'Office, Property & Equipment',
+      'Software & Subscriptions',
+      'Travel & Subsistence',
+      'Advertising & Marketing',
+      'Legal & Financial Costs',
+      'Telephone & Internet',
+      'Training & Professional Development',
+      'Other Allowable Expenses'
+    ];
+    
+    const isMontfordDigital = selectedEntitySlug === 'montford-digital';
+
+    const [categorySelection, setCategorySelection] = useState(() => {
+        if (!isMontfordDigital || !formData.category) return '';
+        return HMRCCategories.includes(formData.category) ? formData.category : 'other';
+    });
+
+    useEffect(() => {
+        if (categorySelection === 'other') {
+            if (HMRCCategories.includes(formData.category)) {
+                 setFormData(prev => ({ ...prev, category: '' }));
+            }
+        } else {
+             setFormData(prev => ({ ...prev, category: categorySelection }));
+        }
+    }, [categorySelection]);
+
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
@@ -1459,7 +1490,34 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
                         </select>
                     </div>
                 )}
-                <div><label className="block text-sm font-medium text-slate-300">Category</label><input type="text" name="category" value={formData.category} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                 {isMontfordDigital ? (
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300">Category</label>
+                        <select 
+                            value={categorySelection} 
+                            onChange={e => setCategorySelection(e.target.value)} 
+                            className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white"
+                        >
+                            <option value="">Select a category...</option>
+                            {HMRCCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            <option value="other">Other (Specify)</option>
+                        </select>
+                        {categorySelection === 'other' && (
+                            <input 
+                                type="text" 
+                                name="category" 
+                                value={formData.category} 
+                                onChange={handleChange} 
+                                className="mt-2 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" 
+                                placeholder="Enter custom category"
+                                required
+                            />
+                        )}
+                    </div>
+                ) : (
+                     <div><label className="block text-sm font-medium text-slate-300">Category</label><input type="text" name="category" value={formData.category} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                )}
+
                 <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">{expenseToEdit ? 'Save Changes' : 'Save Expense'}</button>
             </form>
         </Modal>
@@ -1543,6 +1601,12 @@ const DashboardPage: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    const selectedEntitySlug = useMemo(() => {
+        if (selectedEntityId === 'all') return null;
+        const selected = identities.find(id => id.id === selectedEntityId);
+        return selected ? selected.slug : null;
+    }, [selectedEntityId, identities]);
 
     const processedExpenses = useMemo(() => {
         const today = new Date();
@@ -1665,7 +1729,7 @@ const DashboardPage: React.FC = () => {
                                 <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} />} />
                                 <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                                 <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />
-                                <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} setAttachmentModalExpense={setAttachmentModalExpense} />} />
+                                <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} selectedEntitySlug={selectedEntitySlug} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="calculator" element={<QuoteCalculatorPage />} />
                             </Routes>
