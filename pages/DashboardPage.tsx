@@ -1,8 +1,4 @@
 
-
-
-
-
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -10,6 +6,7 @@ import { supabase } from '../lib/supabaseClient';
 import ImportFlow from './ImportPage';
 import TaxCentrePage from './TaxCentrePage';
 import QuoteCalculatorPage from './QuoteCalculatorPage';
+import WidgetsPage from './WidgetsPage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -1652,14 +1649,20 @@ const DashboardPage: React.FC = () => {
         navigate('/login');
     };
 
-    const navItems = [
-        { path: "/dashboard", label: "Overview" },
-        { path: "/dashboard/projects", label: "Projects" },
-        { path: "/dashboard/invoices", label: "Invoices" },
-        { path: "/dashboard/expenses", label: "Outgoings" },
-        { path: "/dashboard/tax", label: "Tax Centre" },
-        { path: "/dashboard/calculator", label: "Quote Calculator" },
-    ];
+    const navItems = useMemo(() => {
+        const baseItems = [
+            { path: "/dashboard", label: "Overview" },
+            { path: "/dashboard/projects", label: "Projects" },
+            { path: "/dashboard/invoices", label: "Invoices" },
+            { path: "/dashboard/expenses", label: "Outgoings" },
+            { path: "/dashboard/tax", label: "Tax Centre" },
+        ];
+        if (selectedEntityId === 'all' || selectedEntitySlug === 'montford-digital') {
+            baseItems.push({ path: "/dashboard/calculator", label: "Quote Calculator" });
+            baseItems.push({ path: "/dashboard/widgets", label: "Widgets" });
+        }
+        return baseItems;
+    }, [selectedEntityId, selectedEntitySlug]);
     
     const pageTitles: { [key:string]: string } = {
         "/dashboard": "Overview",
@@ -1668,6 +1671,7 @@ const DashboardPage: React.FC = () => {
         "/dashboard/expenses": "Outgoings",
         "/dashboard/tax": "Tax Centre",
         "/dashboard/calculator": "Quote Calculator",
+        "/dashboard/widgets": "Widgets & Snippets",
     };
     
     const currentPageTitle = pageTitles[location.pathname] || "Dashboard";
@@ -1735,6 +1739,7 @@ const DashboardPage: React.FC = () => {
                                 <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} selectedEntitySlug={selectedEntitySlug} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="calculator" element={<QuoteCalculatorPage />} />
+                                <Route path="widgets" element={<WidgetsPage />} />
                             </Routes>
                             {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={fetchData} />}
                         </>
