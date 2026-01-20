@@ -220,7 +220,7 @@ const QuoteCalculatorPage: React.FC = () => {
                     {/* Core Features */}
                     <div>
                         <h3 className="text-lg font-semibold text-white mb-2">Core Features</h3>
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <FeatureCheckbox id="auth" label="User Authentication" points={PRICING_CONFIG.FEATURE_POINTS.auth} checked={features.auth} onChange={() => setFeatures(f => ({...f, auth: !f.auth}))} />
                             <FeatureCheckbox id="profile" label="User Profiles" points={PRICING_CONFIG.FEATURE_POINTS.profile} checked={features.profile} onChange={() => setFeatures(f => ({...f, profile: !f.profile}))} />
                             <FeatureCheckbox id="cms" label="Admin / CMS" points={PRICING_CONFIG.FEATURE_POINTS.cms} checked={features.cms} onChange={() => setFeatures(f => ({...f, cms: !f.cms}))} />

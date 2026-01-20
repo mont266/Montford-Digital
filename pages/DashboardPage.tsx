@@ -2,6 +2,7 @@
 
 
 
+
 // Fix: Corrected import statement for React hooks.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -42,7 +43,8 @@ interface Invoice {
   created_at: string;
   amount: number; 
   status: 'draft' | 'sent' | 'paid' | 'overdue';
-  projects: { name: string } | null;
+  // FIX: Added client_name to projects to align with other Invoice type definitions.
+  projects: { name: string; client_name: string; } | null;
   invoice_items: InvoiceItem[];
   entity_id: string;
   split_group_id?: string | null;
@@ -1572,7 +1574,8 @@ const DashboardPage: React.FC = () => {
         try {
             // Construct queries based on selection
             let projectsQuery = supabase.from('projects').select('*').order('name');
-            let invoicesQuery = supabase.from('invoices').select('*, projects(name), invoice_items(*)').order('issue_date', { ascending: false });
+            // FIX: Select client_name from projects to match the updated Invoice type.
+            let invoicesQuery = supabase.from('invoices').select('*, projects(name, client_name), invoice_items(*)').order('issue_date', { ascending: false });
             let expensesQuery = supabase.from('expenses').select('*, expense_attachments(count)').order('start_date', { ascending: false });
 
             // Apply filters if specific entity selected
