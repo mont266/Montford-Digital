@@ -20,9 +20,9 @@ interface Project {
 // Data is now hardcoded in the component for easy manual updates.
 const projects: Project[] = [
   {
-    "imageSrc": "https://picsum.photos/seed/stoutly/600/400",
+    "imageSrc": "images/stoutly-portfolio.png",
     "title": "Stoutly",
-    "category": "Web & Android App",
+    "category": "iOS, Android & Web Apps",
     "description": "A comprehensive platform with both a web app and native Android app.",
     "detailedDescription": "Stoutly is a personal passion project built from the ground up. It is a dedicated social network for Guinness enthusiasts, allowing users to rate pints of Guinness around the world. The platform fosters community engagement by letting users comment on ratings and share their experiences. A key feature is the location-based discovery engine, enabling users to instantly find the best and cheapest pints of Guinness nearby, no matter where they are in the world.",
     "tags": [
@@ -31,8 +31,9 @@ const projects: Project[] = [
       "Community"
     ],
     "links": {
-      "webapp": "https://www.stoutly.co.uk",
-      "android": "#"
+      "webapp": "https://app.stoutly.co.uk",
+      "android": "https://play.google.com/store/apps/details?id=uk.co.stoutly.twa",
+      "ios": "https://apps.apple.com/in/app/stoutly/id6758011319"
     }
   },
   {
