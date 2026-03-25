@@ -2,47 +2,62 @@ import React, { useState, useMemo } from 'react';
 
 // --- Configuration ---
 const PRICING_CONFIG = {
-    BASE_SETUP_FEE: 150,
-    COST_PER_POINT: 10, // Lowered from 40
+    BASE_SETUP_FEE: 100, // Lowered base fee to be more attractive
+    COST_PER_POINT: 12, // Balanced point cost
     
-    // Points represent relative complexity/effort
+    // Granular points allow clients to pick exactly what they need
     FEATURE_POINTS: {
-        auth: 8,        // User Authentication (Login, Register, Reset) - was 10
-        profile: 6,     // User Profiles & Settings - was 8
-        cms: 18,        // Basic CMS / Admin Panel - was 15
-        ecommerce: 35,  // E-commerce with Payments - was 30
-        api: 15,        // 3rd Party API Integration - was 12
-        dashboard: 22,  // Data Visualization Dashboard - was 20
-        realtime: 28,   // Real-time features (e.g., chat) - was 25
-        search: 12,     // Advanced Search & Filtering - was 10
+        auth: 5,        // User Authentication
+        roles: 6,       // Roles & Permissions
+        profile: 4,     // User Profiles
+        cms: 12,        // Content Management
+        ecommerce: 20,  // E-commerce/Payments
+        api: 10,        // 3rd Party APIs
+        dashboard: 15,  // Analytics/Dashboard
+        realtime: 18,   // Real-time/WebSockets
+        search: 8,      // Advanced Search
+        seo: 4,         // SEO Optimization
+        multilingual: 10, // Multi-language
+        notifications: 6, // Push/Email Alerts
+        offline: 12,    // Offline/PWA Support
+        animations: 6,  // Advanced Animations
     },
 
     // Multiplier based on client's business stage
     CLIENT_PROFILE_MULTIPLIER: {
-        startup: 1.0,   // Solo founders, startups
-        smb: 1.5,       // Small Businesses (2-10 employees)
-        established: 2.2, // Larger companies (10+ employees)
+        startup: 0.85,  // 15% discount for startups/solo
+        smb: 1.2,       // Standard SMB rate
+        established: 1.8, // Enterprise rate
     },
 
     // Multiplier based on project urgency
     TIMELINE_MULTIPLIER: {
+        flexible: 0.85,   // 12+ Weeks (15% discount for flexibility - great for your time!)
         standard: 1.0,    // 8-12 Weeks
         expedited: 1.25,  // 4-7 Weeks
-        urgent: 1.5,      // 2-3 Weeks
+        urgent: 1.6,      // 2-3 Weeks (Premium for rush jobs)
     },
     
     PLATFORM_MULTIPLIER: {
-        ios: 1.2,       // Slightly more expensive
-        android: 1.0,   // Baseline
-        both: 2.0,      // Combined with a slight discount
+        ios: 1.1,       
+        android: 1.1,   
+        both: 1.7,      
     },
     MATES_RATES_DISCOUNT: 0.20, // 20%
+    
+    MAINTENANCE_TIERS: {
+        none: { price: 0, label: 'No Maintenance', desc: 'Client handles all hosting, updates, and backups.' },
+        basic: { price: 25, label: 'Basic Hosting & Security', desc: 'Managed hosting, SSL, daily backups, and security patches.' },
+        standard: { price: 80, label: 'Standard Support', desc: 'Basic + bug fixes and minor content updates (up to 2hrs/mo).' },
+        premium: { price: 250, label: 'Premium Retainer', desc: 'Standard + priority support and feature additions (up to 8hrs/mo).' },
+    }
 };
 
 type ProjectType = 'website' | 'webapp' | 'mobileapp';
 type ClientProfile = 'startup' | 'smb' | 'established';
 type MobilePlatform = 'ios' | 'android' | 'both';
-type Timeline = 'standard' | 'expedited' | 'urgent';
+type Timeline = 'flexible' | 'standard' | 'expedited' | 'urgent';
+type MaintenanceTier = 'none' | 'basic' | 'standard' | 'premium';
 
 // --- Helper & Reusable Components ---
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
@@ -58,12 +73,17 @@ const Toggle: React.FC<{ label: string; checked: boolean; onChange: (checked: bo
     </label>
 );
 
-const FeatureCheckbox: React.FC<{ id: string; label: string; points: number; checked: boolean; onChange: (id: string, checked: boolean) => void }> = ({ id, label, points, checked, onChange }) => (
-    <label htmlFor={id} className="flex items-center p-4 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors has-[:checked]:bg-cyan-500/10 has-[:checked]:border-cyan-500/50">
-        <input id={id} type="checkbox" checked={checked} onChange={e => onChange(id, e.target.checked)} className="h-5 w-5 rounded border-slate-500 text-cyan-600 focus:ring-cyan-500" />
+const FeatureCheckbox: React.FC<{ id: string; label: string; description: string; points: number; checked: boolean; onChange: (id: string, checked: boolean) => void }> = ({ id, label, description, points, checked, onChange }) => (
+    <label htmlFor={id} className="flex items-start p-4 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors has-[:checked]:bg-cyan-500/10 has-[:checked]:border-cyan-500/50">
+        <div className="mt-0.5">
+            <input id={id} type="checkbox" checked={checked} onChange={e => onChange(id, e.target.checked)} className="h-5 w-5 rounded border-slate-500 text-cyan-600 focus:ring-cyan-500" />
+        </div>
         <div className="ml-3 flex-grow">
-            <span className="block text-white font-semibold">{label}</span>
-            <span className="block text-sm text-slate-400">{points} points</span>
+            <div className="flex justify-between items-start">
+                <span className="block text-white font-semibold">{label}</span>
+                <span className="block text-xs font-medium text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded">{points} pts</span>
+            </div>
+            <span className="block text-xs text-slate-400 mt-1 leading-relaxed">{description}</span>
         </div>
     </label>
 );
@@ -76,6 +96,7 @@ const QuoteCalculatorPage: React.FC = () => {
     const [timeline, setTimeline] = useState<Timeline>('standard');
     const [features, setFeatures] = useState({
         auth: false,
+        roles: false,
         profile: false,
         cms: false,
         ecommerce: false,
@@ -83,8 +104,14 @@ const QuoteCalculatorPage: React.FC = () => {
         dashboard: false,
         realtime: false,
         search: false,
+        seo: false,
+        multilingual: false,
+        notifications: false,
+        offline: false,
+        animations: false,
     });
     const [matesRates, setMatesRates] = useState(false);
+    const [maintenanceTier, setMaintenanceTier] = useState<MaintenanceTier>('none');
 
     // --- Calculation Logic ---
     const priceBreakdown = useMemo(() => {
@@ -113,14 +140,17 @@ const QuoteCalculatorPage: React.FC = () => {
             high: finalPrice * 1.1,
         };
 
-        return { totalPoints, featureCost, platformMultiplier, clientProfileMultiplier, timelineMultiplier, subtotal, discount, finalPrice, priceRange };
+        const monthlyMaintenance = PRICING_CONFIG.MAINTENANCE_TIERS[maintenanceTier].price;
+        const yearlyMaintenance = monthlyMaintenance * 12;
 
-    }, [projectType, clientProfile, mobilePlatform, timeline, features, matesRates]);
+        return { totalPoints, featureCost, platformMultiplier, clientProfileMultiplier, timelineMultiplier, subtotal, discount, finalPrice, priceRange, monthlyMaintenance, yearlyMaintenance };
+
+    }, [projectType, clientProfile, mobilePlatform, timeline, features, matesRates, maintenanceTier]);
     
     const clientProfileLabels: Record<ClientProfile, string> = { 'startup': 'Startup / Solo', 'smb': 'Small Business', 'established': 'Established Co.' };
     const platformLabels: Record<MobilePlatform, string> = { 'ios': 'iOS', 'android': 'Android', 'both': 'iOS & Android' };
-    const timelineLabels: Record<Timeline, string> = { 'standard': 'Standard', 'expedited': 'Expedited', 'urgent': 'Urgent' };
-    const timelineDescriptions: Record<Timeline, string> = { 'standard': '8-12 Weeks', 'expedited': '4-7 Weeks', 'urgent': '2-3 Weeks' };
+    const timelineLabels: Record<Timeline, string> = { 'flexible': 'Flexible', 'standard': 'Standard', 'expedited': 'Expedited', 'urgent': 'Urgent' };
+    const timelineDescriptions: Record<Timeline, string> = { 'flexible': '12+ Weeks (15% Off)', 'standard': '8-12 Weeks', 'expedited': '4-7 Weeks', 'urgent': '2-3 Weeks' };
 
 
     return (
@@ -171,27 +201,52 @@ const QuoteCalculatorPage: React.FC = () => {
                     {/* Core Features */}
                     <div>
                         <h3 className="text-lg font-semibold text-white mb-2">Core Features</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <FeatureCheckbox id="auth" label="User Authentication" points={PRICING_CONFIG.FEATURE_POINTS.auth} checked={features.auth} onChange={() => setFeatures(f => ({...f, auth: !f.auth}))} />
-                            <FeatureCheckbox id="profile" label="User Profiles" points={PRICING_CONFIG.FEATURE_POINTS.profile} checked={features.profile} onChange={() => setFeatures(f => ({...f, profile: !f.profile}))} />
-                            <FeatureCheckbox id="cms" label="Admin / CMS" points={PRICING_CONFIG.FEATURE_POINTS.cms} checked={features.cms} onChange={() => setFeatures(f => ({...f, cms: !f.cms}))} />
-                            <FeatureCheckbox id="ecommerce" label="E-commerce" points={PRICING_CONFIG.FEATURE_POINTS.ecommerce} checked={features.ecommerce} onChange={() => setFeatures(f => ({...f, ecommerce: !f.ecommerce}))} />
-                            <FeatureCheckbox id="api" label="API Integrations" points={PRICING_CONFIG.FEATURE_POINTS.api} checked={features.api} onChange={() => setFeatures(f => ({...f, api: !f.api}))} />
-                            <FeatureCheckbox id="dashboard" label="Data Dashboard" points={PRICING_CONFIG.FEATURE_POINTS.dashboard} checked={features.dashboard} onChange={() => setFeatures(f => ({...f, dashboard: !f.dashboard}))} />
-                            <FeatureCheckbox id="realtime" label="Real-time Chat/Data" points={PRICING_CONFIG.FEATURE_POINTS.realtime} checked={features.realtime} onChange={() => setFeatures(f => ({...f, realtime: !f.realtime}))} />
-                            <FeatureCheckbox id="search" label="Advanced Search" points={PRICING_CONFIG.FEATURE_POINTS.search} checked={features.search} onChange={() => setFeatures(f => ({...f, search: !f.search}))} />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <FeatureCheckbox id="auth" label="User Authentication" description="Secure login, registration, and password recovery." points={PRICING_CONFIG.FEATURE_POINTS.auth} checked={features.auth} onChange={() => setFeatures(f => ({...f, auth: !f.auth}))} />
+                            <FeatureCheckbox id="roles" label="Roles & Permissions" description="Different access levels (e.g., admin, editor, user)." points={PRICING_CONFIG.FEATURE_POINTS.roles} checked={features.roles} onChange={() => setFeatures(f => ({...f, roles: !f.roles}))} />
+                            <FeatureCheckbox id="profile" label="User Profiles" description="User-editable profiles, avatars, and account settings." points={PRICING_CONFIG.FEATURE_POINTS.profile} checked={features.profile} onChange={() => setFeatures(f => ({...f, profile: !f.profile}))} />
+                            <FeatureCheckbox id="cms" label="Admin / CMS" description="Admin panel to easily manage website content and data." points={PRICING_CONFIG.FEATURE_POINTS.cms} checked={features.cms} onChange={() => setFeatures(f => ({...f, cms: !f.cms}))} />
+                            <FeatureCheckbox id="ecommerce" label="E-commerce" description="Shopping cart, checkout, and secure payment processing." points={PRICING_CONFIG.FEATURE_POINTS.ecommerce} checked={features.ecommerce} onChange={() => setFeatures(f => ({...f, ecommerce: !f.ecommerce}))} />
+                            <FeatureCheckbox id="api" label="API Integrations" description="Connecting your app with external services (Stripe, Maps, etc.)." points={PRICING_CONFIG.FEATURE_POINTS.api} checked={features.api} onChange={() => setFeatures(f => ({...f, api: !f.api}))} />
+                            <FeatureCheckbox id="dashboard" label="Data Dashboard" description="Visual charts, graphs, and data reporting tools." points={PRICING_CONFIG.FEATURE_POINTS.dashboard} checked={features.dashboard} onChange={() => setFeatures(f => ({...f, dashboard: !f.dashboard}))} />
+                            <FeatureCheckbox id="realtime" label="Real-time Data" description="Live updates, instant messaging, or collaborative features." points={PRICING_CONFIG.FEATURE_POINTS.realtime} checked={features.realtime} onChange={() => setFeatures(f => ({...f, realtime: !f.realtime}))} />
+                            <FeatureCheckbox id="search" label="Advanced Search" description="Complex filtering, sorting, and fast search capabilities." points={PRICING_CONFIG.FEATURE_POINTS.search} checked={features.search} onChange={() => setFeatures(f => ({...f, search: !f.search}))} />
+                            <FeatureCheckbox id="seo" label="SEO Optimization" description="Technical optimization to rank higher on search engines." points={PRICING_CONFIG.FEATURE_POINTS.seo} checked={features.seo} onChange={() => setFeatures(f => ({...f, seo: !f.seo}))} />
+                            <FeatureCheckbox id="multilingual" label="Multi-language" description="Support for multiple languages and regional settings." points={PRICING_CONFIG.FEATURE_POINTS.multilingual} checked={features.multilingual} onChange={() => setFeatures(f => ({...f, multilingual: !f.multilingual}))} />
+                            <FeatureCheckbox id="notifications" label="Push/Email Alerts" description="Automated email alerts or mobile push notifications." points={PRICING_CONFIG.FEATURE_POINTS.notifications} checked={features.notifications} onChange={() => setFeatures(f => ({...f, notifications: !f.notifications}))} />
+                            <FeatureCheckbox id="offline" label="Offline/PWA" description="App continues to work without an internet connection." points={PRICING_CONFIG.FEATURE_POINTS.offline} checked={features.offline} onChange={() => setFeatures(f => ({...f, offline: !f.offline}))} />
+                            <FeatureCheckbox id="animations" label="Custom Animations" description="Smooth, custom interactive animations and transitions." points={PRICING_CONFIG.FEATURE_POINTS.animations} checked={features.animations} onChange={() => setFeatures(f => ({...f, animations: !f.animations}))} />
                         </div>
                     </div>
 
                     {/* Timeline */}
                     <div>
                         <h3 className="text-lg font-semibold text-white mb-2">Project Timeline</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            {(['standard', 'expedited', 'urgent'] as Timeline[]).map(t => (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {(['flexible', 'standard', 'expedited', 'urgent'] as Timeline[]).map(t => (
                                 <label key={t} className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10">
                                     <input type="radio" name="timeline" value={t} checked={timeline === t} onChange={() => setTimeline(t)} className="sr-only" />
                                     <span className="text-white font-bold capitalize">{timelineLabels[t]}</span>
                                     <span className="block text-sm text-slate-400">{timelineDescriptions[t]}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Ongoing Maintenance */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-white mb-2">Ongoing Maintenance & Support</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {(Object.keys(PRICING_CONFIG.MAINTENANCE_TIERS) as MaintenanceTier[]).map(tier => (
+                                <label key={tier} className="p-4 bg-slate-900/50 border border-slate-700 rounded-lg cursor-pointer has-[:checked]:border-cyan-500 has-[:checked]:bg-cyan-500/10 flex flex-col justify-between">
+                                    <div>
+                                        <input type="radio" name="maintenance" value={tier} checked={maintenanceTier === tier} onChange={() => setMaintenanceTier(tier)} className="sr-only" />
+                                        <span className="text-white font-bold">{PRICING_CONFIG.MAINTENANCE_TIERS[tier].label}</span>
+                                        <span className="block text-sm text-slate-400 mt-1">{PRICING_CONFIG.MAINTENANCE_TIERS[tier].desc}</span>
+                                    </div>
+                                    <span className="block mt-3 text-cyan-400 font-semibold">
+                                        {PRICING_CONFIG.MAINTENANCE_TIERS[tier].price === 0 ? 'Free' : `${formatCurrency(PRICING_CONFIG.MAINTENANCE_TIERS[tier].price)} / mo`}
+                                    </span>
                                 </label>
                             ))}
                         </div>
@@ -231,12 +286,29 @@ const QuoteCalculatorPage: React.FC = () => {
                         </div>
 
                         <div className="mt-6 pt-6 border-t-2 border-cyan-500/50 text-center">
-                            <p className="text-slate-400 text-sm">Estimated Price</p>
+                            <p className="text-slate-400 text-sm">Estimated Project Price</p>
                             <p className="text-4xl font-extrabold text-cyan-400 my-1">
                                 {formatCurrency(priceBreakdown.priceRange.low)} - {formatCurrency(priceBreakdown.priceRange.high)}
                             </p>
                         </div>
-                        <p className="text-xs text-slate-500 text-center mt-4">
+
+                        {priceBreakdown.monthlyMaintenance > 0 && (
+                            <div className="mt-6 pt-6 border-t border-slate-700">
+                                <h4 className="text-lg font-bold text-white mb-3">Ongoing Upkeep</h4>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-slate-300">
+                                        <span>Monthly Cost</span>
+                                        <span className="font-semibold text-cyan-400">{formatCurrency(priceBreakdown.monthlyMaintenance)} <span className="text-sm font-normal text-slate-400">/mo</span></span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-slate-400 text-sm">
+                                        <span>Yearly (Billed Annually)</span>
+                                        <span>{formatCurrency(priceBreakdown.yearlyMaintenance)} <span className="text-xs">/yr</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <p className="text-xs text-slate-500 text-center mt-6">
                            This is a preliminary estimate for budgeting purposes only and does not constitute a formal quote.
                         </p>
                     </div>
