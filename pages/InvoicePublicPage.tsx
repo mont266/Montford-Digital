@@ -93,7 +93,11 @@ const InvoicePublicPage: React.FC = () => {
         }
 
       } catch (err: any) {
-        setError(err.message || 'An error occurred while fetching the invoice.');
+        if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
+            setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
+        } else {
+            setError(err.message || 'An error occurred while fetching the invoice.');
+        }
       } finally {
         setLoading(false);
       }

@@ -29,7 +29,13 @@ const QuoteForm: React.FC = () => {
       body: new URLSearchParams(data as any).toString()
     })
       .then(() => setSubmitted(true))
-      .catch(error => alert(error));
+      .catch(error => {
+        if (error.message === 'NetworkError when attempting to fetch resource.' || error.message === 'Failed to fetch') {
+            alert("Unable to submit the form. Please check your internet connection or disable any adblockers that might be blocking the request.");
+        } else {
+            alert(error);
+        }
+      });
   };
 
   if (submitted) {

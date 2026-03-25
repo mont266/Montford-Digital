@@ -75,6 +75,7 @@ interface Expense {
   status: ExpenseStatus;
   entity_id: string;
   expense_attachments: { count: number }[];
+  monthly_breakdown?: Record<string, number> | null;
 }
 
 type OutgoingTimeSpan = '7d' | '30d' | '90d' | '1y' | 'all';
@@ -248,7 +249,9 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                 let paymentDate = new Date(subStartDate);
                 while (paymentDate <= finalEndDate) {
                     if (!startDate || paymentDate >= startDate) {
-                         spendInPeriod += exp.amount_gbp;
+                         const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+                         const amountForMonth = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined ? exp.monthly_breakdown[monthKey] : exp.amount_gbp;
+                         spendInPeriod += amountForMonth;
                     }
                     
                     if (exp.billing_cycle === 'monthly') {
@@ -276,7 +279,9 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                 let paymentDate = new Date(subStartDate);
                 while (paymentDate <= finalEndDate) {
                     if (!startDate || paymentDate >= startDate) {
-                         spendInPeriod += exp.amount_gbp;
+                         const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+                         const amountForMonth = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined ? exp.monthly_breakdown[monthKey] : exp.amount_gbp;
+                         spendInPeriod += amountForMonth;
                     }
                     
                     if (exp.billing_cycle === 'monthly') {
@@ -343,7 +348,10 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
             if (e.billing_cycle === 'annually') {
                 return sum + (e.amount_gbp / 12);
             }
-            return sum + e.amount_gbp;
+            const today = new Date();
+            const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+            const amountForMonth = e.monthly_breakdown && e.monthly_breakdown[monthKey] !== undefined ? e.monthly_breakdown[monthKey] : e.amount_gbp;
+            return sum + amountForMonth;
         }, 0);
     
     const outstandingAmount = filteredInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
@@ -689,28 +697,24 @@ const calculateTotalSpend = (expense: Expense): number => {
 
     if (startDate > calcEndDate) return 0;
 
-    let cycles = 0;
-    
-    if (expense.billing_cycle === 'monthly') {
-        let months = (calcEndDate.getFullYear() - startDate.getFullYear()) * 12;
-        months += calcEndDate.getMonth() - startDate.getMonth();
-        
-        if (calcEndDate.getDate() < startDate.getDate()) {
-            months--;
-        }
-        cycles = Math.max(0, months + 1);
+    let total = 0;
+    let paymentDate = new Date(startDate);
 
-    } else if (expense.billing_cycle === 'annually') {
-        let years = calcEndDate.getFullYear() - startDate.getFullYear();
-        
-        if (calcEndDate.getMonth() < startDate.getMonth() || 
-           (calcEndDate.getMonth() === startDate.getMonth() && calcEndDate.getDate() < startDate.getDate())) {
-            years--;
+    if (expense.billing_cycle === 'monthly') {
+        while (paymentDate <= calcEndDate) {
+            const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+            const amountForMonth = expense.monthly_breakdown && expense.monthly_breakdown[monthKey] !== undefined ? expense.monthly_breakdown[monthKey] : expense.amount_gbp;
+            total += amountForMonth;
+            paymentDate.setMonth(paymentDate.getMonth() + 1);
         }
-        cycles = Math.max(0, years + 1);
+    } else if (expense.billing_cycle === 'annually') {
+        while (paymentDate <= calcEndDate) {
+            total += expense.amount_gbp;
+            paymentDate.setFullYear(paymentDate.getFullYear() + 1);
+        }
     }
 
-    return cycles * expense.amount_gbp;
+    return total;
 };
 
 const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; selectedEntityId: string; selectedEntitySlug: string | null; setAttachmentModalExpense: (expense: Expense | null) => void; }> = ({ expenses, refreshData, selectedEntityId, selectedEntitySlug, setAttachmentModalExpense }) => {
@@ -786,7 +790,9 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                     let paymentDate = new Date(subStartDate);
                     while (paymentDate <= effectiveEndDate) {
                         if (paymentDate >= periodStartDate) {
-                            spendInPeriod += exp.amount_gbp;
+                            const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+                            const amountForMonth = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined ? exp.monthly_breakdown[monthKey] : exp.amount_gbp;
+                            spendInPeriod += amountForMonth;
                         }
 
                         if (exp.billing_cycle === 'monthly') {
@@ -807,7 +813,10 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                     return sum + (e.amount_gbp / 12);
                 }
                 if (e.billing_cycle === 'monthly') {
-                    return sum + e.amount_gbp;
+                    const today = new Date();
+                    const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+                    const amountForMonth = e.monthly_breakdown && e.monthly_breakdown[monthKey] !== undefined ? e.monthly_breakdown[monthKey] : e.amount_gbp;
+                    return sum + amountForMonth;
                 }
                 return sum;
             }, 0);
@@ -913,16 +922,29 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         document.body.removeChild(link);
     };
     
-    const CostDisplay: React.FC<{expense: Expense}> = ({expense}) => {
+    const CostDisplay: React.FC<{expense: Expense & { dueDate?: Date }}> = ({expense}) => {
         const totalSpend = useMemo(() => calculateTotalSpend(expense), [expense]);
+        
+        let displayAmount = expense.amount_gbp;
+        let originalDisplayAmount = expense.amount;
+        let hasOverride = false;
+
+        if (expense.type === 'subscription' && expense.billing_cycle === 'monthly' && expense.dueDate && expense.monthly_breakdown) {
+            const monthKey = `${expense.dueDate.getFullYear()}-${String(expense.dueDate.getMonth() + 1).padStart(2, '0')}`;
+            if (expense.monthly_breakdown[monthKey] !== undefined) {
+                displayAmount = expense.monthly_breakdown[monthKey];
+                originalDisplayAmount = displayAmount;
+                hasOverride = true;
+            }
+        }
 
         return (
             <div className="flex flex-col text-right">
                 <span className="font-semibold text-white">
-                     {expense.currency !== 'GBP' ? formatCurrency(expense.amount, expense.currency) : formatCurrency(expense.amount_gbp)}
+                     {expense.currency !== 'GBP' && !hasOverride ? formatCurrency(originalDisplayAmount, expense.currency) : formatCurrency(displayAmount)}
                      {expense.billing_cycle === 'monthly' ? ' / mo' : expense.billing_cycle === 'annually' ? ' / yr' : ''}
                 </span>
-                {expense.currency !== 'GBP' && <span className="text-xs text-slate-400">(≈ {formatCurrency(expense.amount_gbp)})</span>}
+                {expense.currency !== 'GBP' && !hasOverride && <span className="text-xs text-slate-400">(≈ {formatCurrency(displayAmount)})</span>}
                 {expense.type === 'subscription' && totalSpend > 0 && 
                     <span className="text-xs text-slate-400" title={`Estimated total spend since ${formatDate(expense.start_date)}`}>
                         Total: {formatCurrency(totalSpend)}
@@ -1386,6 +1408,29 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
         billing_cycle: expenseToEdit?.billing_cycle || null
     });
 
+    const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<string, number>>(expenseToEdit?.monthly_breakdown || {});
+    const [newOverrideMonth, setNewOverrideMonth] = useState('');
+    const [newOverrideAmount, setNewOverrideAmount] = useState('');
+
+    const handleAddOverride = () => {
+        if (newOverrideMonth && newOverrideAmount) {
+            setMonthlyBreakdown(prev => ({
+                ...prev,
+                [newOverrideMonth]: parseFloat(newOverrideAmount)
+            }));
+            setNewOverrideMonth('');
+            setNewOverrideAmount('');
+        }
+    };
+
+    const handleRemoveOverride = (month: string) => {
+        setMonthlyBreakdown(prev => {
+            const copy = { ...prev };
+            delete copy[month];
+            return copy;
+        });
+    };
+
     const HMRCCategories = [
       'Office, Property & Equipment',
       'Software & Subscriptions',
@@ -1437,6 +1482,7 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
             end_date: formData.end_date || null,
             type: formData.type,
             billing_cycle: formData.type === 'subscription' ? formData.billing_cycle : null,
+            monthly_breakdown: formData.type === 'subscription' && formData.billing_cycle === 'monthly' ? monthlyBreakdown : null,
         };
         
         let error;
@@ -1487,6 +1533,56 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
                             <option value="monthly">Monthly</option>
                             <option value="annually">Annually</option>
                         </select>
+                    </div>
+                )}
+                {formData.type === 'subscription' && formData.billing_cycle === 'monthly' && (
+                    <div className="bg-slate-900/50 p-4 rounded-md border border-slate-700">
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Monthly Overrides (Optional)</label>
+                        <p className="text-xs text-slate-400 mb-4">Set a different amount for specific months if the charge varied.</p>
+                        
+                        {Object.keys(monthlyBreakdown).length > 0 && (
+                            <div className="mb-4 border border-slate-700 rounded-md overflow-hidden">
+                                {Object.entries(monthlyBreakdown).sort(([a], [b]) => b.localeCompare(a)).map(([month, amount], index, array) => {
+                                    const [yearStr, monthStr] = month.split('-');
+                                    const date = new Date(parseInt(yearStr), parseInt(monthStr) - 1);
+                                    const formattedMonth = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+                                    
+                                    return (
+                                        <div key={month} className={`flex items-center justify-between p-4 bg-slate-800 ${index !== array.length - 1 ? 'border-b border-slate-700' : ''}`}>
+                                            <span className="text-slate-200 font-medium text-lg">{formattedMonth}</span>
+                                            <div className="flex items-center space-x-4">
+                                                <span className="text-slate-300">{formData.currency} {amount.toFixed(2)}</span>
+                                                <button type="button" onClick={() => handleRemoveOverride(month)} className="text-red-400 hover:text-red-300 text-sm font-medium">Remove</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        <div className="flex items-end space-x-2 mt-4">
+                            <div className="w-40">
+                                <label className="block text-xs text-slate-400 mb-1">Month</label>
+                                <input 
+                                    type="month" 
+                                    value={newOverrideMonth} 
+                                    onChange={e => setNewOverrideMonth(e.target.value)} 
+                                    className="bg-slate-700 border-slate-600 rounded-md p-2 text-white w-full"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-xs text-slate-400 mb-1">Amount</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01" 
+                                    placeholder="0.00" 
+                                    value={newOverrideAmount} 
+                                    onChange={e => setNewOverrideAmount(e.target.value)} 
+                                    className="bg-slate-700 border-slate-600 rounded-md p-2 text-white w-full"
+                                />
+                            </div>
+                            <button type="button" onClick={handleAddOverride} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-md h-[42px]">Add</button>
+                        </div>
                     </div>
                 )}
                  {isMontfordDigital ? (
@@ -1592,7 +1688,11 @@ const DashboardPage: React.FC = () => {
             setInvoices(invoicesData as Invoice[] || []);
             setExpenses(expensesData as Expense[] || []);
         } catch (err: any) {
-            setError(err.message);
+            if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
+                setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
+            } else {
+                setError(err.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -1766,7 +1866,11 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
             .order('payment_date', { ascending: false });
         
         if (error) {
-            setError(error.message);
+            if (error.message === 'NetworkError when attempting to fetch resource.' || error.message === 'Failed to fetch') {
+                setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
+            } else {
+                setError(error.message);
+            }
         } else {
             setAttachments(data);
         }
@@ -1808,7 +1912,11 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
             refreshData(); // Refresh main dashboard data to update counts
 
         } catch (err: any) {
-            setError(err.message);
+            if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
+                setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
+            } else {
+                setError(err.message);
+            }
         } finally {
             setUploading(null);
         }
@@ -1834,7 +1942,11 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
             await fetchAttachments();
             refreshData();
         } catch (err: any) {
-            setError(err.message);
+            if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
+                setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
+            } else {
+                setError(err.message);
+            }
         }
     }
 
