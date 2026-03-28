@@ -166,11 +166,23 @@ const ClientPortalPage: React.FC = () => {
         }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Non-JSON response:', text);
+        throw new Error(`Server returned an unexpected response: ${response.status} ${response.statusText}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || `Server error: ${response.status}`);
+      }
+
       if (data.url) {
         window.location.href = data.url;
       } else {
-        throw new Error(data.error || 'Failed to create subscription session');
+        throw new Error('Failed to create subscription session: No URL returned');
       }
     } catch (err: any) {
       console.error('Subscription error:', err);
@@ -197,7 +209,15 @@ const ClientPortalPage: React.FC = () => {
         }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Non-JSON response:', text);
+        throw new Error(`Server returned an unexpected response: ${response.status} ${response.statusText}`);
+      }
+
       if (data.success) {
         // Update local state
         setProjects(projects.map(p => p.id === project.id ? { ...p, stripe_subscription_status: 'canceled' } : p));

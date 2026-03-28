@@ -138,7 +138,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
 
     const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      throw new Error('Invalid amount');
+      return res.status(400).json({ error: 'Invalid amount' });
     }
 
     const sessionConfig: Stripe.Checkout.SessionCreateParams = {
@@ -168,7 +168,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
     res.json({ url: session.url });
   } catch (error: any) {
     console.error('Error creating checkout session:', error);
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -179,7 +179,7 @@ app.post('/api/create-subscription-session', async (req, res) => {
 
     const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      throw new Error('Invalid subscription amount');
+      return res.status(400).json({ error: 'Invalid subscription amount' });
     }
 
     const sessionConfig: Stripe.Checkout.SessionCreateParams = {
@@ -220,7 +220,7 @@ app.post('/api/create-subscription-session', async (req, res) => {
     res.json({ url: session.url });
   } catch (error: any) {
     console.error('Error creating subscription session:', error);
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -238,7 +238,7 @@ app.get('/api/subscription/:id', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error fetching subscription:', error);
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -252,7 +252,7 @@ app.post('/api/cancel-subscription', async (req, res) => {
     res.json({ success: true, status: subscription.status });
   } catch (error: any) {
     console.error('Error canceling subscription:', error);
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 

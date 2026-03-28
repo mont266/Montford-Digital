@@ -133,11 +133,23 @@ const InvoicePublicPage: React.FC = () => {
         }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Non-JSON response:', text);
+        throw new Error(`Server returned an unexpected response: ${response.status} ${response.statusText}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || `Server error: ${response.status}`);
+      }
+
       if (data.url) {
         window.location.href = data.url;
       } else {
-        throw new Error(data.error || 'Failed to create checkout session');
+        throw new Error('Failed to create checkout session: No URL returned');
       }
     } catch (err: any) {
       console.error('Payment error:', err);
