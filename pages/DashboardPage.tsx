@@ -7,6 +7,7 @@ import ImportFlow from './ImportPage';
 import TaxCentrePage from './TaxCentrePage';
 import QuoteCalculatorPage from './QuoteCalculatorPage';
 import WidgetsPage from './WidgetsPage';
+import ClientsPage from './ClientsPage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -21,6 +22,9 @@ interface Project {
   name: string;
   client_name: string;
   client_email?: string;
+  client_id?: string;
+  recurring_fee?: number;
+  recurring_fee_description?: string;
   entity_id: string;
 }
 
@@ -401,7 +405,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
     );
 };
 
-const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; selectedEntityId: string }> = ({ projects, refreshData, selectedEntityId }) => {
+const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData: () => void; selectedEntityId: string }> = ({ projects, clients, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
 
@@ -440,26 +444,34 @@ const ProjectsPage: React.FC<{ projects: Project[]; refreshData: () => void; sel
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Project Name</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Client Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Recurring Fee</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="md:divide-y md:divide-slate-700">
-                        {projects.map(project => (
-                            <tr key={project.id}>
-                                <td data-label="Project Name" className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
-                                <td data-label="Client Name" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{project.client_name}</td>
-                                <td data-label="Actions" className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <div className="actions-cell">
-                                        <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
-                                        <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
+                        {projects.map(project => {
+                            const client = clients.find(c => c.id === project.client_id);
+                            const clientNameDisplay = client ? client.name : project.client_name;
+                            return (
+                                <tr key={project.id}>
+                                    <td data-label="Project Name" className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
+                                    <td data-label="Client Name" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{clientNameDisplay}</td>
+                                    <td data-label="Recurring Fee" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
+                                        {project.recurring_fee ? `${formatCurrency(project.recurring_fee)}/mo` : '-'}
+                                    </td>
+                                    <td data-label="Actions" className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <div className="actions-cell">
+                                            <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
+                                            <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
-            {showModal && <ProjectForm projectToEdit={editingProject} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {showModal && <ProjectForm projectToEdit={editingProject} clients={clients} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
 };
@@ -1351,14 +1363,17 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     );
 };
 
-const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ projectToEdit, onClose, refreshData, selectedEntityId }) => {
+const ProjectForm: React.FC<{ projectToEdit?: Project | null; clients: any[]; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ projectToEdit, clients, onClose, refreshData, selectedEntityId }) => {
     const [formData, setFormData] = useState({ 
         name: projectToEdit?.name || '', 
         client_name: projectToEdit?.client_name || '',
-        client_email: projectToEdit?.client_email || ''
+        client_email: projectToEdit?.client_email || '',
+        client_id: projectToEdit?.client_id || '',
+        recurring_fee: projectToEdit?.recurring_fee || '',
+        recurring_fee_description: projectToEdit?.recurring_fee_description || ''
     });
     
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1369,12 +1384,18 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
             return;
         }
 
+        const payload = {
+            ...formData,
+            recurring_fee: formData.recurring_fee ? parseFloat(formData.recurring_fee as string) : null,
+            client_id: formData.client_id || null,
+        };
+
         let error;
         if (projectToEdit) {
-            ({ error } = await supabase.from('projects').update(formData).eq('id', projectToEdit.id));
+            ({ error } = await supabase.from('projects').update(payload).eq('id', projectToEdit.id));
         } else {
             // Include entity_id for new records
-            ({ error } = await supabase.from('projects').insert([{...formData, entity_id: selectedEntityId }]));
+            ({ error } = await supabase.from('projects').insert([{...payload, entity_id: selectedEntityId }]));
         }
 
         if (error) console.error("Error saving project:", error);
@@ -1387,9 +1408,45 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; onClose: () => voi
         <Modal onClose={onClose} title={projectToEdit ? "Edit Project" : "Create New Project"}>
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-300">Project Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <div><label className="block text-sm font-medium text-slate-300">Client Name</label><input type="text" name="client_name" value={formData.client_name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                 <div><label className="block text-sm font-medium text-slate-300">Client Email</label><input type="email" name="client_email" value={formData.client_email} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
-                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md">Save Project</button>
+                
+                <div>
+                    <label className="block text-sm font-medium text-slate-300">Link to Client (Portal)</label>
+                    <select 
+                        name="client_id" 
+                        value={formData.client_id} 
+                        onChange={handleChange} 
+                        className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white"
+                    >
+                        <option value="">-- No Client Linked --</option>
+                        {clients.map(client => (
+                            <option key={client.id} value={client.id}>{client.name}</option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1">Linking a client allows them to see this project in their portal.</p>
+                </div>
+
+                {!formData.client_id && (
+                    <>
+                        <div><label className="block text-sm font-medium text-slate-300">Client Name (Legacy)</label><input type="text" name="client_name" value={formData.client_name} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                        <div><label className="block text-sm font-medium text-slate-300">Client Email (Legacy)</label><input type="email" name="client_email" value={formData.client_email} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                    </>
+                )}
+
+                <div className="pt-4 border-t border-slate-700">
+                    <h4 className="text-white font-medium mb-2">Recurring Fees</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300">Monthly Amount (£)</label>
+                            <input type="number" step="0.01" name="recurring_fee" value={formData.recurring_fee} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" placeholder="e.g. 50.00" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300">Description</label>
+                            <input type="text" name="recurring_fee_description" value={formData.recurring_fee_description} onChange={handleChange} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" placeholder="e.g. Monthly Hosting" />
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md mt-6">Save Project</button>
             </form>
         </Modal>
     );
@@ -1631,6 +1688,7 @@ const DashboardPage: React.FC = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [clients, setClients] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [attachmentModalExpense, setAttachmentModalExpense] = useState<Expense | null>(null);
@@ -1670,6 +1728,7 @@ const DashboardPage: React.FC = () => {
             // FIX: Select client_name from projects to match the updated Invoice type.
             let invoicesQuery = supabase.from('invoices').select('*, projects(name, client_name), invoice_items(*)').order('issue_date', { ascending: false });
             let expensesQuery = supabase.from('expenses').select('*, expense_attachments(count)').order('start_date', { ascending: false });
+            let clientsQuery = supabase.from('clients').select('*').order('name');
 
             // Apply filters if specific entity selected
             if (selectedEntityId !== 'all') {
@@ -1678,15 +1737,22 @@ const DashboardPage: React.FC = () => {
                 expensesQuery = expensesQuery.eq('entity_id', selectedEntityId);
             }
             
-            const [{ data: projectsData, error: projectsError }, { data: invoicesData, error: invoicesError }, { data: expensesData, error: expensesError }] = await Promise.all([projectsQuery, invoicesQuery, expensesQuery]);
+            const [
+                { data: projectsData, error: projectsError }, 
+                { data: invoicesData, error: invoicesError }, 
+                { data: expensesData, error: expensesError },
+                { data: clientsData, error: clientsError }
+            ] = await Promise.all([projectsQuery, invoicesQuery, expensesQuery, clientsQuery]);
 
             if (projectsError) throw projectsError;
             if (invoicesError) throw invoicesError;
             if (expensesError) throw expensesError;
+            if (clientsError && clientsError.code !== '42P01') throw clientsError; // Ignore if table doesn't exist yet
 
             setProjects(projectsData || []);
             setInvoices(invoicesData as Invoice[] || []);
             setExpenses(expensesData as Expense[] || []);
+            setClients(clientsData || []);
         } catch (err: any) {
             if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
                 setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
@@ -1752,6 +1818,7 @@ const DashboardPage: React.FC = () => {
     const navItems = useMemo(() => {
         const baseItems = [
             { path: "/dashboard", label: "Overview" },
+            { path: "/dashboard/clients", label: "Clients" },
             { path: "/dashboard/projects", label: "Projects" },
             { path: "/dashboard/invoices", label: "Invoices" },
             { path: "/dashboard/expenses", label: "Outgoings" },
@@ -1766,6 +1833,7 @@ const DashboardPage: React.FC = () => {
     
     const pageTitles: { [key:string]: string } = {
         "/dashboard": "Overview",
+        "/dashboard/clients": "Clients",
         "/dashboard/projects": "Projects",
         "/dashboard/invoices": "Invoices",
         "/dashboard/expenses": "Outgoings",
@@ -1834,7 +1902,8 @@ const DashboardPage: React.FC = () => {
                         <>
                             <Routes>
                                 <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} />} />
-                                <Route path="projects" element={<ProjectsPage projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
+                                <Route path="clients" element={<ClientsPage />} />
+                                <Route path="projects" element={<ProjectsPage projects={projects} clients={clients} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                                 <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />
                                 <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} selectedEntitySlug={selectedEntitySlug} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
