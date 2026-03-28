@@ -193,7 +193,7 @@ const ClientPortalPage: React.FC = () => {
                           </td>
                           <td className="py-4 text-right">
                             <a 
-                              href={`/invoice/${invoice.id}`} 
+                              href={`/#/invoice/${invoice.id}`} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="inline-block px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded transition-colors"

@@ -124,7 +124,7 @@ const ClientsPage: React.FC = () => {
               </tr>
             ) : (
               clients.map(client => {
-                const portalLink = `${window.location.origin}/portal/${client.portal_token}`;
+                const portalLink = `${window.location.origin}/#/portal/${client.portal_token}`;
                 return (
                   <tr key={client.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
                     <td className="p-4 text-white font-medium">{client.name}</td>
