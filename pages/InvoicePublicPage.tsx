@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import Logo from '../components/Logo';
 
@@ -51,12 +51,15 @@ const formatDate = (dateString: string) => new Date(dateString).toLocaleDateStri
 
 const InvoicePublicPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [siblingInvoice, setSiblingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showBankModal, setShowBankModal] = useState(false);
   const [isReceiptView, setIsReceiptView] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -67,7 +70,14 @@ const InvoicePublicPage: React.FC = () => {
       }
 
       try {
-        // FIX: Renamed `error` from supabase to `dbError` to avoid shadowing the state variable.
+        // Handle successful payment redirect
+        if (searchParams.get('success') === 'true') {
+          await supabase.from('invoices').update({ status: 'paid' }).eq('id', id);
+          setSuccessMessage('Payment successful! Thank you.');
+        } else if (searchParams.get('canceled') === 'true') {
+          setError('Payment process was canceled.');
+        }
+
         const { data, error: dbError } = await supabase
           .from('invoices')
           .select(`*, projects ( name, client_name ), invoice_items ( * )`)
@@ -105,8 +115,35 @@ const InvoicePublicPage: React.FC = () => {
     fetchInvoice();
   }, [id]);
   
-  const handlePayment = () => {
-      alert("Payment processing would be initiated here!");
+  const handlePayment = async () => {
+    if (!invoice) return;
+    setIsProcessingPayment(true);
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceId: invoice.id,
+          amount: invoice.amount,
+          invoiceNumber: invoice.invoice_number,
+          clientName: invoice.projects?.client_name || 'Client',
+          origin: window.location.origin,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      alert(err.message || 'Failed to initiate payment. Please try again or use bank transfer.');
+      setIsProcessingPayment(false);
+    }
   };
 
   const handleSavePdf = () => {
@@ -142,7 +179,13 @@ const InvoicePublicPage: React.FC = () => {
 
           <main className="p-8">
               {loading && <p className="text-center">Loading invoice...</p>}
-              {error && <p className="text-center text-red-400">{error}</p>}
+              {error && <p className="text-center text-red-400 mb-4">{error}</p>}
+              {successMessage && (
+                <div className="bg-green-500/20 border border-green-500/30 text-green-300 p-4 rounded-lg flex justify-between items-center mb-6">
+                  <p>{successMessage}</p>
+                  <button onClick={() => setSuccessMessage(null)} className="text-green-300 hover:text-white">&times;</button>
+                </div>
+              )}
               {invoice && (
                   <div>
                       {invoice.split_group_id && (
@@ -255,8 +298,12 @@ const InvoicePublicPage: React.FC = () => {
                                                 Pay by Bank Transfer
                                             </button>
                                             {stripeFee <= 50 && (
-                                                <button onClick={handlePayment} className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
-                                                    Pay with Card
+                                                <button 
+                                                  onClick={handlePayment} 
+                                                  disabled={isProcessingPayment}
+                                                  className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {isProcessingPayment ? 'Processing...' : 'Pay with Card'}
                                                 </button>
                                             )}
                                         </>

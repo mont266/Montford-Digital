@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 interface Client {
@@ -14,6 +14,16 @@ interface Project {
   name: string;
   recurring_fee?: number;
   recurring_fee_description?: string;
+  stripe_subscription_id?: string;
+  stripe_subscription_status?: string;
+}
+
+interface SubscriptionDetails {
+  id: string;
+  status: string;
+  current_period_end: number;
+  amount: number;
+  interval: string;
 }
 
 interface Invoice {
@@ -30,13 +40,23 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { styl
 
 const ClientPortalPage: React.FC = () => {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [subscriptionDetails, setSubscriptionDetails] = useState<Record<string, SubscriptionDetails>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isCanceling, setIsCanceling] = useState<string | null>(null);
 
   useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      setSuccessMessage('Subscription successful! Thank you.');
+    } else if (searchParams.get('canceled') === 'true') {
+      setError('Subscription process was canceled.');
+    }
+
     const fetchPortalData = async () => {
       if (!token) {
         setError("Invalid portal link.");
@@ -65,6 +85,23 @@ const ClientPortalPage: React.FC = () => {
 
         if (projectsError) throw projectsError;
         setProjects(projectsData as Project[]);
+
+        // Fetch subscription details for active subscriptions
+        const activeSubs = (projectsData as Project[]).filter(p => p.stripe_subscription_id && p.stripe_subscription_status === 'active');
+        const subDetails: Record<string, SubscriptionDetails> = {};
+        
+        for (const project of activeSubs) {
+          try {
+            const res = await fetch(`/api/subscription/${project.stripe_subscription_id}`);
+            if (res.ok) {
+              const data = await res.json();
+              subDetails[project.id] = data;
+            }
+          } catch (e) {
+            console.error('Error fetching subscription details:', e);
+          }
+        }
+        setSubscriptionDetails(subDetails);
 
         // 3. Fetch Invoices for these Projects
         if (projectsData && projectsData.length > 0) {
@@ -111,6 +148,77 @@ const ClientPortalPage: React.FC = () => {
     );
   }
 
+  const handleSubscribe = async (project: Project) => {
+    try {
+      const response = await fetch('/api/create-subscription-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          amount: project.recurring_fee,
+          projectName: project.name,
+          clientName: client?.name || 'Client',
+          clientEmail: client?.email || '',
+          origin: window.location.origin,
+          token: token,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || 'Failed to create subscription session');
+      }
+    } catch (err: any) {
+      console.error('Subscription error:', err);
+      alert(err.message || 'Failed to initiate subscription.');
+    }
+  };
+
+  const handleCancelSubscription = async (project: Project) => {
+    if (!project.stripe_subscription_id) return;
+    
+    if (!window.confirm('Are you sure you want to cancel this subscription? This action cannot be undone.')) {
+      return;
+    }
+
+    setIsCanceling(project.id);
+    try {
+      const response = await fetch('/api/cancel-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subscriptionId: project.stripe_subscription_id,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Update local state
+        setProjects(projects.map(p => p.id === project.id ? { ...p, stripe_subscription_status: 'canceled' } : p));
+        setSuccessMessage('Subscription canceled successfully.');
+        
+        // Update database
+        await supabase
+          .from('projects')
+          .update({ stripe_subscription_status: 'canceled' })
+          .eq('id', project.id);
+      } else {
+        throw new Error(data.error || 'Failed to cancel subscription');
+      }
+    } catch (err: any) {
+      console.error('Cancellation error:', err);
+      alert(err.message || 'Failed to cancel subscription.');
+    } finally {
+      setIsCanceling(null);
+    }
+  };
+
   const outstandingInvoices = invoices.filter(i => i.status === 'sent' || i.status === 'overdue');
   const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
@@ -130,6 +238,13 @@ const ClientPortalPage: React.FC = () => {
           </div>
         </header>
 
+        {successMessage && (
+          <div className="bg-green-500/20 border border-green-500/30 text-green-300 p-4 rounded-lg flex justify-between items-center">
+            <p>{successMessage}</p>
+            <button onClick={() => setSuccessMessage(null)} className="text-green-300 hover:text-white">&times;</button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* Left Column: Projects & Recurring */}
@@ -144,9 +259,52 @@ const ClientPortalPage: React.FC = () => {
                     <div key={project.id} className="p-4 bg-slate-900/50 rounded-md border border-slate-700">
                       <h3 className="font-semibold text-white">{project.name}</h3>
                       {project.recurring_fee && project.recurring_fee > 0 && (
-                        <div className="mt-2 pt-2 border-t border-slate-700/50 flex justify-between items-center text-sm">
-                          <span className="text-slate-400">{project.recurring_fee_description || 'Recurring Fee'}</span>
-                          <span className="font-medium text-cyan-400">{formatCurrency(project.recurring_fee)}/mo</span>
+                        <div className="mt-2 pt-2 border-t border-slate-700/50 flex flex-col gap-3 text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">{project.recurring_fee_description || 'Recurring Fee'}</span>
+                            <span className="font-medium text-cyan-400">{formatCurrency(project.recurring_fee)}/mo</span>
+                          </div>
+                          
+                          {project.stripe_subscription_status === 'active' ? (
+                            <div className="bg-slate-800 p-3 rounded border border-slate-700">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-green-400 font-medium text-xs flex items-center gap-1">
+                                  <span className="w-2 h-2 rounded-full bg-green-400"></span> Active Subscription
+                                </span>
+                                {subscriptionDetails[project.id] && (
+                                  <span className="text-slate-400 text-xs">
+                                    Next payment: {new Date(subscriptionDetails[project.id].current_period_end * 1000).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleCancelSubscription(project)}
+                                disabled={isCanceling === project.id}
+                                className="w-full py-1.5 mt-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 text-xs font-medium rounded transition-colors disabled:opacity-50"
+                              >
+                                {isCanceling === project.id ? 'Canceling...' : 'Cancel Subscription'}
+                              </button>
+                            </div>
+                          ) : project.stripe_subscription_status === 'canceled' ? (
+                            <div className="flex justify-between items-center bg-slate-800 p-2 rounded border border-slate-700">
+                              <span className="text-slate-500 text-xs italic">Subscription canceled</span>
+                              <button
+                                onClick={() => handleSubscribe(project)}
+                                className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
+                              >
+                                Resubscribe
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => handleSubscribe(project)}
+                                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
+                              >
+                                Set up Subscription
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
