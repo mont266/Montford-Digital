@@ -136,17 +136,21 @@ app.post('/api/create-checkout-session', async (req, res) => {
     const { invoiceId, amount, invoiceNumber, clientName, origin } = req.body;
     const stripe = getStripe();
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+    const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      throw new Error('Invalid amount');
+    }
+
+    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
       line_items: [
         {
           price_data: {
             currency: 'gbp',
             product_data: {
-              name: `Invoice ${invoiceNumber}`,
-              description: `Payment for ${clientName}`,
+              name: `Invoice ${invoiceNumber || 'Payment'}`,
+              description: `Payment for ${clientName || 'Client'}`,
             },
-            unit_amount: Math.round(amount * 100), // Convert to pence
+            unit_amount: Math.round(parsedAmount * 100), // Convert to pence
           },
           quantity: 1,
         },
@@ -155,9 +159,11 @@ app.post('/api/create-checkout-session', async (req, res) => {
       success_url: `${origin}/#/invoice/${invoiceId}?success=true`,
       cancel_url: `${origin}/#/invoice/${invoiceId}?canceled=true`,
       metadata: {
-        invoiceId,
+        invoiceId: String(invoiceId || ''),
       },
-    });
+    };
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     res.json({ url: session.url });
   } catch (error: any) {
@@ -168,21 +174,25 @@ app.post('/api/create-checkout-session', async (req, res) => {
 
 app.post('/api/create-subscription-session', async (req, res) => {
   try {
-    const { projectId, projectName, amount, interval, origin, token } = req.body;
+    const { projectId, projectName, amount, interval, origin, token, clientEmail } = req.body;
     const stripe = getStripe();
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+    const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      throw new Error('Invalid subscription amount');
+    }
+
+    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
       line_items: [
         {
           price_data: {
             currency: 'gbp',
             product_data: {
-              name: `Subscription: ${projectName}`,
+              name: `Subscription: ${projectName || 'Project'}`,
             },
-            unit_amount: Math.round(amount * 100),
+            unit_amount: Math.round(parsedAmount * 100),
             recurring: {
-              interval: interval || 'month',
+              interval: (interval as Stripe.Checkout.SessionCreateParams.LineItem.PriceData.Recurring.Interval) || 'month',
             },
           },
           quantity: 1,
@@ -193,13 +203,19 @@ app.post('/api/create-subscription-session', async (req, res) => {
       cancel_url: `${origin}/#/portal/${token}?canceled=true`,
       subscription_data: {
         metadata: {
-          projectId,
+          projectId: String(projectId || ''),
         },
       },
       metadata: {
-        projectId,
+        projectId: String(projectId || ''),
       },
-    });
+    };
+
+    if (clientEmail) {
+      sessionConfig.customer_email = clientEmail;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     res.json({ url: session.url });
   } catch (error: any) {
