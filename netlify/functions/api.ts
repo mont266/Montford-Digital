@@ -8,8 +8,10 @@ const app = express();
 
 app.use(cors());
 
+const router = express.Router();
+
 // Webhook endpoint needs raw body
-app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const stripe = getStripe();
   const sig = req.headers['stripe-signature'];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -109,7 +111,7 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
   }
 });
 
-app.use(express.json());
+router.use(express.json());
 
 // Lazy initialize Stripe
 let stripeClient: Stripe | null = null;
@@ -126,7 +128,7 @@ function getStripe(): Stripe {
 }
 
 // API Routes
-app.post('/api/create-checkout-session', async (req, res) => {
+router.post('/create-checkout-session', async (req, res) => {
   try {
     const { invoiceId, amount, invoiceNumber, clientName, origin } = req.body;
     const stripe = getStripe();
@@ -167,7 +169,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
-app.post('/api/create-subscription-session', async (req, res) => {
+router.post('/create-subscription-session', async (req, res) => {
   try {
     const { projectId, projectName, amount, interval, origin, token, clientEmail } = req.body;
     const stripe = getStripe();
@@ -219,7 +221,7 @@ app.post('/api/create-subscription-session', async (req, res) => {
   }
 });
 
-app.get('/api/subscription/:id', async (req, res) => {
+router.get('/subscription/:id', async (req, res) => {
   try {
     const stripe = getStripe();
     const subscription = await stripe.subscriptions.retrieve(req.params.id);
@@ -237,7 +239,7 @@ app.get('/api/subscription/:id', async (req, res) => {
   }
 });
 
-app.post('/api/cancel-subscription', async (req, res) => {
+router.post('/cancel-subscription', async (req, res) => {
   try {
     const { subscriptionId } = req.body;
     const stripe = getStripe();
@@ -250,5 +252,8 @@ app.post('/api/cancel-subscription', async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
+
+app.use('/api', router);
+app.use('/.netlify/functions/api', router);
 
 export const handler = serverless(app);

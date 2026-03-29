@@ -49,6 +49,11 @@ const ClientPortalPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState<string | null>(null);
+  const [selectedIntervals, setSelectedIntervals] = useState<Record<string, string>>({});
+
+  const handleIntervalChange = (projectId: string, interval: string) => {
+    setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
+  };
 
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
@@ -163,6 +168,7 @@ const ClientPortalPage: React.FC = () => {
           clientEmail: client?.email || '',
           origin: window.location.origin,
           token: token,
+          interval: selectedIntervals[project.id] || 'month',
         }),
       });
 
@@ -282,7 +288,12 @@ const ClientPortalPage: React.FC = () => {
                         <div className="mt-2 pt-2 border-t border-slate-700/50 flex flex-col gap-3 text-sm">
                           <div className="flex justify-between items-center">
                             <span className="text-slate-400">{project.recurring_fee_description || 'Recurring Fee'}</span>
-                            <span className="font-medium text-cyan-400">{formatCurrency(project.recurring_fee)}/mo</span>
+                            <span className="font-medium text-cyan-400">
+                              {formatCurrency(project.recurring_fee)}
+                              {project.stripe_subscription_status === 'active' && subscriptionDetails[project.id] 
+                                ? `/${subscriptionDetails[project.id].interval === 'year' ? 'yr' : 'mo'}`
+                                : ''}
+                            </span>
                           </div>
                           
                           {project.stripe_subscription_status === 'active' ? (
@@ -316,7 +327,15 @@ const ClientPortalPage: React.FC = () => {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex justify-end">
+                            <div className="flex justify-end items-center gap-2 mt-2">
+                              <select
+                                value={selectedIntervals[project.id] || 'month'}
+                                onChange={(e) => handleIntervalChange(project.id, e.target.value)}
+                                className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-cyan-500"
+                              >
+                                <option value="month">Monthly</option>
+                                <option value="year">Yearly</option>
+                              </select>
                               <button
                                 onClick={() => handleSubscribe(project)}
                                 className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
