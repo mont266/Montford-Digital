@@ -102,9 +102,10 @@ const ClientPortalPage: React.FC = () => {
         
         for (const project of activeSubs) {
           try {
-            const res = await fetch(`/api/subscription/${project.stripe_subscription_id}`);
-            if (res.ok) {
-              const data = await res.json();
+            const { data, error } = await supabase.functions.invoke(`stripe?action=subscription&id=${project.stripe_subscription_id || ''}`, {
+              method: 'GET'
+            });
+            if (!error && data) {
               subDetails[project.id] = data;
             }
           } catch (e) {
@@ -220,26 +221,19 @@ const ClientPortalPage: React.FC = () => {
 
     setIsCanceling(project.id);
     try {
-      const response = await fetch('/api/cancel-subscription', {
+      const { data, error } = await supabase.functions.invoke('stripe', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
+          action: 'cancel-subscription',
           subscriptionId: project.stripe_subscription_id,
-        }),
+        },
       });
 
-      const text = await response.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        console.error('Non-JSON response:', text);
-        throw new Error(`Server returned an unexpected response: ${response.status} ${response.statusText}`);
+      if (error) {
+        throw new Error(error.message || 'Server error');
       }
 
-      if (data.success) {
+      if (data?.success) {
         // Update local state
         setProjects(projects.map(p => p.id === project.id ? { ...p, stripe_subscription_status: 'canceled' } : p));
         setSuccessMessage('Subscription canceled successfully.');
@@ -250,7 +244,7 @@ const ClientPortalPage: React.FC = () => {
           .update({ stripe_subscription_status: 'canceled' })
           .eq('id', project.id);
       } else {
-        throw new Error(data.error || 'Failed to cancel subscription');
+        throw new Error(data?.error || 'Failed to cancel subscription');
       }
     } catch (err: any) {
       console.error('Cancellation error:', err);

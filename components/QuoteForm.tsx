@@ -60,9 +60,6 @@ const QuoteForm: React.FC = () => {
         <form 
           name="quote"
           method="POST"
-          data-netlify="true"
-          data-netlify-honeypot="bot-field"
-          data-netlify-recaptcha="true"
           onSubmit={handleSubmit} 
           className="mt-12 max-w-xl mx-auto"
         >
@@ -91,9 +88,6 @@ const QuoteForm: React.FC = () => {
           <div className="mt-6">
             <label htmlFor="details" className="block text-sm font-medium text-slate-300">Project Details</label>
             <textarea id="details" name="details" rows={5} required value={formData.details} onChange={handleChange} className="mt-1 block w-full bg-slate-800 border border-slate-700 rounded-md shadow-sm py-3 px-4 text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500"></textarea>
-          </div>
-          <div className="mt-6">
-            <div data-netlify-recaptcha="true"></div>
           </div>
           <div className="mt-8 text-center">
             <button type="submit" className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-12 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">

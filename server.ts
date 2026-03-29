@@ -3,7 +3,6 @@ import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import { apiRouter } from './server/apiRouter';
 
 dotenv.config();
 
@@ -11,9 +10,6 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors());
-
-// Mount the apiRouter which contains all the Stripe endpoints and webhook
-app.use('/api', apiRouter);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

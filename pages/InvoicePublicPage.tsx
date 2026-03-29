@@ -126,36 +126,25 @@ const InvoicePublicPage: React.FC = () => {
     if (!invoice) return;
     setIsProcessingPayment(true);
     try {
-      const response = await fetch('/api/create-payment-intent', {
+      const { data, error } = await supabase.functions.invoke('stripe', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
+          action: 'create-payment-intent',
           invoiceId: invoice.id,
           amount: invoice.amount,
           invoiceNumber: invoice.invoice_number,
           clientName: invoice.projects?.client_name || 'Client',
-        }),
+        },
       });
 
-      const text = await response.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        console.error('Non-JSON response:', text);
-        throw new Error(`Server returned an unexpected response: ${response.status} ${response.statusText}`);
+      if (error) {
+        throw new Error(error.message || 'Server error');
       }
 
-      if (!response.ok) {
-        throw new Error(data.error || `Server error: ${response.status}`);
-      }
-
-      if (data.clientSecret) {
+      if (data?.clientSecret) {
         setClientSecret(data.clientSecret);
       } else {
-        throw new Error('Failed to create payment intent: No client secret returned');
+        throw new Error(data?.error || 'Failed to create payment intent: No client secret returned');
       }
     } catch (err: any) {
       console.error('Payment error:', err);
