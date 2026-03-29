@@ -40,14 +40,32 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     switch (event.type) {
-      case 'invoice.paid': {
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        if (paymentIntent.metadata?.invoiceId) {
+          await supabase
+            .from('invoices')
+            .update({ status: 'paid' })
+            .eq('id', paymentIntent.metadata.invoiceId);
+        }
+        break;
+      }
+      case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
-        // If this invoice is from a subscription, we might want to record it in our database
         if (invoice.subscription) {
           const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
           const projectId = subscription.metadata.projectId;
           
           if (projectId) {
+            // Update project subscription status
+            await supabase
+              .from('projects')
+              .update({ 
+                stripe_subscription_id: subscription.id,
+                stripe_subscription_status: 'active'
+              })
+              .eq('id', projectId);
+
             // Create an invoice record in Supabase
             const { data: project } = await supabase
               .from('projects')
@@ -131,9 +149,9 @@ function getStripe(): Stripe {
 }
 
 // API Routes
-app.post('/api/create-checkout-session', async (req, res) => {
+app.post('/api/create-payment-intent', async (req, res) => {
   try {
-    const { invoiceId, amount, invoiceNumber, clientName, origin } = req.body;
+    const { invoiceId, amount, invoiceNumber, clientName } = req.body;
     const stripe = getStripe();
 
     const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
@@ -141,40 +159,26 @@ app.post('/api/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
-      line_items: [
-        {
-          price_data: {
-            currency: 'gbp',
-            product_data: {
-              name: `Invoice ${invoiceNumber || 'Payment'}`,
-              description: `Payment for ${clientName || 'Client'}`,
-            },
-            unit_amount: Math.round(parsedAmount * 100), // Convert to pence
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url: `${origin}/#/invoice/${invoiceId}?success=true`,
-      cancel_url: `${origin}/#/invoice/${invoiceId}?canceled=true`,
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(parsedAmount * 100),
+      currency: 'gbp',
+      description: `Payment for Invoice ${invoiceNumber || ''} - ${clientName || 'Client'}`,
       metadata: {
         invoiceId: String(invoiceId || ''),
       },
-    };
+      automatic_payment_methods: { enabled: true },
+    });
 
-    const session = await stripe.checkout.sessions.create(sessionConfig);
-
-    res.json({ url: session.url });
+    res.json({ clientSecret: paymentIntent.client_secret });
   } catch (error: any) {
-    console.error('Error creating checkout session:', error);
+    console.error('Error creating payment intent:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
-app.post('/api/create-subscription-session', async (req, res) => {
+app.post('/api/create-subscription', async (req, res) => {
   try {
-    const { projectId, projectName, amount, interval, origin, token, clientEmail } = req.body;
+    const { projectId, projectName, amount, interval, clientEmail, clientName } = req.body;
     const stripe = getStripe();
 
     const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
@@ -182,44 +186,49 @@ app.post('/api/create-subscription-session', async (req, res) => {
       return res.status(400).json({ error: 'Invalid subscription amount' });
     }
 
-    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
-      line_items: [
-        {
-          price_data: {
-            currency: 'gbp',
-            product_data: {
-              name: `Subscription: ${projectName || 'Project'}`,
-            },
-            unit_amount: Math.round(parsedAmount * 100),
-            recurring: {
-              interval: (interval as Stripe.Checkout.SessionCreateParams.LineItem.PriceData.Recurring.Interval) || 'month',
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${origin}/#/portal/${token}?success=true`,
-      cancel_url: `${origin}/#/portal/${token}?canceled=true`,
-      subscription_data: {
-        metadata: {
-          projectId: String(projectId || ''),
-        },
-      },
+    let customer;
+    if (clientEmail) {
+      const customers = await stripe.customers.list({ email: clientEmail, limit: 1 });
+      if (customers.data.length > 0) {
+        customer = customers.data[0];
+      } else {
+        customer = await stripe.customers.create({ email: clientEmail, name: clientName });
+      }
+    } else {
+      customer = await stripe.customers.create({ name: clientName || 'Client' });
+    }
+
+    const product = await stripe.products.create({
+      name: `Subscription: ${projectName || 'Project'}`,
+    });
+
+    const price = await stripe.prices.create({
+      product: product.id,
+      unit_amount: Math.round(parsedAmount * 100),
+      currency: 'gbp',
+      recurring: { interval: interval || 'month' },
+    });
+
+    const subscription = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [{ price: price.id }],
+      payment_behavior: 'default_incomplete',
+      payment_settings: { save_default_payment_method: 'on_subscription' },
+      expand: ['latest_invoice.payment_intent'],
       metadata: {
         projectId: String(projectId || ''),
       },
-    };
+    });
 
-    if (clientEmail) {
-      sessionConfig.customer_email = clientEmail;
-    }
+    const invoice = subscription.latest_invoice as Stripe.Invoice;
+    const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
 
-    const session = await stripe.checkout.sessions.create(sessionConfig);
-
-    res.json({ url: session.url });
+    res.json({ 
+      subscriptionId: subscription.id,
+      clientSecret: paymentIntent?.client_secret 
+    });
   } catch (error: any) {
-    console.error('Error creating subscription session:', error);
+    console.error('Error creating subscription:', error);
     res.status(400).json({ error: error.message });
   }
 });

@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import { CheckoutForm } from '../src/components/CheckoutForm';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
 interface Client {
   id: string;
@@ -153,9 +158,12 @@ const ClientPortalPage: React.FC = () => {
     );
   }
 
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
+
   const handleSubscribe = async (project: Project) => {
     try {
-      const response = await fetch('/api/create-subscription-session', {
+      const response = await fetch('/api/create-subscription', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -166,8 +174,6 @@ const ClientPortalPage: React.FC = () => {
           projectName: project.name,
           clientName: client?.name || 'Client',
           clientEmail: client?.email || '',
-          origin: window.location.origin,
-          token: token,
           interval: selectedIntervals[project.id] || 'month',
         }),
       });
@@ -185,15 +191,24 @@ const ClientPortalPage: React.FC = () => {
         throw new Error(data.error || `Server error: ${response.status}`);
       }
 
-      if (data.url) {
-        window.location.href = data.url;
+      if (data.clientSecret) {
+        setClientSecret(data.clientSecret);
+        setActiveSubscriptionId(project.id);
       } else {
-        throw new Error('Failed to create subscription session: No URL returned');
+        throw new Error('Failed to create subscription: No client secret returned');
       }
     } catch (err: any) {
       console.error('Subscription error:', err);
       alert(err.message || 'Failed to initiate subscription.');
     }
+  };
+
+  const handlePaymentSuccess = () => {
+    setSuccessMessage('Subscription successful! Thank you.');
+    setClientSecret(null);
+    setActiveSubscriptionId(null);
+    // Refresh data
+    window.location.reload();
   };
 
   const handleCancelSubscription = async (project: Project) => {
@@ -327,21 +342,40 @@ const ClientPortalPage: React.FC = () => {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex justify-end items-center gap-2 mt-2">
-                              <select
-                                value={selectedIntervals[project.id] || 'month'}
-                                onChange={(e) => handleIntervalChange(project.id, e.target.value)}
-                                className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-cyan-500"
-                              >
-                                <option value="month">Monthly</option>
-                                <option value="year">Yearly</option>
-                              </select>
-                              <button
-                                onClick={() => handleSubscribe(project)}
-                                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
-                              >
-                                Set up Subscription
-                              </button>
+                            <div className="mt-2">
+                              {clientSecret && activeSubscriptionId === project.id ? (
+                                <div className="bg-slate-800 p-4 rounded border border-slate-700 mt-4">
+                                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                                    <CheckoutForm 
+                                      returnUrl={`${window.location.origin}/#/portal/${token}?success=true`} 
+                                      onSuccess={handlePaymentSuccess} 
+                                    />
+                                  </Elements>
+                                  <button
+                                    onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }}
+                                    className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex justify-end items-center gap-2">
+                                  <select
+                                    value={selectedIntervals[project.id] || 'month'}
+                                    onChange={(e) => handleIntervalChange(project.id, e.target.value)}
+                                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-cyan-500"
+                                  >
+                                    <option value="month">Monthly</option>
+                                    <option value="year">Yearly</option>
+                                  </select>
+                                  <button
+                                    onClick={() => handleSubscribe(project)}
+                                    className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
+                                  >
+                                    Set up Subscription
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

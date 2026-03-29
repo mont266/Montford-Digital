@@ -4,6 +4,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import Logo from '../components/Logo';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import { CheckoutForm } from '../src/components/CheckoutForm';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
 // --- Types ---
 interface InvoiceItem {
@@ -115,11 +120,13 @@ const InvoicePublicPage: React.FC = () => {
     fetchInvoice();
   }, [id]);
   
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+
   const handlePayment = async () => {
     if (!invoice) return;
     setIsProcessingPayment(true);
     try {
-      const response = await fetch('/api/create-checkout-session', {
+      const response = await fetch('/api/create-payment-intent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -129,7 +136,6 @@ const InvoicePublicPage: React.FC = () => {
           amount: invoice.amount,
           invoiceNumber: invoice.invoice_number,
           clientName: invoice.projects?.client_name || 'Client',
-          origin: window.location.origin,
         }),
       });
 
@@ -146,15 +152,26 @@ const InvoicePublicPage: React.FC = () => {
         throw new Error(data.error || `Server error: ${response.status}`);
       }
 
-      if (data.url) {
-        window.location.href = data.url;
+      if (data.clientSecret) {
+        setClientSecret(data.clientSecret);
       } else {
-        throw new Error('Failed to create checkout session: No URL returned');
+        throw new Error('Failed to create payment intent: No client secret returned');
       }
     } catch (err: any) {
       console.error('Payment error:', err);
       alert(err.message || 'Failed to initiate payment. Please try again or use bank transfer.');
+    } finally {
       setIsProcessingPayment(false);
+    }
+  };
+
+  const handlePaymentSuccess = async () => {
+    if (invoice) {
+      await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.id);
+      setInvoice({ ...invoice, status: 'paid' });
+      setSuccessMessage('Payment successful! Thank you.');
+      setClientSecret(null);
+      setIsReceiptView(true);
     }
   };
 
@@ -310,13 +327,30 @@ const InvoicePublicPage: React.FC = () => {
                                                 Pay by Bank Transfer
                                             </button>
                                             {stripeFee <= 50 && (
-                                                <button 
-                                                  onClick={handlePayment} 
-                                                  disabled={isProcessingPayment}
-                                                  className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    {isProcessingPayment ? 'Processing...' : 'Pay with Card'}
-                                                </button>
+                                              clientSecret ? (
+                                                <div className="w-full mt-4 bg-slate-800 p-4 rounded border border-slate-700">
+                                                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                                                    <CheckoutForm 
+                                                      returnUrl={`${window.location.origin}/#/invoice/${invoice.id}?success=true`} 
+                                                      onSuccess={handlePaymentSuccess} 
+                                                    />
+                                                  </Elements>
+                                                  <button
+                                                    onClick={() => setClientSecret(null)}
+                                                    className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
+                                                  >
+                                                    Cancel
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                  <button 
+                                                    onClick={handlePayment} 
+                                                    disabled={isProcessingPayment}
+                                                    className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                  >
+                                                      {isProcessingPayment ? 'Processing...' : 'Pay with Card'}
+                                                  </button>
+                                              )
                                             )}
                                         </>
                                     )}
