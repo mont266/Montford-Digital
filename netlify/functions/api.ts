@@ -255,5 +255,6 @@ router.post('/cancel-subscription', async (req, res) => {
 
 app.use('/api', router);
 app.use('/.netlify/functions/api', router);
+app.use('/', router);
 
 export const handler = serverless(app);
