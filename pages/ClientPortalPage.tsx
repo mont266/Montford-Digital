@@ -429,6 +429,23 @@ const ClientPortalPage: React.FC = () => {
               <h3 className="text-xl font-bold text-white">Set up Subscription</h3>
               <button onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
             </div>
+            {(() => {
+              const activeProject = projects.find(p => p.id === activeSubscriptionId);
+              if (!activeProject || !activeProject.recurring_fee) return null;
+              const interval = selectedIntervals[activeProject.id] || 'month';
+              const amount = (interval === 'year' ? 12 : 1) * activeProject.recurring_fee;
+              return (
+                <div className="mb-6 p-4 bg-slate-900/50 rounded-md border border-slate-700">
+                  <p className="text-sm text-slate-400 mb-1">You will be billed:</p>
+                  <p className="text-2xl font-bold text-cyan-400">
+                    {formatCurrency(amount)} <span className="text-sm font-normal text-slate-400">/{interval === 'year' ? 'yr' : 'mo'}</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2">
+                    For {activeProject.name} - {activeProject.recurring_fee_description || 'Recurring Fee'}
+                  </p>
+                </div>
+              );
+            })()}
             <div className="w-full mt-2">
               <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
                 <CheckoutForm 
