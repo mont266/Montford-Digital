@@ -277,7 +277,7 @@ const InvoicePublicPage: React.FC = () => {
                            <p className="text-xs text-slate-500 mt-2">Please use invoice number {invoice.invoice_number} as the payment reference.</p>
                       </div>
 
-                      <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+                      <div className="border-t border-slate-700 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-start gap-4">
                           <div className="flex items-center mb-4 sm:mb-0 print-hide">
                              <span className="text-slate-400 mr-2">Status:</span>
                              <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
@@ -285,7 +285,7 @@ const InvoicePublicPage: React.FC = () => {
                              </span>
                           </div>
                           
-                          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto print-hide">
+                          <div className="flex flex-col sm:flex-row flex-wrap items-start justify-end gap-4 w-full sm:w-auto print-hide">
                             {isReceiptView ? (
                                 <>
                                     <button onClick={() => setIsReceiptView(false)} className="w-full sm:w-auto bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition-colors">
@@ -317,7 +317,7 @@ const InvoicePublicPage: React.FC = () => {
                                             </button>
                                             {stripeFee <= 50 && (
                                               clientSecret ? (
-                                                <div className="w-full mt-4 bg-slate-800 p-4 rounded border border-slate-700">
+                                                <div className="w-full sm:w-96 sm:mt-0 mt-4 bg-slate-800 p-4 rounded border border-slate-700">
                                                   <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
                                                     <CheckoutForm 
                                                       returnUrl={`${window.location.origin}/#/invoice/${invoice.id}?success=true`} 
