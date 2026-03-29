@@ -290,10 +290,10 @@ const ClientPortalPage: React.FC = () => {
                           <div className="flex justify-between items-center">
                             <span className="text-slate-400">{project.recurring_fee_description || 'Recurring Fee'}</span>
                             <span className="font-medium text-cyan-400">
-                              {formatCurrency(project.recurring_fee)}
                               {project.stripe_subscription_status === 'active' && subscriptionDetails[project.id] 
-                                ? `/${subscriptionDetails[project.id].interval === 'year' ? 'yr' : 'mo'}`
-                                : ''}
+                                ? `${formatCurrency(subscriptionDetails[project.id].amount)}/${subscriptionDetails[project.id].interval === 'year' ? 'yr' : 'mo'}`
+                                : `${formatCurrency((selectedIntervals[project.id] === 'year' ? 12 : 1) * project.recurring_fee)}/${selectedIntervals[project.id] === 'year' ? 'yr' : 'mo'}`
+                              }
                             </span>
                           </div>
                           
