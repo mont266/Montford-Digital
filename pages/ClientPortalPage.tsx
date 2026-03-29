@@ -55,6 +55,8 @@ const ClientPortalPage: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState<string | null>(null);
   const [selectedIntervals, setSelectedIntervals] = useState<Record<string, string>>({});
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
 
   const handleIntervalChange = (projectId: string, interval: string) => {
     setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
@@ -158,9 +160,6 @@ const ClientPortalPage: React.FC = () => {
       </div>
     );
   }
-
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
 
   const handleSubscribe = async (project: Project) => {
     try {
