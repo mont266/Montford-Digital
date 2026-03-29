@@ -57,6 +57,7 @@ const ClientPortalPage: React.FC = () => {
   const [selectedIntervals, setSelectedIntervals] = useState<Record<string, string>>({});
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   const handleIntervalChange = (projectId: string, interval: string) => {
     setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
@@ -162,44 +163,36 @@ const ClientPortalPage: React.FC = () => {
   }
 
   const handleSubscribe = async (project: Project) => {
+    setIsProcessingPayment(true);
     try {
-      const response = await fetch('/api/create-subscription', {
+      const { data, error } = await supabase.functions.invoke('stripe', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
+          action: 'create-subscription',
           projectId: project.id,
           amount: project.recurring_fee,
           projectName: project.name,
           clientName: client?.name || 'Client',
           clientEmail: client?.email || '',
           interval: selectedIntervals[project.id] || 'month',
-        }),
+        },
       });
 
-      const text = await response.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        console.error('Non-JSON response:', text);
-        throw new Error(`Server returned an unexpected response: ${response.status} ${response.statusText}`);
+      if (error) {
+        throw new Error(error.message || 'Server error');
       }
 
-      if (!response.ok) {
-        throw new Error(data.error || `Server error: ${response.status}`);
-      }
-
-      if (data.clientSecret) {
+      if (data?.clientSecret) {
         setClientSecret(data.clientSecret);
         setActiveSubscriptionId(project.id);
       } else {
-        throw new Error('Failed to create subscription: No client secret returned');
+        throw new Error(data?.error || 'Failed to create subscription: No client secret returned');
       }
     } catch (err: any) {
       console.error('Subscription error:', err);
       alert(err.message || 'Failed to initiate subscription.');
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
 
@@ -329,27 +322,17 @@ const ClientPortalPage: React.FC = () => {
                               <span className="text-slate-500 text-xs italic">Subscription canceled</span>
                               <button
                                 onClick={() => handleSubscribe(project)}
-                                className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
+                                disabled={isProcessingPayment}
+                                className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors disabled:opacity-50"
                               >
-                                Resubscribe
+                                {isProcessingPayment ? '...' : 'Resubscribe'}
                               </button>
                             </div>
                           ) : (
                             <div className="mt-2">
                               {clientSecret && activeSubscriptionId === project.id ? (
                                 <div className="bg-slate-800 p-4 rounded border border-slate-700 mt-4">
-                                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
-                                    <CheckoutForm 
-                                      returnUrl={`${window.location.origin}/#/portal/${token}?success=true`} 
-                                      onSuccess={handlePaymentSuccess} 
-                                    />
-                                  </Elements>
-                                  <button
-                                    onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }}
-                                    className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
+                                  <p className="text-sm text-slate-400 mb-2">Please complete the payment in the modal.</p>
                                 </div>
                               ) : (
                                 <div className="flex justify-end items-center gap-2">
@@ -363,9 +346,10 @@ const ClientPortalPage: React.FC = () => {
                                   </select>
                                   <button
                                     onClick={() => handleSubscribe(project)}
-                                    className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors"
+                                    disabled={isProcessingPayment}
+                                    className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors disabled:opacity-50"
                                   >
-                                    Set up Subscription
+                                    {isProcessingPayment ? 'Processing...' : 'Set up Subscription'}
                                   </button>
                                 </div>
                               )}
@@ -436,6 +420,32 @@ const ClientPortalPage: React.FC = () => {
 
         </div>
       </div>
+
+      {/* Subscription Payment Modal */}
+      {clientSecret && activeSubscriptionId && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }}>
+          <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md my-8 p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-white">Set up Subscription</h3>
+              <button onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div className="w-full mt-2">
+              <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                <CheckoutForm 
+                  returnUrl={`${window.location.origin}/#/portal/${token}?success=true`} 
+                  onSuccess={handlePaymentSuccess} 
+                />
+              </Elements>
+              <button
+                onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }}
+                className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

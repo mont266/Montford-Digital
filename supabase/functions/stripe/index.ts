@@ -177,10 +177,15 @@ export default async function serve(req: Request) {
 
       if (action === 'create-subscription') {
         const { projectId, projectName, amount, interval, clientEmail, clientName } = body;
-        const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
+        let parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
         
         if (isNaN(parsedAmount) || parsedAmount <= 0) {
           return new Response(JSON.stringify({ error: 'Invalid subscription amount' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // If interval is yearly, multiply the monthly amount by 12
+        if (interval === 'year') {
+          parsedAmount = parsedAmount * 12;
         }
 
         let customer;
