@@ -316,30 +316,13 @@ const InvoicePublicPage: React.FC = () => {
                                                 Pay by Bank Transfer
                                             </button>
                                             {stripeFee <= 50 && (
-                                              clientSecret ? (
-                                                <div className="w-full sm:w-96 sm:mt-0 mt-4 bg-slate-800 p-4 rounded border border-slate-700">
-                                                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
-                                                    <CheckoutForm 
-                                                      returnUrl={`${window.location.origin}/#/invoice/${invoice.id}?success=true`} 
-                                                      onSuccess={handlePaymentSuccess} 
-                                                    />
-                                                  </Elements>
-                                                  <button
-                                                    onClick={() => setClientSecret(null)}
-                                                    className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
-                                                  >
-                                                    Cancel
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                  <button 
-                                                    onClick={handlePayment} 
-                                                    disabled={isProcessingPayment}
-                                                    className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                  >
-                                                      {isProcessingPayment ? 'Processing...' : 'Pay with Card'}
-                                                  </button>
-                                              )
+                                                <button 
+                                                  onClick={handlePayment} 
+                                                  disabled={isProcessingPayment}
+                                                  className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {isProcessingPayment ? 'Processing...' : 'Pay with Card'}
+                                                </button>
                                             )}
                                         </>
                                     )}
@@ -364,6 +347,24 @@ const InvoicePublicPage: React.FC = () => {
                   <p><span className="text-slate-400">Account Name:</span> <span className="text-white font-mono">Scott Montford</span></p>
                   <p><span className="text-slate-400">Sort Code:</span> <span className="text-white font-mono">04-00-75</span></p>
                   <p><span className="text-slate-400">Account Number:</span> <span className="text-white font-mono">41017137</span></p>
+              </div>
+          </Modal>
+      )}
+      {clientSecret && invoice && (
+          <Modal onClose={() => setClientSecret(null)} title="Pay with Card">
+              <div className="w-full mt-2">
+                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                  <CheckoutForm 
+                    returnUrl={`${window.location.origin}/#/invoice/${invoice.id}?success=true`} 
+                    onSuccess={handlePaymentSuccess} 
+                  />
+                </Elements>
+                <button
+                  onClick={() => setClientSecret(null)}
+                  className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
           </Modal>
       )}
