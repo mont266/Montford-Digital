@@ -58,6 +58,7 @@ const ClientPortalPage: React.FC = () => {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
 
   const handleIntervalChange = (projectId: string, interval: string) => {
     setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
@@ -97,19 +98,53 @@ const ClientPortalPage: React.FC = () => {
           .eq('client_id', clientData.id);
 
         if (projectsError) throw projectsError;
-        setProjects(projectsData as Project[]);
+        const currentProjects = projectsData as Project[];
+        setProjects(currentProjects);
 
-        // Fetch subscription details for active subscriptions
-        const activeSubs = (projectsData as Project[]).filter(p => p.stripe_subscription_id && p.stripe_subscription_status === 'active');
+        // Fetch subscription details for projects with subscription IDs
+        const projectsWithSubs = currentProjects.filter(p => p.stripe_subscription_id);
         const subDetails: Record<string, SubscriptionDetails> = {};
         
-        for (const project of activeSubs) {
+        for (const project of projectsWithSubs) {
           try {
-            const { data, error } = await supabase.functions.invoke(`stripe?action=subscription&id=${project.stripe_subscription_id || ''}`, {
-              method: 'GET'
+            const { data, error } = await supabase.functions.invoke('stripe', {
+              method: 'POST',
+              body: {
+                action: 'sync-subscription',
+                subscriptionId: project.stripe_subscription_id,
+                projectId: project.id
+              }
             });
             if (!error && data) {
-              subDetails[project.id] = data;
+              // Fetch full details for UI
+              const { data: details } = await supabase.functions.invoke(`stripe?action=subscription&id=${project.stripe_subscription_id || ''}`, {
+                method: 'GET'
+              });
+              if (details) {
+                subDetails[project.id] = details;
+              }
+              
+              // If status changed to active, we might need to refresh invoices
+              if (data.status === 'active' && project.stripe_subscription_status !== 'active') {
+                console.log(`Syncing status for project ${project.id} to active`);
+                // Update local state
+                setProjects(prev => prev.map(p => p.id === project.id ? { ...p, stripe_subscription_status: 'active' } : p));
+                
+                // Refresh invoices list
+                const { data: newInvoices } = await supabase
+                  .from('invoices')
+                  .select('*, projects(name)')
+                  .eq('project_id', project.id)
+                  .neq('status', 'draft')
+                  .order('issue_date', { ascending: false });
+                
+                if (newInvoices) {
+                  setInvoices(prev => {
+                    const filtered = prev.filter(i => i.project_id !== project.id);
+                    return [...filtered, ...newInvoices].sort((a, b) => new Date(b.issue_date).getTime() - new Date(a.issue_date).getTime());
+                  });
+                }
+              }
             }
           } catch (e) {
             console.error('Error fetching subscription details:', e);
@@ -185,6 +220,24 @@ const ClientPortalPage: React.FC = () => {
       if (data?.clientSecret) {
         setClientSecret(data.clientSecret);
         setActiveSubscriptionId(project.id);
+        
+        // Update database with subscription ID immediately
+        if (data.subscriptionId) {
+          await supabase
+            .from('projects')
+            .update({ 
+              stripe_subscription_id: data.subscriptionId,
+              stripe_subscription_status: 'incomplete'
+            })
+            .eq('id', project.id);
+          
+          // Update local state too
+          setProjects(prev => prev.map(p => p.id === project.id ? { 
+            ...p, 
+            stripe_subscription_id: data.subscriptionId,
+            stripe_subscription_status: 'incomplete'
+          } : p));
+        }
       } else {
         throw new Error(data?.error || 'Failed to create subscription: No client secret returned');
       }
@@ -246,6 +299,34 @@ const ClientPortalPage: React.FC = () => {
     }
   };
 
+  const handleManageSubscription = async () => {
+    if (!client?.email) return;
+    
+    setIsOpeningPortal(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe', {
+        method: 'POST',
+        body: {
+          action: 'create-portal-session',
+          clientEmail: client.email,
+          returnUrl: window.location.href,
+        },
+      });
+
+      if (error) throw new Error(error.message || 'Server error');
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data?.error || 'Failed to create portal session');
+      }
+    } catch (err: any) {
+      console.error('Portal error:', err);
+      alert(err.message || 'Failed to open billing portal.');
+    } finally {
+      setIsOpeningPortal(false);
+    }
+  };
+
   const outstandingInvoices = invoices.filter(i => i.status === 'sent' || i.status === 'overdue');
   const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
@@ -259,9 +340,25 @@ const ClientPortalPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-white mb-1">Welcome, {client.name}</h1>
             <p className="text-slate-400">Client Portal</p>
           </div>
-          <div className="mt-4 md:mt-0 text-right">
-            <p className="text-sm text-slate-400">Total Outstanding</p>
-            <p className="text-2xl font-bold text-cyan-400">{formatCurrency(totalOutstanding)}</p>
+          <div className="mt-4 md:mt-0 text-right flex flex-col items-end gap-2">
+            <div>
+              <p className="text-sm text-slate-400">Total Outstanding</p>
+              <p className="text-2xl font-bold text-cyan-400">{formatCurrency(totalOutstanding)}</p>
+            </div>
+            {projects.some(p => p.stripe_subscription_id) && (
+              <button
+                onClick={handleManageSubscription}
+                disabled={isOpeningPortal}
+                className="mt-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {isOpeningPortal ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                )}
+                Manage Billing
+              </button>
+            )}
           </div>
         </header>
 

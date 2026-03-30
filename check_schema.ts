@@ -8,8 +8,23 @@ const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_A
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function check() {
-  const { data, error } = await supabase.from('projects').select('stripe_subscription_status').limit(1);
-  console.log('Projects stripe_subscription_status:', data, error);
+  const { data: projectsData, error: projectsError } = await supabase.from('projects').select('*').limit(1);
+  if (projectsError) {
+    console.error('Projects Error:', projectsError);
+  } else if (projectsData && projectsData.length > 0) {
+    console.log('Projects columns:', Object.keys(projectsData[0]));
+  } else {
+    console.log('Projects table is empty.');
+  }
+
+  const { data: invoicesData, error: invoicesError } = await supabase.from('invoices').select('*').limit(1);
+  if (invoicesError) {
+    console.error('Invoices Error:', invoicesError);
+  } else if (invoicesData && invoicesData.length > 0) {
+    console.log('Invoices columns:', Object.keys(invoicesData[0]));
+  } else {
+    console.log('Invoices table is empty.');
+  }
 }
 
 check();
