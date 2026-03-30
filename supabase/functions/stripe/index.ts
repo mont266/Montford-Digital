@@ -292,7 +292,7 @@ export default async function serve(req: Request) {
         // Update project status
         const { error: projError } = await supabase
           .from('projects')
-          .update({ stripe_subscription_status: subscription.status })
+          .update({ stripe_subscription_id: subscriptionId, stripe_subscription_status: subscription.status })
           .eq('id', projectId);
         
         if (projError) console.error('Error syncing project status:', projError);
@@ -350,15 +350,126 @@ export default async function serve(req: Request) {
         return new Response(JSON.stringify({ success: true, status: subscription.status }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      if (action === 'sync-all-client-subscriptions') {
+        const { clientId } = body;
+        if (!clientId) {
+          return new Response(JSON.stringify({ error: 'Missing clientId' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const { data: client, error: clientError } = await supabase
+          .from('clients')
+          .select('email, name')
+          .eq('id', clientId)
+          .single();
+
+        if (clientError || !client) {
+          console.error(`Client not found for ID: ${clientId}`, clientError);
+          return new Response(JSON.stringify({ error: 'Client not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        if (!client.email) {
+          console.log(`Client ${clientId} has no email, skipping sync.`);
+          return new Response(JSON.stringify({ success: true, message: 'Client has no email' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        console.log(`Syncing all subscriptions for client: ${client.email}`);
+        const customers = await stripe.customers.list({ email: client.email, limit: 1 });
+        
+        if (customers.data.length === 0) {
+          console.log(`No Stripe customer found for email: ${client.email}`);
+          return new Response(JSON.stringify({ success: true, message: 'No Stripe customer found for this email' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const customerId = customers.data[0].id;
+        console.log(`Found Stripe customer: ${customerId}`);
+        
+        // Update client with customer ID if missing
+        if (!client.stripe_customer_id) {
+          await supabase.from('clients').update({ stripe_customer_id: customerId }).eq('id', clientId);
+        }
+
+        const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: 'all' });
+        console.log(`Found ${subscriptions.data.length} subscriptions for customer ${customerId}`);
+
+        const { data: projects } = await supabase
+          .from('projects')
+          .select('id, name')
+          .eq('client_id', clientId);
+
+        if (!projects || projects.length === 0) {
+          console.log(`No projects found in database for client: ${clientId}`);
+          return new Response(JSON.stringify({ success: true, message: 'No projects found for this client', debug: { customerId, subCount: subscriptions.data.length } }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        let linkedCount = 0;
+        const debugInfo: any[] = [];
+        for (const sub of subscriptions.data) {
+          console.log(`Checking subscription: ${sub.id}, status: ${sub.status}`);
+          let targetProjectId = sub.metadata.projectId;
+          let matchMethod = 'metadata';
+
+          // If no metadata, try to match by project name if there's only one project
+          if (!targetProjectId && projects.length === 1) {
+            targetProjectId = projects[0].id;
+            matchMethod = 'single-project';
+            console.log(`Matching by single project: ${targetProjectId}`);
+          } else if (!targetProjectId) {
+            // Try matching by name in subscription description or product name
+            const product = await stripe.products.retrieve(sub.items.data[0].price.product as string);
+            console.log(`Checking product name: ${product.name}`);
+            const match = projects.find(p => product.name.toLowerCase().includes(p.name.toLowerCase()) || (sub.description && sub.description.toLowerCase().includes(p.name.toLowerCase())));
+            if (match) {
+              targetProjectId = match.id;
+              matchMethod = 'name-match';
+              console.log(`Matched by name: ${targetProjectId}`);
+            }
+          }
+
+          debugInfo.push({ subId: sub.id, status: sub.status, targetProjectId, matchMethod });
+
+          if (targetProjectId) {
+            console.log(`Linking subscription ${sub.id} to project ${targetProjectId}`);
+            const { error: updateError } = await supabase
+              .from('projects')
+              .update({ 
+                stripe_subscription_id: sub.id,
+                stripe_subscription_status: sub.status
+              })
+              .eq('id', targetProjectId);
+            
+            if (updateError) {
+              console.error(`Error linking subscription ${sub.id}:`, updateError);
+            } else {
+              linkedCount++;
+            }
+          } else {
+            console.log(`Could not find target project for subscription ${sub.id}`);
+          }
+        }
+
+        return new Response(JSON.stringify({ success: true, linkedCount, subscriptionCount: subscriptions.data.length, debug: debugInfo }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       if (action === 'create-portal-session') {
-        const { clientEmail, returnUrl } = body;
-        if (!clientEmail) {
+        const { clientId, clientEmail, returnUrl } = body;
+        let email = clientEmail;
+
+        if (!email && clientId) {
+          const { data: client } = await supabase
+            .from('clients')
+            .select('email')
+            .eq('id', clientId)
+            .single();
+          email = client?.email;
+        }
+
+        if (!email) {
           return new Response(JSON.stringify({ error: 'Missing client email' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        const customers = await stripe.customers.list({ email: clientEmail, limit: 1 });
+        const customers = await stripe.customers.list({ email: email, limit: 1 });
         if (customers.data.length === 0) {
-          return new Response(JSON.stringify({ error: 'Customer not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify({ error: 'Customer not found in Stripe' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
         const session = await stripe.billingPortal.sessions.create({

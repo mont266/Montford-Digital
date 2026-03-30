@@ -5,7 +5,15 @@ import {
   useElements
 } from '@stripe/react-stripe-js';
 
-export const CheckoutForm = ({ returnUrl, onSuccess }: { returnUrl: string, onSuccess?: () => void }) => {
+export const CheckoutForm = ({ 
+  returnUrl, 
+  onSuccess,
+  billingDetails
+}: { 
+  returnUrl: string, 
+  onSuccess?: () => void,
+  billingDetails?: { name?: string, email?: string }
+}) => {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -25,6 +33,12 @@ export const CheckoutForm = ({ returnUrl, onSuccess }: { returnUrl: string, onSu
       elements,
       confirmParams: {
         return_url: returnUrl,
+        payment_method_data: billingDetails ? {
+          billing_details: {
+            name: billingDetails.name,
+            email: billingDetails.email,
+          }
+        } : undefined,
       },
       redirect: 'if_required',
     });

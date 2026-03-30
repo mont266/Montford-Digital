@@ -59,6 +59,9 @@ const ClientPortalPage: React.FC = () => {
   const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
+  const [billingName, setBillingName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [isCollectingDetails, setIsCollectingDetails] = useState(false);
 
   const handleIntervalChange = (projectId: string, interval: string) => {
     setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
@@ -90,6 +93,19 @@ const ClientPortalPage: React.FC = () => {
           throw new Error("Portal not found or invalid token.");
         }
         setClient(clientData as Client);
+
+        // 1.5 Sync all client subscriptions from Stripe (Discovery)
+        try {
+          await supabase.functions.invoke('stripe', {
+            method: 'POST',
+            body: {
+              action: 'sync-all-client-subscriptions',
+              clientId: clientData.id
+            }
+          });
+        } catch (e) {
+          console.error('Error discovering subscriptions:', e);
+        }
 
         // 2. Fetch Projects for this Client
         const { data: projectsData, error: projectsError } = await supabase
@@ -197,7 +213,20 @@ const ClientPortalPage: React.FC = () => {
     );
   }
 
+  const handleSubscribeInitiate = (project: Project) => {
+    setActiveSubscriptionId(project.id);
+    setBillingName(client?.name || '');
+    setBillingEmail(client?.email || '');
+    setIsCollectingDetails(true);
+    setClientSecret(null);
+  };
+
   const handleSubscribe = async (project: Project) => {
+    if (!billingName || !billingEmail) {
+      alert('Please provide both name and email for billing.');
+      return;
+    }
+
     setIsProcessingPayment(true);
     try {
       const { data, error } = await supabase.functions.invoke('stripe', {
@@ -207,8 +236,8 @@ const ClientPortalPage: React.FC = () => {
           projectId: project.id,
           amount: project.recurring_fee,
           projectName: project.name,
-          clientName: client?.name || 'Client',
-          clientEmail: client?.email || '',
+          clientName: billingName,
+          clientEmail: billingEmail,
           interval: selectedIntervals[project.id] || 'month',
         },
       });
@@ -219,7 +248,7 @@ const ClientPortalPage: React.FC = () => {
 
       if (data?.clientSecret) {
         setClientSecret(data.clientSecret);
-        setActiveSubscriptionId(project.id);
+        setIsCollectingDetails(false);
         
         // Update database with subscription ID immediately
         if (data.subscriptionId) {
@@ -442,7 +471,7 @@ const ClientPortalPage: React.FC = () => {
                                     <option value="year">Yearly</option>
                                   </select>
                                   <button
-                                    onClick={() => handleSubscribe(project)}
+                                    onClick={() => handleSubscribeInitiate(project)}
                                     disabled={isProcessingPayment}
                                     className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors disabled:opacity-50"
                                   >
@@ -519,12 +548,12 @@ const ClientPortalPage: React.FC = () => {
       </div>
 
       {/* Subscription Payment Modal */}
-      {clientSecret && activeSubscriptionId && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }}>
+      {(clientSecret || isCollectingDetails) && activeSubscriptionId && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); setIsCollectingDetails(false); }}>
           <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md my-8 p-6" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-white">Set up Subscription</h3>
-              <button onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+              <h3 className="text-xl font-bold text-white">{isCollectingDetails ? 'Billing Details' : 'Set up Subscription'}</h3>
+              <button onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); setIsCollectingDetails(false); }} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
             </div>
             {(() => {
               const activeProject = projects.find(p => p.id === activeSubscriptionId);
@@ -543,20 +572,58 @@ const ClientPortalPage: React.FC = () => {
                 </div>
               );
             })()}
-            <div className="w-full mt-2">
-              <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
-                <CheckoutForm 
-                  returnUrl={`${window.location.origin}/#/portal/${token}?success=true`} 
-                  onSuccess={handlePaymentSuccess} 
-                />
-              </Elements>
-              <button
-                onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); }}
-                className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
+
+            {isCollectingDetails ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Billing Name</label>
+                  <input
+                    type="text"
+                    value={billingName}
+                    onChange={(e) => setBillingName(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                    placeholder="Enter your full name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Billing Email</label>
+                  <input
+                    type="email"
+                    value={billingEmail}
+                    onChange={(e) => setBillingEmail(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                    placeholder="Enter your email address"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    const project = projects.find(p => p.id === activeSubscriptionId);
+                    if (project) handleSubscribe(project);
+                  }}
+                  disabled={isProcessingPayment || !billingName || !billingEmail}
+                  className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-md transition-all disabled:opacity-50"
+                >
+                  {isProcessingPayment ? 'Processing...' : 'Continue to Payment'}
+                </button>
+              </div>
+            ) : clientSecret && (
+              <div className="w-full mt-2">
+                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                  <CheckoutForm 
+                    returnUrl={`${window.location.origin}/#/portal/${token}?success=true`} 
+                    onSuccess={handlePaymentSuccess} 
+                    billingDetails={{ name: billingName, email: billingEmail }}
+                  />
+                </Elements>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); setIsCollectingDetails(false); }}
+              className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
