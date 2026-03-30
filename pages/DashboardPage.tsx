@@ -8,6 +8,7 @@ import TaxCentrePage from './TaxCentrePage';
 import QuoteCalculatorPage from './QuoteCalculatorPage';
 import WidgetsPage from './WidgetsPage';
 import ClientsPage from './ClientsPage';
+import PortfolioPage from './PortfolioPage';
 
 // --- Types ---
 interface TradingIdentity {
@@ -1827,6 +1828,7 @@ const DashboardPage: React.FC = () => {
         if (selectedEntityId === 'all' || selectedEntitySlug === 'montford-digital') {
             baseItems.push({ path: "/dashboard/calculator", label: "Quote Calculator" });
             baseItems.push({ path: "/dashboard/widgets", label: "Widgets" });
+            baseItems.push({ path: "/dashboard/portfolio", label: "Portfolio" });
         }
         return baseItems;
     }, [selectedEntityId, selectedEntitySlug]);
@@ -1840,6 +1842,7 @@ const DashboardPage: React.FC = () => {
         "/dashboard/tax": "Tax Centre",
         "/dashboard/calculator": "Quote Calculator",
         "/dashboard/widgets": "Widgets & Snippets",
+        "/dashboard/portfolio": "Portfolio",
     };
     
     const currentPageTitle = pageTitles[location.pathname] || "Dashboard";
@@ -1909,6 +1912,7 @@ const DashboardPage: React.FC = () => {
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="calculator" element={<QuoteCalculatorPage />} />
                                 <Route path="widgets" element={<WidgetsPage />} />
+                                <Route path="portfolio" element={<PortfolioPage />} />
                             </Routes>
                             {attachmentModalExpense && <AttachmentModal expense={attachmentModalExpense} onClose={() => setAttachmentModalExpense(null)} refreshData={fetchData} />}
                         </>

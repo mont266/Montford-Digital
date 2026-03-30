@@ -1,9 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PortfolioModal from './PortfolioModal';
+import { supabase } from '../lib/supabaseClient';
 
 // Expanded project interface for more detailed information
-interface Project {
+export interface Project {
+  id?: string;
   imageSrc: string;
   title: string;
   category: string;
@@ -17,72 +19,6 @@ interface Project {
   };
   isPlaceholder?: boolean;
 }
-
-// Data is now hardcoded in the component for easy manual updates.
-const projects: Project[] = [
-  {
-    "imageSrc": "images/stoutly-portfolio.png",
-    "title": "Stoutly",
-    "category": "iOS, Android & Web Apps",
-    "description": "A comprehensive platform with both a web app and native Android app.",
-    "detailedDescription": "Stoutly is a personal passion project built from the ground up. It is a dedicated social network for Guinness enthusiasts, allowing users to rate pints of Guinness around the world. The platform fosters community engagement by letting users comment on ratings and share their experiences. A key feature is the location-based discovery engine, enabling users to instantly find the best and cheapest pints of Guinness nearby, no matter where they are in the world.",
-    "tags": [
-      "Social Network",
-      "Location Based",
-      "Community"
-    ],
-    "links": {
-      "webapp": "https://app.stoutly.co.uk",
-      "android": "https://play.google.com/store/apps/details?id=uk.co.stoutly.twa",
-      "ios": "https://apps.apple.com/in/app/stoutly/id6758011319"
-    }
-  },
-  {
-    imageSrc: "https://picsum.photos/seed/future-project-1/600/400",
-    title: "Coming Soon",
-    category: "Future Project",
-    description: "We're working on something amazing. Stay tuned!",
-    detailedDescription: "",
-    tags: [],
-    isPlaceholder: true,
-  },
-  {
-    imageSrc: "https://picsum.photos/seed/future-project-2/600/400",
-    title: "Coming Soon",
-    category: "Future Project",
-    description: "We're working on something amazing. Stay tuned!",
-    detailedDescription: "",
-    tags: [],
-    isPlaceholder: true,
-  },
-  {
-    imageSrc: "https://picsum.photos/seed/future-project-3/600/400",
-    title: "Coming Soon",
-    category: "Future Project",
-    description: "We're working on something amazing. Stay tuned!",
-    detailedDescription: "",
-    tags: [],
-    isPlaceholder: true,
-  },
-  {
-    imageSrc: "https://picsum.photos/seed/future-project-4/600/400",
-    title: "Coming Soon",
-    category: "Future Project",
-    description: "We're working on something amazing. Stay tuned!",
-    detailedDescription: "",
-    tags: [],
-    isPlaceholder: true,
-  },
-  {
-    imageSrc: "https://picsum.photos/seed/future-project-5/600/400",
-    title: "Coming Soon",
-    category: "Future Project",
-    description: "We're working on something amazing. Stay tuned!",
-    detailedDescription: "",
-    tags: [],
-    isPlaceholder: true,
-  }
-];
 
 
 interface PortfolioItemProps {
@@ -120,6 +56,49 @@ const PortfolioItem: React.FC<PortfolioItemProps> = ({ project, onSelect }) => {
 
 const Portfolio: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('portfolio_items')
+          .select('*')
+          .order('order_index', { ascending: true });
+
+        if (error) {
+          console.error('Error fetching portfolio items:', error);
+          return;
+        }
+
+        if (data) {
+          const formattedProjects: Project[] = data.map((item: any) => ({
+            id: item.id,
+            imageSrc: item.image_src,
+            title: item.title,
+            category: item.category,
+            description: item.description || '',
+            detailedDescription: item.detailed_description || '',
+            tags: item.tags || [],
+            links: {
+              webapp: item.link_webapp,
+              android: item.link_android,
+              ios: item.link_ios,
+            },
+            isPlaceholder: item.is_placeholder,
+          }));
+          setProjects(formattedProjects);
+        }
+      } catch (err) {
+        console.error('Failed to fetch portfolio items', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, []);
 
   return (
     <>
@@ -130,15 +109,21 @@ const Portfolio: React.FC = () => {
             <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto">We take pride in our work. Here are some of our recent projects.</p>
             <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {projects.map((project, index) => (
-              <PortfolioItem 
-                key={index} 
-                project={project}
-                onSelect={() => setSelectedProject(project)} 
-              />
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {projects.map((project, index) => (
+                <PortfolioItem 
+                  key={project.id || index} 
+                  project={project}
+                  onSelect={() => setSelectedProject(project)} 
+                />
+              ))}
+            </div>
+          )}
         </div>
       </section>
       {selectedProject && (
