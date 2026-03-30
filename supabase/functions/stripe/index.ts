@@ -96,21 +96,30 @@ export default async function serve(req: Request) {
 
                 const { data: project } = await supabase
                   .from('projects')
-                  .select('client_id')
+                  .select('client_id, entity_id, name')
                   .eq('id', projectId)
                   .single();
 
                 if (project) {
                   const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
-                  await supabase.from('invoices').insert({
+                  const { data: newInvoice, error: invError } = await supabase.from('invoices').insert({
                     project_id: projectId,
-                    client_id: project.client_id,
+                    entity_id: project.entity_id,
                     invoice_number: invoiceNumber,
                     issue_date: new Date(invoice.created * 1000).toISOString(),
                     due_date: new Date(invoice.created * 1000).toISOString(),
                     amount: invoice.amount_paid / 100,
                     status: 'paid',
-                  });
+                  }).select().single();
+
+                  if (newInvoice && !invError) {
+                    await supabase.from('invoice_items').insert({
+                      invoice_id: newInvoice.id,
+                      description: `Subscription payment for ${project.name}`,
+                      quantity: 1,
+                      unit_price: invoice.amount_paid / 100
+                    });
+                  }
                 }
               }
             }

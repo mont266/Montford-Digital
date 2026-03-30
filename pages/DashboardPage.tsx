@@ -166,7 +166,7 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
 };
 
 // --- Page Components ---
-const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; payeSalary: number }> = ({ invoices, expenses, payeSalary }) => {
+const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; payeSalary: number; projects: Project[] }> = ({ invoices, expenses, payeSalary, projects }) => {
     type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
 
@@ -362,6 +362,20 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
     const outstandingAmount = filteredInvoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue').reduce((acc, inv) => acc + inv.amount, 0);
     const overdueAmount = filteredInvoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
     
+    // Recurring Revenue Calculations
+    const totalRecurringIncomeReceived = invoices
+        .filter(inv => inv.status === 'paid')
+        .reduce((sum, inv) => {
+            const isRecurring = inv.invoice_items?.some(item => 
+                item.description.toLowerCase().includes('subscription') || 
+                item.description.toLowerCase().includes('recurring')
+            );
+            return isRecurring ? sum + inv.amount : sum;
+        }, 0);
+
+    const activeMRR = projects.reduce((sum, p) => sum + (p.recurring_fee || 0), 0);
+    const expectedYearlyRecurring = activeMRR * 12;
+
     const timeSpanLabels: Record<TimeSpan, string> = {
         '7d': '7 Days',
         'mtd': 'MTD',
@@ -391,6 +405,15 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                     <StatCard title="Net Profit" value={formatCurrency(netProfit)} valueColor={netProfitColor} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
                     <StatCard title="Outstanding" value={formatCurrency(outstandingAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
                     <StatCard title="Overdue" value={formatCurrency(overdueAmount)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                </div>
+            </div>
+
+            <div>
+                <h3 className="text-xl font-bold text-white mb-4">Recurring Revenue</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard title="Total Recurring Received" value={formatCurrency(totalRecurringIncomeReceived)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                    <StatCard title="Active MRR" value={`${formatCurrency(activeMRR)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
+                    <StatCard title="Expected Yearly (ARR)" value={`${formatCurrency(expectedYearlyRecurring)}/yr`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>} />
                 </div>
             </div>
 
@@ -1904,7 +1927,7 @@ const DashboardPage: React.FC = () => {
                     {!loading && !error && (
                         <>
                             <Routes>
-                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} />} />
+                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} projects={projects} />} />
                                 <Route path="clients" element={<ClientsPage />} />
                                 <Route path="projects" element={<ProjectsPage projects={projects} clients={clients} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                                 <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />
