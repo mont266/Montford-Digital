@@ -1,6 +1,6 @@
 import Stripe from 'npm:stripe@^14.14.0';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import * as bcrypt from 'npm:bcryptjs@2.4.3';
+import bcrypt from 'npm:bcryptjs@2.4.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -196,7 +196,7 @@ export default async function serve(req: Request) {
     // JSON Endpoints
     if (req.method === 'POST') {
       if (action === 'create-payment-intent') {
-        const { invoiceId, amount, invoiceNumber, clientName } = body;
+        const { invoiceId, amount, invoiceNumber, clientName, clientEmail } = body;
         const parsedAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
         
         if (isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -206,7 +206,7 @@ export default async function serve(req: Request) {
         const paymentIntent = await stripe.paymentIntents.create({
           amount: Math.round(parsedAmount * 100),
           currency: 'gbp',
-          statement_descriptor: 'MONTFORD DIGITAL',
+          receipt_email: clientEmail,
           description: `Payment for Invoice ${invoiceNumber || ''} - ${clientName || 'Client'}`,
           metadata: { invoiceId: String(invoiceId || '') },
           automatic_payment_methods: { enabled: true },
@@ -242,7 +242,6 @@ export default async function serve(req: Request) {
 
         const product = await stripe.products.create({
           name: `Subscription: ${projectName || 'Project'}`,
-          statement_descriptor: 'MONTFORD DIGITAL',
         });
 
         const price = await stripe.prices.create({

@@ -29,6 +29,9 @@ interface Invoice {
   projects: {
     name: string;
     client_name: string;
+    clients?: {
+      email: string;
+    } | null;
   } | null;
   invoice_items: InvoiceItem[];
   split_group_id?: string | null;
@@ -65,6 +68,9 @@ const InvoicePublicPage: React.FC = () => {
   const [isReceiptView, setIsReceiptView] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [billingName, setBillingName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [isCollectingDetails, setIsCollectingDetails] = useState(false);
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -85,13 +91,15 @@ const InvoicePublicPage: React.FC = () => {
 
         const { data, error: dbError } = await supabase
           .from('invoices')
-          .select(`*, projects ( name, client_name ), invoice_items ( * )`)
+          .select(`*, projects ( name, client_name, clients ( email ) ), invoice_items ( * )`)
           .eq('id', id)
           .single();
 
         if (dbError) throw dbError;
         if (data) {
             setInvoice(data as Invoice);
+            setBillingName(data.projects?.client_name || '');
+            setBillingEmail(data.projects?.clients?.email || '');
             if (data.split_group_id) {
                 const { data: siblingData } = await supabase
                     .from('invoices')
@@ -122,8 +130,16 @@ const InvoicePublicPage: React.FC = () => {
   
   const [clientSecret, setClientSecret] = useState<string | null>(null);
 
+  const handlePaymentInitiate = () => {
+    setIsCollectingDetails(true);
+  };
+
   const handlePayment = async () => {
     if (!invoice) return;
+    if (!billingName || !billingEmail) {
+      alert('Please provide both name and email for billing.');
+      return;
+    }
     setIsProcessingPayment(true);
     try {
       const { data, error } = await supabase.functions.invoke('stripe', {
@@ -133,7 +149,8 @@ const InvoicePublicPage: React.FC = () => {
           invoiceId: invoice.id,
           amount: invoice.amount,
           invoiceNumber: invoice.invoice_number,
-          clientName: invoice.projects?.client_name || 'Client',
+          clientName: billingName,
+          clientEmail: billingEmail,
         },
       });
 
@@ -143,6 +160,7 @@ const InvoicePublicPage: React.FC = () => {
 
       if (data?.clientSecret) {
         setClientSecret(data.clientSecret);
+        setIsCollectingDetails(false);
       } else {
         throw new Error(data?.error || 'Failed to create payment intent: No client secret returned');
       }
@@ -317,7 +335,7 @@ const InvoicePublicPage: React.FC = () => {
                                             </button>
                                             {stripeFee <= 50 && (
                                                 <button 
-                                                  onClick={handlePayment} 
+                                                  onClick={handlePaymentInitiate} 
                                                   disabled={isProcessingPayment}
                                                   className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
@@ -350,22 +368,55 @@ const InvoicePublicPage: React.FC = () => {
               </div>
           </Modal>
       )}
-      {clientSecret && invoice && (
-          <Modal onClose={() => setClientSecret(null)} title="Pay with Card">
-              <div className="w-full mt-2">
-                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
-                  <CheckoutForm 
-                    returnUrl={`${window.location.origin}/#/invoice/${invoice.id}?success=true`} 
-                    onSuccess={handlePaymentSuccess} 
-                  />
-                </Elements>
-                <button
-                  onClick={() => setClientSecret(null)}
-                  className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
+      {(clientSecret || isCollectingDetails) && invoice && (
+          <Modal onClose={() => { setClientSecret(null); setIsCollectingDetails(false); }} title={isCollectingDetails ? "Billing Details" : "Pay with Card"}>
+              {isCollectingDetails ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Billing Name</label>
+                    <input
+                      type="text"
+                      value={billingName}
+                      onChange={(e) => setBillingName(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                      placeholder="Enter your full name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Billing Email</label>
+                    <input
+                      type="email"
+                      value={billingEmail}
+                      onChange={(e) => setBillingEmail(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                      placeholder="Enter your email address"
+                    />
+                  </div>
+                  <button
+                    onClick={handlePayment}
+                    disabled={isProcessingPayment || !billingName || !billingEmail}
+                    className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-md transition-all disabled:opacity-50"
+                  >
+                    {isProcessingPayment ? 'Processing...' : 'Continue to Payment'}
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full mt-2">
+                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                    <CheckoutForm 
+                      returnUrl={`${window.location.origin}/#/invoice/${invoice.id}?success=true`} 
+                      onSuccess={handlePaymentSuccess} 
+                      billingDetails={{ name: billingName, email: billingEmail }}
+                    />
+                  </Elements>
+                </div>
+              )}
+              <button
+                onClick={() => { setClientSecret(null); setIsCollectingDetails(false); }}
+                className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors"
+              >
+                Cancel
+              </button>
           </Modal>
       )}
     </>
