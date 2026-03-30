@@ -1,5 +1,6 @@
 import Stripe from 'npm:stripe@^14.14.0';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import * as bcrypt from 'npm:bcryptjs@2.4.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -205,6 +206,7 @@ export default async function serve(req: Request) {
         const paymentIntent = await stripe.paymentIntents.create({
           amount: Math.round(parsedAmount * 100),
           currency: 'gbp',
+          statement_descriptor: 'MONTFORD DIGITAL',
           description: `Payment for Invoice ${invoiceNumber || ''} - ${clientName || 'Client'}`,
           metadata: { invoiceId: String(invoiceId || '') },
           automatic_payment_methods: { enabled: true },
@@ -240,6 +242,7 @@ export default async function serve(req: Request) {
 
         const product = await stripe.products.create({
           name: `Subscription: ${projectName || 'Project'}`,
+          statement_descriptor: 'MONTFORD DIGITAL',
         });
 
         const price = await stripe.prices.create({
@@ -478,6 +481,66 @@ export default async function serve(req: Request) {
         });
 
         return new Response(JSON.stringify({ url: session.url }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (action === 'set-client-password') {
+        const { clientId, password } = body;
+        if (!clientId || !password) {
+          return new Response(JSON.stringify({ error: 'Missing parameters' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const { error } = await supabase
+          .from('clients')
+          .update({ password: hashedPassword })
+          .eq('id', clientId);
+
+        if (error) {
+          console.error('Error setting password:', error);
+          return new Response(JSON.stringify({ error: 'Failed to set password' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (action === 'verify-client-password') {
+        const { clientId, password, email } = body;
+        
+        // Admin bypass
+        if (email === 'scottmontford@gmail.com') {
+          // In a real app, we'd verify the admin password against Supabase Auth here
+          // But for now, we'll allow the dev account to bypass if the email matches
+          // and they provide the correct admin password (which we check via Supabase Auth)
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email,
+            password
+          });
+
+          if (!authError && authData.user) {
+            return new Response(JSON.stringify({ success: true, isAdmin: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+        }
+
+        if (!clientId || !password) {
+          return new Response(JSON.stringify({ error: 'Missing parameters' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const { data: client, error: fetchError } = await supabase
+          .from('clients')
+          .select('password')
+          .eq('id', clientId)
+          .single();
+
+        if (fetchError || !client || !client.password) {
+          return new Response(JSON.stringify({ error: 'Client not found or password not set' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const isValid = await bcrypt.compare(password, client.password);
+        if (!isValid) {
+          return new Response(JSON.stringify({ error: 'Invalid password' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
 

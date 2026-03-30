@@ -12,6 +12,7 @@ interface Client {
   name: string;
   email: string;
   portal_token: string;
+  password?: string;
 }
 
 interface Project {
@@ -62,6 +63,12 @@ const ClientPortalPage: React.FC = () => {
   const [billingName, setBillingName] = useState('');
   const [billingEmail, setBillingEmail] = useState('');
   const [isCollectingDetails, setIsCollectingDetails] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [portalPassword, setPortalPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const handleIntervalChange = (projectId: string, interval: string) => {
     setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
@@ -93,6 +100,13 @@ const ClientPortalPage: React.FC = () => {
           throw new Error("Portal not found or invalid token.");
         }
         setClient(clientData as Client);
+        setLoginEmail(clientData.email || '');
+
+        // Check if already authenticated in this session
+        const sessionAuth = sessionStorage.getItem(`portal_auth_${clientData.id}`);
+        if (sessionAuth === 'true') {
+          setIsAuthenticated(true);
+        }
 
         // 1.5 Sync all client subscriptions from Stripe (Discovery)
         try {
@@ -193,6 +207,76 @@ const ClientPortalPage: React.FC = () => {
     fetchPortalData();
   }, [token]);
 
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client) return;
+    setIsAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe', {
+        method: 'POST',
+        body: {
+          action: 'verify-client-password',
+          clientId: client.id,
+          password: portalPassword,
+          email: loginEmail
+        }
+      });
+
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || 'Invalid password');
+      }
+
+      setIsAuthenticated(true);
+      sessionStorage.setItem(`portal_auth_${client.id}`, 'true');
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client) return;
+    if (portalPassword !== confirmPassword) {
+      setAuthError("Passwords do not match");
+      return;
+    }
+    if (portalPassword.length < 6) {
+      setAuthError("Password must be at least 6 characters");
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe', {
+        method: 'POST',
+        body: {
+          action: 'set-client-password',
+          clientId: client.id,
+          password: portalPassword
+        }
+      });
+
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || 'Failed to set password');
+      }
+
+      setIsAuthenticated(true);
+      sessionStorage.setItem(`portal_auth_${client.id}`, 'true');
+      // Update local client state to reflect password is set
+      setClient({ ...client, password: 'set' });
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex justify-center items-center">
@@ -208,6 +292,87 @@ const ClientPortalPage: React.FC = () => {
           <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
           <p className="text-slate-400">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    const isFirstTime = !client.password;
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center text-white p-4">
+        <div className="bg-slate-800 p-8 rounded-lg border border-slate-700 max-w-md w-full">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold text-white mb-2">
+              {isFirstTime ? 'Secure Your Portal' : 'Client Login'}
+            </h2>
+            <p className="text-slate-400">
+              {isFirstTime 
+                ? 'Please set a password to access your client portal.' 
+                : `Welcome back, ${client.name}. Please enter your password.`}
+            </p>
+          </div>
+
+          <form onSubmit={isFirstTime ? handleSetPassword : handleLogin} className="space-y-4">
+            {!isFirstTime && (
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                  required
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1">
+                {isFirstTime ? 'Create Password' : 'Password'}
+              </label>
+              <input
+                type="password"
+                value={portalPassword}
+                onChange={(e) => setPortalPassword(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                required
+                minLength={6}
+              />
+            </div>
+            {isFirstTime && (
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                  required
+                  minLength={6}
+                />
+              </div>
+            )}
+
+            {authError && (
+              <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded text-sm">
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isAuthLoading}
+              className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-md transition-all disabled:opacity-50"
+            >
+              {isAuthLoading ? 'Processing...' : (isFirstTime ? 'Set Password & Enter' : 'Login')}
+            </button>
+          </form>
+          
+          <div className="mt-6 pt-6 border-t border-slate-700 text-center">
+            <p className="text-xs text-slate-500">
+              This portal is private and secure. If you've forgotten your password, please contact support.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -370,6 +535,15 @@ const ClientPortalPage: React.FC = () => {
             <p className="text-slate-400">Client Portal</p>
           </div>
           <div className="mt-4 md:mt-0 text-right flex flex-col items-end gap-2">
+            <button 
+              onClick={() => {
+                sessionStorage.removeItem(`portal_auth_${client.id}`);
+                setIsAuthenticated(false);
+              }}
+              className="text-xs text-slate-500 hover:text-slate-300 transition-colors mb-2"
+            >
+              Logout
+            </button>
             <div>
               <p className="text-sm text-slate-400">Total Outstanding</p>
               <p className="text-2xl font-bold text-cyan-400">{formatCurrency(totalOutstanding)}</p>
