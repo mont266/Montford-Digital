@@ -380,8 +380,14 @@ const ClientPortalPage: React.FC = () => {
 
   const handleSubscribeInitiate = (project: Project) => {
     setActiveSubscriptionId(project.id);
-    setBillingName(client?.name || '');
-    setBillingEmail(client?.email || '');
+    // If it's a resubscription (canceled status), don't pre-fill to force re-entry of details
+    if (project.stripe_subscription_status === 'canceled') {
+      setBillingName('');
+      setBillingEmail('');
+    } else {
+      setBillingName(client?.name || '');
+      setBillingEmail(client?.email || '');
+    }
     setIsCollectingDetails(true);
     setClientSecret(null);
   };
