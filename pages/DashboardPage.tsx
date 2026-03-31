@@ -27,6 +27,8 @@ interface Project {
   recurring_fee?: number;
   recurring_fee_description?: string;
   entity_id: string;
+  status?: string;
+  preview_url?: string;
 }
 
 interface InvoiceItem {
@@ -1394,7 +1396,9 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; clients: any[]; on
         client_email: projectToEdit?.client_email || '',
         client_id: projectToEdit?.client_id || '',
         recurring_fee: projectToEdit?.recurring_fee || '',
-        recurring_fee_description: projectToEdit?.recurring_fee_description || ''
+        recurring_fee_description: projectToEdit?.recurring_fee_description || '',
+        status: projectToEdit?.status || 'In development',
+        preview_url: projectToEdit?.preview_url || ''
     });
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -1447,6 +1451,34 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; clients: any[]; on
                         ))}
                     </select>
                     <p className="text-xs text-slate-400 mt-1">Linking a client allows them to see this project in their portal.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300">Project Status</label>
+                        <select 
+                            name="status" 
+                            value={formData.status} 
+                            onChange={handleChange} 
+                            className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white"
+                        >
+                            <option value="In development">In development</option>
+                            <option value="Ready for review">Ready for review</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300">Preview/Project URL (Optional)</label>
+                        <input 
+                            type="url" 
+                            name="preview_url" 
+                            value={formData.preview_url} 
+                            onChange={handleChange} 
+                            placeholder="https://example.com"
+                            className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" 
+                        />
+                    </div>
                 </div>
 
                 {!formData.client_id && (

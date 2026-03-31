@@ -22,6 +22,8 @@ interface Project {
   recurring_fee_description?: string;
   stripe_subscription_id?: string;
   stripe_subscription_status?: string;
+  status?: string;
+  preview_url?: string;
 }
 
 interface SubscriptionDetails {
@@ -590,7 +592,34 @@ const ClientPortalPage: React.FC = () => {
                 <div className="space-y-4">
                   {projects.map(project => (
                     <div key={project.id} className="p-4 bg-slate-900/50 rounded-md border border-slate-700">
-                      <h3 className="font-semibold text-white">{project.name}</h3>
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-semibold text-white">{project.name}</h3>
+                        {project.status && (
+                          <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${
+                            project.status === 'Completed' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                            project.status === 'Ready for review' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
+                            project.status === 'Cancelled' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                            'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          }`}>
+                            {project.status}
+                          </span>
+                        )}
+                      </div>
+
+                      {project.preview_url && (
+                        <div className="mb-3">
+                          <a 
+                            href={project.preview_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-xs font-medium text-cyan-400 hover:text-cyan-300 transition-colors bg-cyan-400/10 px-3 py-1.5 rounded-md border border-cyan-400/20 group"
+                          >
+                            <span>View your project</span>
+                            <svg className="w-3 h-3 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          </a>
+                        </div>
+                      )}
+
                       {project.recurring_fee && project.recurring_fee > 0 && (
                         <div className="mt-2 pt-2 border-t border-slate-700/50 flex flex-col gap-3 text-sm">
                           <div className="flex justify-between items-center">
