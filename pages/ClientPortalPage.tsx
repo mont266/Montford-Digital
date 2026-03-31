@@ -621,7 +621,7 @@ const ClientPortalPage: React.FC = () => {
                             <div className="flex justify-between items-center bg-slate-800 p-2 rounded border border-slate-700">
                               <span className="text-slate-500 text-xs italic">Subscription canceled</span>
                               <button
-                                onClick={() => handleSubscribe(project)}
+                                onClick={() => handleSubscribeInitiate(project)}
                                 disabled={isProcessingPayment}
                                 className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors disabled:opacity-50"
                               >
