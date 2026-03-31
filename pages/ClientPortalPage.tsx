@@ -537,30 +537,32 @@ const ClientPortalPage: React.FC = () => {
       <div className="max-w-5xl mx-auto space-y-8">
         
         {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 p-6 rounded-lg border border-slate-700">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-1">Welcome, {client.name}</h1>
-            <p className="text-slate-400">Client Portal</p>
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-800 p-5 md:p-6 rounded-xl border border-slate-700 shadow-lg gap-4">
+          <div className="w-full sm:w-auto">
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 leading-tight">Welcome, {client.name}</h1>
+            <p className="text-slate-400 text-sm md:text-base">Client Portal</p>
           </div>
-          <div className="mt-4 md:mt-0 text-right flex flex-col items-end gap-2">
-            <button 
-              onClick={() => {
-                sessionStorage.removeItem(`portal_auth_${client.id}`);
-                setIsAuthenticated(false);
-              }}
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors mb-2"
-            >
-              Logout
-            </button>
-            <div>
-              <p className="text-sm text-slate-400">Total Outstanding</p>
-              <p className="text-2xl font-bold text-cyan-400">{formatCurrency(totalOutstanding)}</p>
+          <div className="w-full sm:w-auto flex flex-col items-start sm:items-end gap-3">
+            <div className="flex justify-between sm:justify-end items-center w-full sm:w-auto gap-4">
+              <div className="text-left sm:text-right">
+                <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-0.5">Total Outstanding</p>
+                <p className="text-xl md:text-2xl font-bold text-cyan-400 leading-none">{formatCurrency(totalOutstanding)}</p>
+              </div>
+              <button 
+                onClick={() => {
+                  sessionStorage.removeItem(`portal_auth_${client.id}`);
+                  setIsAuthenticated(false);
+                }}
+                className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white rounded-md border border-slate-600 transition-colors"
+              >
+                Logout
+              </button>
             </div>
             {projects.some(p => p.stripe_subscription_id) && (
               <button
                 onClick={handleManageSubscription}
                 disabled={isOpeningPortal}
-                className="mt-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-md transition-colors flex items-center gap-2 disabled:opacity-50"
+                className="w-full sm:w-auto px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-50 border border-slate-600 shadow-sm"
               >
                 {isOpeningPortal ? (
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -633,32 +635,32 @@ const ClientPortalPage: React.FC = () => {
                           </div>
                           
                           {project.stripe_subscription_status === 'active' ? (
-                            <div className="bg-slate-800 p-3 rounded border border-slate-700">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="text-green-400 font-medium text-xs flex items-center gap-1">
-                                  <span className="w-2 h-2 rounded-full bg-green-400"></span> Active Subscription
+                            <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
+                                <span className="text-green-400 font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 bg-green-400/10 px-2 py-1 rounded border border-green-400/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> Active
                                 </span>
                                 {subscriptionDetails[project.id] && (
-                                  <span className="text-slate-400 text-xs">
-                                    Next payment: {new Date(subscriptionDetails[project.id].current_period_end * 1000).toLocaleDateString()}
+                                  <span className="text-slate-500 text-[10px] uppercase tracking-wider font-medium">
+                                    Next: {new Date(subscriptionDetails[project.id].current_period_end * 1000).toLocaleDateString()}
                                   </span>
                                 )}
                               </div>
                               <button
                                 onClick={() => handleCancelSubscription(project)}
                                 disabled={isCanceling === project.id}
-                                className="w-full py-1.5 mt-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 text-xs font-medium rounded transition-colors disabled:opacity-50"
+                                className="w-full py-2.5 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/30 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-50"
                               >
                                 {isCanceling === project.id ? 'Canceling...' : 'Cancel Subscription'}
                               </button>
                             </div>
                           ) : project.stripe_subscription_status === 'canceled' ? (
-                            <div className="flex justify-between items-center bg-slate-800 p-2 rounded border border-slate-700">
-                              <span className="text-slate-500 text-xs italic">Subscription canceled</span>
+                            <div className="flex flex-col gap-3 bg-slate-800 p-3 rounded-lg border border-slate-700">
+                              <span className="text-slate-500 text-[10px] uppercase tracking-wider font-bold italic text-center">Subscription canceled</span>
                               <button
                                 onClick={() => handleSubscribeInitiate(project)}
                                 disabled={isProcessingPayment}
-                                className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors disabled:opacity-50"
+                                className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-50 shadow-lg shadow-cyan-900/20"
                               >
                                 {isProcessingPayment ? '...' : 'Resubscribe'}
                               </button>
@@ -666,23 +668,26 @@ const ClientPortalPage: React.FC = () => {
                           ) : (
                             <div className="mt-2">
                               {clientSecret && activeSubscriptionId === project.id ? (
-                                <div className="bg-slate-800 p-4 rounded border border-slate-700 mt-4">
-                                  <p className="text-sm text-slate-400 mb-2">Please complete the payment in the modal.</p>
+                                <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 mt-4">
+                                  <p className="text-sm text-slate-400 mb-2 text-center">Please complete the payment in the modal.</p>
                                 </div>
                               ) : (
-                                <div className="flex justify-end items-center gap-2">
-                                  <select
-                                    value={selectedIntervals[project.id] || 'month'}
-                                    onChange={(e) => handleIntervalChange(project.id, e.target.value)}
-                                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-cyan-500"
-                                  >
-                                    <option value="month">Monthly</option>
-                                    <option value="year">Yearly</option>
-                                  </select>
+                                <div className="flex flex-col gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Billing Cycle:</label>
+                                    <select
+                                      value={selectedIntervals[project.id] || 'month'}
+                                      onChange={(e) => handleIntervalChange(project.id, e.target.value)}
+                                      className="flex-grow bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-2 focus:outline-none focus:border-cyan-500"
+                                    >
+                                      <option value="month">Monthly</option>
+                                      <option value="year">Yearly</option>
+                                    </select>
+                                  </div>
                                   <button
                                     onClick={() => handleSubscribeInitiate(project)}
                                     disabled={isProcessingPayment}
-                                    className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded transition-colors disabled:opacity-50"
+                                    className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-50 shadow-lg shadow-cyan-900/20"
                                   >
                                     {isProcessingPayment ? 'Processing...' : 'Set up Subscription'}
                                   </button>
@@ -701,54 +706,104 @@ const ClientPortalPage: React.FC = () => {
 
           {/* Right Column: Invoices */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
-              <h2 className="text-xl font-bold text-white mb-4">Invoices</h2>
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 md:p-6 shadow-lg">
+              <h2 className="text-xl font-bold text-white mb-6">Invoices</h2>
               {invoices.length === 0 ? (
-                <p className="text-slate-400 text-sm">No invoices found.</p>
+                <p className="text-slate-400 text-sm italic">No invoices found.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-700 text-sm text-slate-400">
-                        <th className="pb-3 font-medium">Invoice</th>
-                        <th className="pb-3 font-medium">Project</th>
-                        <th className="pb-3 font-medium">Date</th>
-                        <th className="pb-3 font-medium">Amount</th>
-                        <th className="pb-3 font-medium">Status</th>
-                        <th className="pb-3 font-medium text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoices.map(invoice => (
-                        <tr key={invoice.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
-                          <td className="py-4 text-white font-medium">{invoice.invoice_number}</td>
-                          <td className="py-4 text-slate-400 text-sm">{invoice.projects?.name || 'N/A'}</td>
-                          <td className="py-4 text-slate-400 text-sm">{new Date(invoice.issue_date).toLocaleDateString()}</td>
-                          <td className="py-4 text-white font-medium">{formatCurrency(invoice.amount)}</td>
-                          <td className="py-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              invoice.status === 'paid' ? 'bg-green-900/50 text-green-400 border border-green-800' :
-                              invoice.status === 'overdue' ? 'bg-red-900/50 text-red-400 border border-red-800' :
-                              'bg-yellow-900/50 text-yellow-400 border border-yellow-800'
-                            }`}>
-                              {invoice.status.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="py-4 text-right">
-                            <a 
-                              href={`/#/invoice/${invoice.id}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="inline-block px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded transition-colors"
-                            >
-                              View
-                            </a>
-                          </td>
+                <>
+                  {/* Mobile Card View */}
+                  <div className="grid grid-cols-1 gap-4 md:hidden">
+                    {invoices.map(invoice => (
+                      <div key={invoice.id} className="bg-slate-900/50 rounded-lg border border-slate-700 p-4 space-y-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Invoice</p>
+                            <p className="text-white font-bold">{invoice.invoice_number}</p>
+                          </div>
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            invoice.status === 'paid' ? 'bg-green-900/30 text-green-400 border-green-800/50' :
+                            invoice.status === 'overdue' ? 'bg-red-900/30 text-red-400 border-red-800/50' :
+                            'bg-yellow-900/30 text-yellow-400 border-yellow-800/50'
+                          }`}>
+                            {invoice.status}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Project</p>
+                            <p className="text-slate-300 text-sm truncate">{invoice.projects?.name || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Date</p>
+                            <p className="text-slate-300 text-sm">{new Date(invoice.issue_date).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-3 border-t border-slate-700/50">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Amount</p>
+                            <p className="text-cyan-400 font-bold">{formatCurrency(invoice.amount)}</p>
+                          </div>
+                          <a 
+                            href={`/#/invoice/${invoice.id}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold uppercase tracking-wider rounded-lg transition-colors shadow-lg shadow-cyan-900/20"
+                          >
+                            View
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-700 text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                          <th className="pb-4 font-bold">Invoice</th>
+                          <th className="pb-4 font-bold">Project</th>
+                          <th className="pb-4 font-bold">Date</th>
+                          <th className="pb-4 font-bold">Amount</th>
+                          <th className="pb-4 font-bold">Status</th>
+                          <th className="pb-4 font-bold text-right">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {invoices.map(invoice => (
+                          <tr key={invoice.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors group">
+                            <td className="py-4 text-white font-bold">{invoice.invoice_number}</td>
+                            <td className="py-4 text-slate-400 text-sm">{invoice.projects?.name || 'N/A'}</td>
+                            <td className="py-4 text-slate-400 text-sm">{new Date(invoice.issue_date).toLocaleDateString()}</td>
+                            <td className="py-4 text-white font-bold">{formatCurrency(invoice.amount)}</td>
+                            <td className="py-4">
+                              <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                invoice.status === 'paid' ? 'bg-green-900/30 text-green-400 border-green-800/50' :
+                                invoice.status === 'overdue' ? 'bg-red-900/30 text-red-400 border-red-800/50' :
+                                'bg-yellow-900/30 text-yellow-400 border-yellow-800/50'
+                              }`}>
+                                {invoice.status}
+                              </span>
+                            </td>
+                            <td className="py-4 text-right">
+                              <a 
+                                href={`/#/invoice/${invoice.id}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="inline-block px-4 py-1.5 bg-slate-700 hover:bg-cyan-600 text-white text-sm font-medium rounded-lg transition-all border border-slate-600 hover:border-cyan-500"
+                              >
+                                View
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -759,8 +814,8 @@ const ClientPortalPage: React.FC = () => {
       {/* Subscription Payment Modal */}
       {(clientSecret || isCollectingDetails) && activeSubscriptionId && (
         <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); setIsCollectingDetails(false); }}>
-          <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md my-8 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
+          <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-slate-800 pb-2 z-10">
               <h3 className="text-xl font-bold text-white">{isCollectingDetails ? 'Billing Details' : 'Set up Subscription'}</h3>
               <button onClick={() => { setClientSecret(null); setActiveSubscriptionId(null); setIsCollectingDetails(false); }} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
             </div>

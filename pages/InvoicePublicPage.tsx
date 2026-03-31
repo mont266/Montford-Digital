@@ -42,8 +42,8 @@ interface Invoice {
 // --- Reusable Components ---
 const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string }> = ({ children, onClose, title }) => (
     <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4" onClick={onClose}>
-        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md my-8 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
+        <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 w-full max-w-md max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-slate-800 pb-2 z-10">
                 <h3 className="text-xl font-bold text-white">{title}</h3>
                 <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
             </div>
@@ -200,15 +200,16 @@ const InvoicePublicPage: React.FC = () => {
     <>
       <div className="min-h-screen bg-slate-900 text-slate-300 flex justify-center items-center p-4 sm:p-8 font-sans invoice-public-page-container">
         <div className="w-full max-w-4xl bg-slate-800 rounded-lg shadow-xl border border-slate-700 invoice-card">
-          <header className="bg-slate-900 p-8 flex flex-col sm:flex-row justify-between items-center gap-6 text-center sm:text-left">
-              <div className="w-full sm:w-auto">
-                  <Logo className="h-9 w-auto mx-auto sm:mx-0" />
-                  <p className="text-slate-400 mt-2">{isReceiptView ? 'Receipt' : 'Invoice'}</p>
+          <header className="bg-slate-900 p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-center gap-6 text-center sm:text-left border-b border-slate-700/50">
+              <div className="w-full sm:w-auto flex flex-col items-center sm:items-start">
+                  <Logo className="h-8 sm:h-9 w-auto" />
+                  <p className="text-slate-500 text-xs sm:text-sm mt-2 uppercase tracking-widest font-bold">{isReceiptView ? 'Official Receipt' : 'Official Invoice'}</p>
               </div>
               {invoice && (
-                  <div className="sm:text-right">
-                      <h2 className="text-3xl font-bold text-white">{isReceiptView ? 'Paid in Full' : formatCurrency(invoice.amount)}</h2>
-                      <p className="text-slate-400">{isReceiptView ? `Paid on ${formatDate(invoice.issue_date)}` : `Due on ${formatDate(invoice.due_date)}`}</p>
+                  <div className="sm:text-right w-full sm:w-auto bg-slate-800/50 sm:bg-transparent p-4 sm:p-0 rounded-lg border border-slate-700 sm:border-0">
+                      <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">{isReceiptView ? 'Amount Paid' : 'Amount Due'}</p>
+                      <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight">{isReceiptView ? 'Paid in Full' : formatCurrency(invoice.amount)}</h2>
+                      <p className="text-slate-400 text-sm mt-1">{isReceiptView ? `Paid on ${formatDate(invoice.issue_date)}` : `Due on ${formatDate(invoice.due_date)}`}</p>
                   </div>
               )}
           </header>
@@ -253,7 +254,9 @@ const InvoicePublicPage: React.FC = () => {
 
                       <div className="border-t border-slate-700 pt-6">
                           <h3 className="text-lg font-semibold text-white mb-4">Itemised Breakdown</h3>
-                          <div className="overflow-x-auto">
+                          
+                          {/* Desktop Table View */}
+                          <div className="hidden sm:block overflow-x-auto">
                               <table className="w-full text-left">
                                   <thead>
                                       <tr className="border-b border-slate-700 text-sm text-slate-400">
@@ -281,6 +284,33 @@ const InvoicePublicPage: React.FC = () => {
                                       </tr>
                                   </tfoot>
                               </table>
+                          </div>
+
+                          {/* Mobile Card View */}
+                          <div className="sm:hidden space-y-4">
+                              {invoice.invoice_items.map(item => (
+                                  <div key={item.id} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+                                      <p className="text-white font-medium mb-2">{item.description}</p>
+                                      <div className="grid grid-cols-2 gap-2 text-sm">
+                                          <div>
+                                              <p className="text-slate-400">Quantity</p>
+                                              <p className="text-white">{item.quantity}</p>
+                                          </div>
+                                          <div className="text-right">
+                                              <p className="text-slate-400">Unit Price</p>
+                                              <p className="text-white">{formatCurrency(item.unit_price)}</p>
+                                          </div>
+                                          <div className="col-span-2 pt-2 border-t border-slate-800 mt-2 flex justify-between items-center">
+                                              <p className="text-slate-400">Subtotal</p>
+                                              <p className="text-white font-bold">{formatCurrency(item.quantity * item.unit_price)}</p>
+                                          </div>
+                                      </div>
+                                  </div>
+                              ))}
+                              <div className="bg-slate-700/50 p-4 rounded-lg border border-slate-600 flex justify-between items-center">
+                                  <p className="text-white font-bold">Total Due</p>
+                                  <p className="text-cyan-400 font-bold text-xl">{formatCurrency(invoice.amount)}</p>
+                              </div>
                           </div>
                       </div>
                       
