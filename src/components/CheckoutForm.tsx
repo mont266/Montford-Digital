@@ -19,6 +19,7 @@ export const CheckoutForm = ({
 
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +29,13 @@ export const CheckoutForm = ({
     }
 
     setIsLoading(true);
+
+    const { error: submitError } = await elements.submit();
+    if (submitError) {
+      setMessage(submitError.message || "An error occurred.");
+      setIsLoading(false);
+      return;
+    }
 
     const { error } = await stripe.confirmPayment({
       elements,
@@ -58,9 +66,9 @@ export const CheckoutForm = ({
 
   return (
     <form id="payment-form" onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement id="payment-element" options={{ layout: "tabs" }} />
+      <PaymentElement id="payment-element" options={{ layout: "tabs" }} onReady={() => setIsReady(true)} />
       <button 
-        disabled={isLoading || !stripe || !elements} 
+        disabled={isLoading || !stripe || !elements || !isReady} 
         id="submit"
         className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded-md transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
       >
