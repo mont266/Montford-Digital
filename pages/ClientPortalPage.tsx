@@ -308,11 +308,16 @@ const ClientPortalPage: React.FC = () => {
             <h2 className="text-3xl font-bold text-white mb-2">
               {isFirstTime ? 'Secure Your Portal' : 'Client Login'}
             </h2>
-            <p className="text-slate-400">
-              {isFirstTime 
-                ? 'Please set a password to access your client portal.' 
-                : `Welcome back, ${client.name}. Please enter your password.`}
-            </p>
+            <div className="text-slate-400 space-y-2">
+              {isFirstTime ? (
+                <>
+                  <p className="text-lg text-slate-300">Welcome, <strong>{client.email}</strong></p>
+                  <p>Please set a secure password to create your account. This will give you access to your personal client portal where you can view your ongoing projects, access deliverables, and manage your invoices.</p>
+                </>
+              ) : (
+                <p>Welcome back, {client.name}. Please enter your password.</p>
+              )}
+            </div>
           </div>
 
           <form onSubmit={isFirstTime ? handleSetPassword : handleLogin} className="space-y-4">
