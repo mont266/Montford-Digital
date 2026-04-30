@@ -492,7 +492,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
                                         {project.recurring_fee ? `${formatCurrency(project.recurring_fee)}/mo` : '-'}
                                     </td>
                                     <td data-label="Actions" className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <div className="actions-cell">
+                                        <div className="actions-cell flex flex-wrap items-center gap-3">
                                             <button onClick={() => setWorkspaceModalProject(project)} className="text-purple-400 hover:text-purple-300">Manage</button>
                                             <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
                                             <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>

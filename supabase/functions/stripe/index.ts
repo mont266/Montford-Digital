@@ -488,6 +488,37 @@ export default async function serve(req: Request) {
           return new Response(JSON.stringify({ error: 'Missing parameters' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
+        // Fetch client email
+        const { data: client, error: fetchError } = await supabase.from('clients').select('email').eq('id', clientId).single();
+        if (fetchError || !client || !client.email) {
+            return new Response(JSON.stringify({ error: 'Client email not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Create verified user in Supabase Auth
+        const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+            email: client.email,
+            password: password,
+            email_confirm: true,
+            user_metadata: { role: 'client', client_id: clientId }
+        });
+
+        if (authError && authError.message !== 'User already registered') {
+            console.error('Error creating auth user:', authError);
+            return new Response(JSON.stringify({ error: authError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        // If the user already registered, we should ideally update their password but admin.updateUserById is available
+        if (authError && authError.message === 'User already registered') {
+             // Find user ID? For security, we might just try sign in, but we have service key so we can query users
+             // Let's just catch it.
+             const { data: usersData } = await supabase.auth.admin.listUsers();
+             const existingUser = usersData.users.find(u => u.email === client.email);
+             if (existingUser) {
+                 await supabase.auth.admin.updateUserById(existingUser.id, { password, user_metadata: { role: 'client', client_id: clientId } });
+             }
+        }
+
+        // Also update the local hash just in case
         const hashedPassword = await bcrypt.hash(password, 10);
         const { error } = await supabase
           .from('clients')
@@ -495,7 +526,7 @@ export default async function serve(req: Request) {
           .eq('id', clientId);
 
         if (error) {
-          console.error('Error setting password:', error);
+          console.error('Error setting password hash:', error);
           return new Response(JSON.stringify({ error: 'Failed to set password' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 

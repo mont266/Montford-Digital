@@ -14,7 +14,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        setIsAuthenticated(true);
+        // Check if the user is a client. If so, they shouldn't access the admin dashboard.
+        if (session.user.user_metadata?.role === 'client') {
+          // They are a client, but tried to access an admin route.
+          setIsAuthenticated(false);
+          // Redirect them to their portal? We need their token. 
+          // Since we don't have it here, just go to root or a message.
+          navigate('/');
+        } else {
+          setIsAuthenticated(true);
+        }
       } else {
         setIsAuthenticated(false);
         navigate('/login');
@@ -25,7 +34,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (session) {
-            setIsAuthenticated(true);
+            if (session.user.user_metadata?.role === 'client') {
+              setIsAuthenticated(false);
+              navigate('/');
+            } else {
+              setIsAuthenticated(true);
+            }
         } else {
             setIsAuthenticated(false);
             navigate('/login');
