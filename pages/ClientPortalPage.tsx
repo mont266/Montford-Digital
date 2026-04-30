@@ -52,6 +52,32 @@ export interface ProjectTodo {
   created_at: string;
 }
 
+export interface ProjectMilestone {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  due_date: string | null;
+  created_at: string;
+}
+
+export interface ProjectActivity {
+  id: string;
+  project_id: string;
+  description: string;
+  created_at: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  project_id: string;
+  subject: string;
+  message: string;
+  status: 'open' | 'in_progress' | 'resolved';
+  created_at: string;
+}
+
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
 
 const ClientPortalPage: React.FC = () => {
@@ -61,6 +87,9 @@ const ClientPortalPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [todos, setTodos] = useState<Record<string, ProjectTodo[]>>({});
+  const [milestones, setMilestones] = useState<Record<string, ProjectMilestone[]>>({});
+  const [activities, setActivities] = useState<Record<string, ProjectActivity[]>>({});
+  const [tickets, setTickets] = useState<Record<string, SupportTicket[]>>({});
   const [subscriptionDetails, setSubscriptionDetails] = useState<Record<string, SubscriptionDetails>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +251,33 @@ const ClientPortalPage: React.FC = () => {
                todosMap[t.project_id].push(t as ProjectTodo);
             });
             setTodos(todosMap);
+          }
+
+          // 5. Fetch Milestones, Activities, Tickets
+          const [
+            { data: milestonesData, error: milestonesError },
+            { data: activitiesData, error: activitiesError },
+            { data: ticketsData, error: ticketsError }
+          ] = await Promise.all([
+            supabase.from('project_milestones').select('*').in('project_id', projectIds).order('created_at', { ascending: true }),
+            supabase.from('project_activities').select('*').in('project_id', projectIds).order('created_at', { ascending: false }),
+            supabase.from('support_tickets').select('*').in('project_id', projectIds).order('created_at', { ascending: false })
+          ]);
+
+          if (milestonesData) {
+            const map: Record<string, ProjectMilestone[]> = {};
+            milestonesData.forEach(m => { if(!map[m.project_id]) map[m.project_id]=[]; map[m.project_id].push(m); });
+            setMilestones(map);
+          }
+          if (activitiesData) {
+            const map: Record<string, ProjectActivity[]> = {};
+            activitiesData.forEach(a => { if(!map[a.project_id]) map[a.project_id]=[]; map[a.project_id].push(a); });
+            setActivities(map);
+          }
+          if (ticketsData) {
+            const map: Record<string, SupportTicket[]> = {};
+            ticketsData.forEach(t => { if(!map[t.project_id]) map[t.project_id]=[]; map[t.project_id].push(t); });
+            setTickets(map);
           }
         }
 
@@ -533,6 +589,43 @@ const ClientPortalPage: React.FC = () => {
     }
   };
 
+  const [newTicketSubjects, setNewTicketSubjects] = useState<Record<string, string>>({});
+  const [newTicketMessages, setNewTicketMessages] = useState<Record<string, string>>({});
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState<string | null>(null);
+
+  const handleCreateTicket = async (projectId: string) => {
+    const subject = newTicketSubjects[projectId];
+    const message = newTicketMessages[projectId];
+    if (!subject?.trim() || !message?.trim()) return;
+
+    setIsSubmittingTicket(projectId);
+    try {
+      const { error } = await supabase.from('support_tickets').insert([{
+        project_id: projectId,
+        subject: subject.trim(),
+        message: message.trim()
+      }]);
+      if (error) throw error;
+      
+      setSuccessMessage('Support ticket submitted successfully.');
+      setNewTicketSubjects(prev => ({ ...prev, [projectId]: '' }));
+      setNewTicketMessages(prev => ({ ...prev, [projectId]: '' }));
+      
+      // Refresh tickets
+      const { data } = await supabase.from('support_tickets').select('*').in('project_id', projects.map(p => p.id)).order('created_at', { ascending: false });
+      if (data) {
+        const map: Record<string, SupportTicket[]> = {};
+        data.forEach((t: any) => { if(!map[t.project_id]) map[t.project_id]=[]; map[t.project_id].push(t); });
+        setTickets(map);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to submit ticket.');
+    } finally {
+      setIsSubmittingTicket(null);
+    }
+  };
+
   const handleManageSubscription = async () => {
     if (!client?.email) return;
     
@@ -675,6 +768,64 @@ const ClientPortalPage: React.FC = () => {
                           </ul>
                         </div>
                       )}
+
+                      {milestones[project.id] && milestones[project.id].length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-slate-700/50">
+                          <h4 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Milestones</h4>
+                          <div className="space-y-3 pl-1">
+                            {milestones[project.id].map(m => (
+                               <div key={m.id} className="text-sm">
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-bold text-slate-200">{m.title}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider ${m.status === 'completed' ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-900' : m.status === 'in_progress' ? 'bg-cyan-900/40 text-cyan-400 border border-cyan-900' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>{m.status.replace('_', ' ')}</span>
+                                  </div>
+                                  {m.description && <p className="text-slate-400 text-xs mt-1">{m.description}</p>}
+                               </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {activities[project.id] && activities[project.id].length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-slate-700/50">
+                          <h4 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Activity Log</h4>
+                          <div className="space-y-2 pl-1 max-h-40 overflow-y-auto pr-2">
+                            {activities[project.id].map(a => (
+                               <div key={a.id} className="bg-slate-900/50 p-3 rounded-lg border border-slate-800 flex justify-between items-start gap-4">
+                                  <span className="text-sm text-slate-300">{a.description}</span>
+                                  <span className="text-[10px] text-slate-500 whitespace-nowrap mt-0.5">{new Date(a.created_at).toLocaleDateString()}</span>
+                               </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-4 pt-3 border-t border-slate-700/50">
+                        <h4 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-3">Support & Requests</h4>
+                        
+                        {tickets[project.id] && tickets[project.id].length > 0 && (
+                          <div className="space-y-3 mb-4">
+                            {tickets[project.id].map(t => (
+                              <div key={t.id} className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                                <div className="flex justify-between items-start mb-1">
+                                  <span className="font-bold text-sm text-slate-200">{t.subject}</span>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider ${t.status === 'resolved' ? 'bg-emerald-900/40 text-emerald-400' : t.status === 'in_progress' ? 'bg-amber-900/40 text-amber-400' : 'bg-slate-800 text-slate-300 border border-slate-600'}`}>{t.status.replace('_', ' ')}</span>
+                                </div>
+                                <p className="text-xs text-slate-400">{t.message}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <form onSubmit={(e) => { e.preventDefault(); handleCreateTicket(project.id); }} className="space-y-2 bg-slate-900/30 p-3 flex flex-col rounded-lg border border-slate-800">
+                          <p className="text-xs text-slate-400 mb-1">Need help or want to request a change?</p>
+                          <input type="text" placeholder="Subject" value={newTicketSubjects[project.id] || ''} onChange={e => setNewTicketSubjects(prev => ({...prev, [project.id]: e.target.value}))} className="bg-slate-800 text-sm border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500" required />
+                          <textarea placeholder="Message..." value={newTicketMessages[project.id] || ''} onChange={e => setNewTicketMessages(prev => ({...prev, [project.id]: e.target.value}))} className="bg-slate-800 text-sm border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500 min-h-[80px]" required />
+                          <button type="submit" disabled={isSubmittingTicket === project.id} className="self-end px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded disabled:opacity-50 transition-colors">
+                            {isSubmittingTicket === project.id ? 'Submitting...' : 'Submit Request'}
+                          </button>
+                        </form>
+                      </div>
 
                       {project.recurring_fee && project.recurring_fee > 0 && (
                         <div className="mt-4 pt-3 border-t border-slate-700/50 flex flex-col gap-3 text-sm">
