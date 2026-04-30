@@ -20,7 +20,7 @@ const ClientsPage: React.FC = () => {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('clients').select('*').order('name');
+      const { data, error } = await supabase.from('clients').select('id, name, email, portal_token, created_at').order('name');
       if (error) throw error;
       setClients(data as Client[]);
     } catch (err: any) {

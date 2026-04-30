@@ -434,6 +434,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
 const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData: () => void; selectedEntityId: string }> = ({ projects, clients, refreshData, selectedEntityId }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
+    const [todosModalProject, setTodosModalProject] = useState<Project | null>(null);
 
     const handleEdit = (project: Project) => {
         setEditingProject(project);
@@ -492,6 +493,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
                                     </td>
                                     <td data-label="Actions" className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <div className="actions-cell">
+                                            <button onClick={() => setTodosModalProject(project)} className="text-purple-400 hover:text-purple-300">Todos</button>
                                             <button onClick={() => handleEdit(project)} className="text-cyan-400 hover:text-cyan-300">Edit</button>
                                             <button onClick={() => handleDelete(project.id)} className="text-red-400 hover:text-red-300">Delete</button>
                                         </div>
@@ -503,6 +505,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
                 </table>
             </div>
             {showModal && <ProjectForm projectToEdit={editingProject} clients={clients} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {todosModalProject && <ProjectTodosModal project={todosModalProject} onClose={() => setTodosModalProject(null)} />}
         </div>
     );
 };
@@ -1399,6 +1402,136 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
     );
 };
 
+export interface ProjectTodo {
+  id: string;
+  project_id: string;
+  description: string;
+  is_completed: boolean;
+  created_at: string;
+}
+
+const ProjectTodosModal: React.FC<{ project: Project; onClose: () => void; }> = ({ project, onClose }) => {
+    const [todos, setTodos] = useState<ProjectTodo[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [newTodoDesc, setNewTodoDesc] = useState('');
+    const [dbError, setDbError] = useState<string | null>(null);
+
+    const fetchTodos = async () => {
+        setLoading(true);
+        // Supabase query
+        const { data, error } = await supabase
+            .from('project_todos')
+            .select('*')
+            .eq('project_id', project.id)
+            .order('created_at', { ascending: true });
+            
+        if (error) {
+            // "relation does not exist" code
+            if (error.code === '42P01') {
+                setDbError("The To-Do list feature requires a database update. Please run the `20260430_project_todos.sql` migration in your Supabase SQL Editor.");
+            } else {
+                console.error("Error fetching todos:", error);
+            }
+        } else {
+            setTodos(data || []);
+            setDbError(null);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        fetchTodos();
+    }, [project.id]);
+
+    const handleAddTodo = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newTodoDesc.trim()) return;
+        const { error } = await supabase.from('project_todos').insert([{
+            project_id: project.id,
+            description: newTodoDesc.trim()
+        }]);
+        if (error) {
+            console.error("Error adding todo:", error);
+        } else {
+            setNewTodoDesc('');
+            fetchTodos();
+        }
+    };
+
+    const handleToggleTodo = async (todo: ProjectTodo) => {
+        const { error } = await supabase.from('project_todos').update({
+            is_completed: !todo.is_completed
+        }).eq('id', todo.id);
+        
+        if (error) {
+            console.error("Error toggling todo:", error);
+        } else {
+            fetchTodos();
+        }
+    };
+    
+    const handleDeleteTodo = async (id: string) => {
+        const { error } = await supabase.from('project_todos').delete().eq('id', id);
+        if (error) console.error("Error deleting todo", error);
+        else fetchTodos();
+    }
+
+    return (
+        <Modal onClose={onClose} title={`To-Do List: ${project.name}`} size="md">
+            {dbError ? (
+                <div className="bg-amber-900/40 border border-amber-800 text-amber-300 p-4 rounded-lg">
+                    <p className="font-bold mb-2">Setup Required</p>
+                    <p className="text-sm">{dbError}</p>
+                </div>
+            ) : (
+                <div className="space-y-6">
+                    <form onSubmit={handleAddTodo} className="flex space-x-2">
+                        <input
+                            type="text"
+                            value={newTodoDesc}
+                            onChange={e => setNewTodoDesc(e.target.value)}
+                            placeholder="Add a new task..."
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                        />
+                        <button type="submit" disabled={!newTodoDesc.trim() || loading} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded disabled:opacity-50 transition-colors">
+                            Add
+                        </button>
+                    </form>
+                    
+                    {loading ? (
+                        <div className="text-slate-400">Loading todos...</div>
+                    ) : todos.length === 0 ? (
+                        <div className="text-slate-500 italic">No items in the to-do list for this project.</div>
+                    ) : (
+                        <ul className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                            {todos.map(todo => (
+                                <li key={todo.id} className="flex justify-between items-start bg-slate-900/50 p-3 rounded border border-slate-700">
+                                    <label className="flex items-start space-x-3 cursor-pointer flex-1">
+                                        <div className="pt-1">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={todo.is_completed}
+                                                onChange={() => handleToggleTodo(todo)}
+                                                className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-500 bg-slate-800 border-slate-600"
+                                            />
+                                        </div>
+                                        <span className={`text-sm ${todo.is_completed ? 'line-through text-slate-500' : 'text-slate-300'}`}>
+                                            {todo.description}
+                                        </span>
+                                    </label>
+                                    <button onClick={() => handleDeleteTodo(todo.id)} className="text-slate-500 hover:text-red-400 p-1 ml-2 transition-colors">
+                                        &times;
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
+        </Modal>
+    );
+};
+
 const ProjectForm: React.FC<{ projectToEdit?: Project | null; clients: any[]; onClose: () => void; refreshData: () => void; selectedEntityId: string }> = ({ projectToEdit, clients, onClose, refreshData, selectedEntityId }) => {
     const [formData, setFormData] = useState({ 
         name: projectToEdit?.name || '', 
@@ -1794,7 +1927,7 @@ const DashboardPage: React.FC = () => {
             // FIX: Select client_name from projects to match the updated Invoice type.
             let invoicesQuery = supabase.from('invoices').select('*, projects(name, client_name), invoice_items(*)').order('issue_date', { ascending: false });
             let expensesQuery = supabase.from('expenses').select('*, expense_attachments(count)').order('start_date', { ascending: false });
-            let clientsQuery = supabase.from('clients').select('*').order('name');
+            let clientsQuery = supabase.from('clients').select('id, name, email, portal_token, created_at').order('name');
 
             // Apply filters if specific entity selected
             if (selectedEntityId !== 'all') {

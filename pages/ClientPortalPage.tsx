@@ -44,6 +44,14 @@ interface Invoice {
   projects: { name: string } | null;
 }
 
+export interface ProjectTodo {
+  id: string;
+  project_id: string;
+  description: string;
+  is_completed: boolean;
+  created_at: string;
+}
+
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
 
 const ClientPortalPage: React.FC = () => {
@@ -52,6 +60,7 @@ const ClientPortalPage: React.FC = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [todos, setTodos] = useState<Record<string, ProjectTodo[]>>({});
   const [subscriptionDetails, setSubscriptionDetails] = useState<Record<string, SubscriptionDetails>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +103,7 @@ const ClientPortalPage: React.FC = () => {
         // 1. Fetch Client by Token
         const { data: clientData, error: clientError } = await supabase
           .from('clients')
-          .select('*')
+          .select('id, name, email, portal_token')
           .eq('portal_token', token)
           .single();
 
@@ -196,6 +205,24 @@ const ClientPortalPage: React.FC = () => {
 
           if (invoicesError) throw invoicesError;
           setInvoices(invoicesData as Invoice[]);
+
+          // 4. Fetch Todos
+          const { data: todosData, error: todosError } = await supabase
+            .from('project_todos')
+            .select('*')
+            .in('project_id', projectIds)
+            .order('created_at', { ascending: true });
+
+          if (todosError) {
+             console.log("Todos table might not exist yet ->", todosError);
+          } else if (todosData) {
+            const todosMap: Record<string, ProjectTodo[]> = {};
+            todosData.forEach(t => {
+               if (!todosMap[t.project_id]) todosMap[t.project_id] = [];
+               todosMap[t.project_id].push(t as ProjectTodo);
+            });
+            setTodos(todosMap);
+          }
         }
 
       } catch (err: any) {
@@ -627,8 +654,30 @@ const ClientPortalPage: React.FC = () => {
                         </div>
                       )}
 
+                      {todos[project.id] && todos[project.id].length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-slate-700/50">
+                          <h4 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Project To-Do List</h4>
+                          <ul className="space-y-1.5 pl-1">
+                            {todos[project.id].map(todo => (
+                              <li key={todo.id} className="flex items-start space-x-2 text-sm">
+                                <div className="mt-0.5">
+                                  {todo.is_completed ? (
+                                    <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  ) : (
+                                    <div className="w-4 h-4 rounded border border-slate-600 bg-slate-800/50"></div>
+                                  )}
+                                </div>
+                                <span className={todo.is_completed ? 'line-through text-slate-500' : 'text-slate-300'}>
+                                  {todo.description}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       {project.recurring_fee && project.recurring_fee > 0 && (
-                        <div className="mt-2 pt-2 border-t border-slate-700/50 flex flex-col gap-3 text-sm">
+                        <div className="mt-4 pt-3 border-t border-slate-700/50 flex flex-col gap-3 text-sm">
                           <div className="flex justify-between items-center">
                             <span className="text-slate-400">{project.recurring_fee_description || 'Recurring Fee'}</span>
                             <span className="font-medium text-cyan-400">
