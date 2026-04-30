@@ -1431,6 +1431,8 @@ export interface SupportTicket {
   id: string;
   project_id: string;
   subject: string;
+  category?: 'bug' | 'feature' | 'question' | 'billing' | 'other';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
   message: string;
   status: 'open' | 'in_progress' | 'resolved';
   created_at: string;
@@ -1638,7 +1640,24 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                                     {tickets.map(t => (
                                         <div key={t.id} className="bg-slate-900/50 p-3 rounded border border-slate-700">
                                             <div className="flex justify-between items-start mb-2">
-                                                <h4 className="font-bold text-slate-200">{t.subject}</h4>
+                                                <div>
+                                                  <h4 className="font-bold text-slate-200">{t.subject}</h4>
+                                                  <div className="flex items-center gap-2 mt-1">
+                                                    {t.category && (
+                                                        <span className="text-[10px] text-slate-500 uppercase font-semibold">
+                                                        {t.category}
+                                                        </span>
+                                                    )}
+                                                    {t.priority && (
+                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold tracking-widest ${
+                                                        t.priority === 'urgent' ? 'bg-rose-500/20 text-rose-400' :
+                                                        t.priority === 'high' ? 'bg-amber-500/20 text-amber-400' :
+                                                        t.priority === 'normal' ? 'bg-blue-500/20 text-blue-400' :
+                                                        'bg-slate-600/30 text-slate-400'
+                                                        }`}>{t.priority}</span>
+                                                    )}
+                                                  </div>
+                                                </div>
                                                 <span className="text-[10px] text-slate-500">{new Date(t.created_at).toLocaleDateString()}</span>
                                             </div>
                                             <p className="text-sm text-slate-400 mb-3 whitespace-pre-wrap">{t.message}</p>

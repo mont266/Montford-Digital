@@ -73,6 +73,8 @@ export interface SupportTicket {
   id: string;
   project_id: string;
   subject: string;
+  category?: 'bug' | 'feature' | 'question' | 'billing' | 'other';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
   message: string;
   status: 'open' | 'in_progress' | 'resolved';
   created_at: string;
@@ -112,6 +114,8 @@ const ClientPortalPage: React.FC = () => {
 
   const [newTicketSubjects, setNewTicketSubjects] = useState<Record<string, string>>({});
   const [newTicketMessages, setNewTicketMessages] = useState<Record<string, string>>({});
+  const [newTicketCategories, setNewTicketCategories] = useState<Record<string, string>>({});
+  const [newTicketPriorities, setNewTicketPriorities] = useState<Record<string, string>>({});
   const [isSubmittingTicket, setIsSubmittingTicket] = useState<string | null>(null);
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -639,6 +643,8 @@ const ClientPortalPage: React.FC = () => {
   const handleCreateTicket = async (projectId: string) => {
     const subject = newTicketSubjects[projectId];
     const message = newTicketMessages[projectId];
+    const category = newTicketCategories[projectId] || 'other';
+    const priority = newTicketPriorities[projectId] || 'normal';
     if (!subject?.trim() || !message?.trim()) return;
 
     setIsSubmittingTicket(projectId);
@@ -646,13 +652,17 @@ const ClientPortalPage: React.FC = () => {
       const { error } = await supabase.from('support_tickets').insert([{
         project_id: projectId,
         subject: subject.trim(),
-        message: message.trim()
+        message: message.trim(),
+        category,
+        priority
       }]);
       if (error) throw error;
       
       setSuccessMessage('Support ticket submitted successfully.');
       setNewTicketSubjects(prev => ({ ...prev, [projectId]: '' }));
       setNewTicketMessages(prev => ({ ...prev, [projectId]: '' }));
+      setNewTicketCategories(prev => ({ ...prev, [projectId]: '' }));
+      setNewTicketPriorities(prev => ({ ...prev, [projectId]: '' }));
       
       // Refresh tickets
       const { data } = await supabase.from('support_tickets').select('*').in('project_id', projects.map(p => p.id)).order('created_at', { ascending: false });
@@ -1168,6 +1178,23 @@ const ClientPortalPage: React.FC = () => {
                             <form onSubmit={(e) => { e.preventDefault(); handleCreateTicket(project.id); }} className="space-y-3 bg-slate-900/60 p-4 flex flex-col rounded-xl border border-slate-700/50 shadow-sm relative overflow-hidden mb-6 flex-shrink-0">
                               <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500/50"></div>
                               <p className="text-xs font-bold text-white mb-1">New Request</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select value={newTicketCategories[project.id] || ''} onChange={e => setNewTicketCategories(prev => ({...prev, [project.id]: e.target.value}))} className="bg-slate-800 text-sm border border-slate-700 rounded-md px-3 py-2.5 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all cursor-pointer">
+                                  <option value="" disabled>Category</option>
+                                  <option value="bug">🐛 Bug/Issue</option>
+                                  <option value="feature">✨ Feature Request</option>
+                                  <option value="question">❓ Question</option>
+                                  <option value="billing">💳 Billing</option>
+                                  <option value="other">📝 Other</option>
+                                </select>
+                                <select value={newTicketPriorities[project.id] || ''} onChange={e => setNewTicketPriorities(prev => ({...prev, [project.id]: e.target.value}))} className="bg-slate-800 text-sm border border-slate-700 rounded-md px-3 py-2.5 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all cursor-pointer">
+                                  <option value="" disabled>Priority</option>
+                                  <option value="low">🧊 Low</option>
+                                  <option value="normal">🔵 Normal</option>
+                                  <option value="high">🔶 High</option>
+                                  <option value="urgent">🚨 Urgent</option>
+                                </select>
+                              </div>
                               <input type="text" placeholder="Subject line" value={newTicketSubjects[project.id] || ''} onChange={e => setNewTicketSubjects(prev => ({...prev, [project.id]: e.target.value}))} className="bg-slate-800 text-sm border border-slate-700 rounded-md px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all" required />
                               <textarea placeholder="How can we help?" value={newTicketMessages[project.id] || ''} onChange={e => setNewTicketMessages(prev => ({...prev, [project.id]: e.target.value}))} className="bg-slate-800 text-sm border border-slate-700 rounded-md px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 min-h-[90px] resize-y transition-all" required />
                               <button type="submit" disabled={isSubmittingTicket === project.id} className="w-full justify-center px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-all shadow-lg shadow-cyan-900/20 flex items-center gap-2 mt-1">
@@ -1182,16 +1209,44 @@ const ClientPortalPage: React.FC = () => {
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
                               {tickets[project.id] && tickets[project.id].length > 0 ? (
                                 tickets[project.id].map(t => (
-                                  <div key={t.id} className="bg-slate-900/40 p-4 rounded-lg border border-slate-700/80 shadow-inner flex flex-col gap-2">
+                                  <div key={t.id} className="bg-slate-900/40 p-4 rounded-lg border border-slate-700/80 shadow-inner flex flex-col gap-3 relative overflow-hidden group">
+                                    {t.priority === 'urgent' && <div className="absolute top-0 left-0 w-1 h-full bg-rose-500/80"></div>}
+                                    {t.priority === 'high' && <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/80"></div>}
+                                    
                                     <div className="flex justify-between items-start gap-2">
-                                      <span className="font-bold text-sm text-white break-words">{t.subject}</span>
+                                      <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-sm text-white break-words">{t.subject}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {t.category && (
+                                            <span className="text-[10px] text-slate-500 uppercase font-semibold flex items-center gap-1">
+                                              {t.category === 'bug' && '🐛 '}
+                                              {t.category === 'feature' && '✨ '}
+                                              {t.category === 'question' && '❓ '}
+                                              {t.category === 'billing' && '💳 '}
+                                              {t.category}
+                                            </span>
+                                          )}
+                                          {t.priority && (
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold tracking-widest whitespace-nowrap ${
+                                              t.priority === 'urgent' ? 'bg-rose-500/20 text-rose-400' :
+                                              t.priority === 'high' ? 'bg-amber-500/20 text-amber-400' :
+                                              t.priority === 'normal' ? 'bg-blue-500/20 text-blue-400' :
+                                              'bg-slate-600/30 text-slate-400'
+                                            }`}>{t.priority}</span>
+                                          )}
+                                        </div>
+                                      </div>
                                       <span className={`text-[9px] px-2 py-1 rounded-sm uppercase font-bold tracking-widest whitespace-nowrap ${
                                         t.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 
                                         t.status === 'in_progress' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 
                                         'bg-slate-700/50 text-slate-300 border border-slate-600'
                                       }`}>{t.status.replace('_', ' ')}</span>
                                     </div>
-                                    <p className="text-xs text-slate-400 leading-relaxed max-w-none">{t.message}</p>
+                                    <div className="p-3 bg-slate-900 border border-slate-800 rounded text-xs text-slate-300 leading-relaxed max-w-none shadow-inner">
+                                      {t.message}
+                                    </div>
                                   </div>
                                 ))
                               ) : (

@@ -62,7 +62,7 @@ const PortfolioModal: React.FC<PortfolioModalProps> = ({ project, onClose }) => 
             >
                 <div className="relative">
                     {/* Request a higher resolution image for the modal view */}
-                    <img src={project.imageSrc.replace('/600/400', '/1024/600')} alt={project.title} className="w-full h-56 sm:h-72 object-cover rounded-t-lg" />
+                    <img src={project.imageSrc.replace('/600/400', '/1024/600')} alt={project.title} className="w-full h-auto max-h-[50vh] object-contain rounded-t-lg bg-slate-900/50" />
                      <button onClick={handleClose} className="absolute top-4 right-4 text-white bg-slate-900/50 rounded-full p-2 hover:bg-slate-900/80 transition-colors" aria-label="Close modal">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
