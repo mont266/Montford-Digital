@@ -885,9 +885,9 @@ const ClientPortalPage: React.FC = () => {
                        <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3 px-1">Your Projects</h3>
                        <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-visible custom-scrollbar pb-2 lg:pb-0">
                          {projects.map(p => {
-                           const pMilestones = milestones[p.id] || [];
-                           const completed = pMilestones.filter(m => m.status === 'completed').length;
-                           const progress = pMilestones.length > 0 ? Math.round((completed / pMilestones.length) * 100) : 0;
+                           const pTodos = todos[p.id] || [];
+                           const completed = pTodos.filter(t => t.is_completed).length;
+                           const progress = pTodos.length > 0 ? Math.round((completed / pTodos.length) * 100) : 0;
                            
                            return (
                              <button
@@ -916,8 +916,9 @@ const ClientPortalPage: React.FC = () => {
                     if (!project) return null;
 
                     const projectMilestones = milestones[project.id] || [];
-                    const completedMilestones = projectMilestones.filter(m => m.status === 'completed').length;
-                    const progressPercent = projectMilestones.length > 0 ? Math.round((completedMilestones / projectMilestones.length) * 100) : 0;
+                    const projectTodos = todos[project.id] || [];
+                    const completedTodos = projectTodos.filter(t => t.is_completed).length;
+                    const progressPercent = projectTodos.length > 0 ? Math.round((completedTodos / projectTodos.length) * 100) : 0;
 
                     return (
                       <div className="flex flex-col gap-6">
@@ -1065,7 +1066,7 @@ const ClientPortalPage: React.FC = () => {
                             
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
                                {todos[project.id] && todos[project.id].length > 0 ? (
-                                  todos[project.id].map(todo => (
+                                  [...todos[project.id]].sort((a, b) => (a.is_completed === b.is_completed ? 0 : a.is_completed ? 1 : -1)).map(todo => (
                                     <div key={todo.id} className="flex items-start gap-3 bg-slate-900/40 p-3 rounded-lg border border-slate-700/50 hover:bg-slate-800/80 transition-colors">
                                       <div className="mt-0.5 shrink-0">
                                         {todo.is_completed ? (
