@@ -151,6 +151,58 @@ export default async function serve(req: Request) {
             }
             break;
           }
+          case 'charge.succeeded': {
+            const charge = event.data.object as Stripe.Charge;
+            console.log(`Charge succeeded: ${charge.id}, amount: ${charge.amount}, balance_transaction: ${charge.balance_transaction}`);
+            if (charge.balance_transaction) {
+              const balanceTx = await stripe.balanceTransactions.retrieve(charge.balance_transaction as string);
+              if (balanceTx.fee > 0) {
+                // Record the Stripe fee as an expense
+                const feeAmountGbp = balanceTx.fee / 100;
+                
+                // Try to determine entity_id from the charge
+                let entityId = null;
+                
+                try {
+                   // Fallback: get the first entity (usually montford-digital)
+                   const { data: firstEntity } = await supabase.from('entities').select('id').limit(1).single();
+                   if (firstEntity) entityId = firstEntity.id;
+                   
+                   // If we have customer, try to find a related client and their project to get correct entity_id
+                   if (charge.customer) {
+                      const { data: client } = await supabase.from('clients').select('id').eq('stripe_customer_id', charge.customer).single();
+                      if (client) {
+                          const { data: proj } = await supabase.from('projects').select('entity_id').eq('client_id', client.id).limit(1).single();
+                          if (proj && proj.entity_id) {
+                              entityId = proj.entity_id;
+                          }
+                      }
+                   }
+                } catch (e) {
+                   console.log('Could not resolve entityId, using default', e);
+                }
+
+                try {
+                  const { error: insertError } = await supabase.from('expenses').insert({
+                    name: 'Stripe Processing Fee',
+                    description: `Processing fee for charge ${charge.id}`,
+                    amount: feeAmountGbp,
+                    currency: balanceTx.currency.toUpperCase(),
+                    amount_gbp: feeAmountGbp,
+                    category: 'Legal & Financial Costs',
+                    start_date: new Date(balanceTx.created * 1000).toISOString().split('T')[0],
+                    type: 'manual',
+                    entity_id: entityId
+                  });
+                  if (insertError) console.error('Error recording Stripe fee expense:', insertError);
+                  else console.log('Successfully recorded Stripe fee expense:', feeAmountGbp);
+                } catch (e) {
+                  console.error('Failed to insert Stripe fee expense', e);
+                }
+              }
+            }
+            break;
+          }
           case 'checkout.session.completed': {
             const session = event.data.object as Stripe.Checkout.Session;
             console.log(`Checkout session completed: ${session.id}, mode: ${session.mode}`);
@@ -178,10 +230,18 @@ export default async function serve(req: Request) {
             console.log(`Subscription ${event.type}: ${subscription.id}, projectId: ${projectId}, status: ${subscription.status}`);
             
             if (projectId) {
-              await supabase
-                .from('projects')
-                .update({ stripe_subscription_status: subscription.status })
-                .eq('id', projectId);
+              // Only update if this is the currently linked subscription, OR if this subscription is becoming active
+              const { data: project } = await supabase.from('projects').select('stripe_subscription_id').eq('id', projectId).single();
+              
+              if (project && (project.stripe_subscription_id === subscription.id || subscription.status === 'active')) {
+                await supabase
+                  .from('projects')
+                  .update({ 
+                    stripe_subscription_id: subscription.status === 'active' ? subscription.id : project.stripe_subscription_id,
+                    stripe_subscription_status: subscription.status 
+                  })
+                  .eq('id', projectId);
+              }
             }
             break;
           }
@@ -403,9 +463,16 @@ export default async function serve(req: Request) {
           return new Response(JSON.stringify({ success: true, message: 'No projects found for this client', debug: { customerId, subCount: subscriptions.data.length } }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
+        // Sort subscriptions so that active ones are processed last and overwrite others
+        const sortedSubscriptions = [...subscriptions.data].sort((a, b) => {
+          if (a.status === 'active' && b.status !== 'active') return 1;
+          if (b.status === 'active' && a.status !== 'active') return -1;
+          return 0;
+        });
+
         let linkedCount = 0;
         const debugInfo: any[] = [];
-        for (const sub of subscriptions.data) {
+        for (const sub of sortedSubscriptions) {
           console.log(`Checking subscription: ${sub.id}, status: ${sub.status}`);
           let targetProjectId = sub.metadata.projectId;
           let matchMethod = 'metadata';
