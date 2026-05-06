@@ -1479,7 +1479,7 @@ export interface SupportTicket {
 }
 
 const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }> = ({ project, onClose }) => {
-    const [activeTab, setActiveTab] = useState<'todos' | 'milestones' | 'activity' | 'tickets'>('todos');
+    const [activeTab, setActiveTab] = useState<'todos' | 'milestones' | 'activity' | 'tickets' | 'notes'>('todos');
     
     // Todos State
     const [todos, setTodos] = useState<ProjectTodo[]>([]);
@@ -1493,6 +1493,7 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
     // Activity State
     const [activities, setActivities] = useState<ProjectActivity[]>([]);
     const [newActivityDesc, setNewActivityDesc] = useState('');
+    const [newNoteDesc, setNewNoteDesc] = useState('');
 
     // Tickets State
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -1511,7 +1512,7 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                 const { data, error } = await supabase.from('project_milestones').select('*').eq('project_id', project.id).order('created_at', { ascending: true });
                 if (error) throw error;
                 setMilestones(data || []);
-            } else if (activeTab === 'activity') {
+            } else if (activeTab === 'activity' || activeTab === 'notes') {
                 const { data, error } = await supabase.from('project_activities').select('*').eq('project_id', project.id).order('created_at', { ascending: false });
                 if (error) throw error;
                 setActivities(data || []);
@@ -1576,6 +1577,13 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
     };
     const handleDeleteActivity = async (id: string) => {
         await supabase.from('project_activities').delete().eq('id', id);
+        fetchData();
+    };
+    const handleAddNote = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newNoteDesc.trim()) return;
+        await supabase.from('project_activities').insert([{ project_id: project.id, description: `[NOTE] ${newNoteDesc.trim()}` }]);
+        setNewNoteDesc('');
         fetchData();
     };
 
@@ -1658,8 +1666,8 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                                 <button type="submit" disabled={!newActivityDesc.trim() || loading} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded disabled:opacity-50 transition-colors">Post</button>
                             </form>
                             {loading ? <div className="text-slate-400">Loading...</div> : (
-                                <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                                    {activities.map(act => (
+                                <ul className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+                                    {activities.filter(a => !a.description.startsWith('[NOTE] ')).map(act => (
                                         <li key={act.id} className="flex justify-between items-start bg-slate-900/50 p-3 rounded border border-slate-700 text-sm text-slate-300">
                                             <div>
                                                 <p>{act.description}</p>
@@ -1669,6 +1677,37 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                                         </li>
                                     ))}
                                 </ul>
+                            )}
+                        </>
+                    )}
+
+                    {activeTab === 'notes' && (
+                        <>
+                            <form onSubmit={handleAddNote} className="flex flex-col space-y-2">
+                                <textarea value={newNoteDesc} onChange={e => setNewNoteDesc(e.target.value)} placeholder="Add meeting notes or project notes..." rows={3} className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500 resize-y" />
+                                <div className="flex justify-end">
+                                    <button type="submit" disabled={!newNoteDesc.trim() || loading} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded disabled:opacity-50 transition-colors">Save Note</button>
+                                </div>
+                            </form>
+                            {loading ? <div className="text-slate-400">Loading...</div> : (
+                                <div className="space-y-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar mt-4">
+                                    {activities.filter(a => a.description.startsWith('[NOTE] ')).map(act => (
+                                        <div key={act.id} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 text-sm text-slate-300 relative group">
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => handleDeleteActivity(act.id)} className="text-slate-500 hover:text-red-400 p-1 bg-slate-800 rounded">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </div>
+                                            <p className="whitespace-pre-wrap pr-8">{act.description.substring(7)}</p>
+                                            <div className="mt-3 text-[10px] text-slate-500">
+                                                {new Date(act.created_at).toLocaleString()}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {activities.filter(a => a.description.startsWith('[NOTE] ')).length === 0 && (
+                                        <p className="text-slate-500 italic text-center py-4">No notes added yet.</p>
+                                    )}
+                                </div>
                             )}
                         </>
                     )}

@@ -1147,8 +1147,8 @@ const ClientPortalPage: React.FC = () => {
                             </div>
                             
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                               {activities[project.id] && activities[project.id].length > 0 ? (
-                                  activities[project.id].map(a => (
+                               {activities[project.id] && activities[project.id].filter(a => !a.description.startsWith('[NOTE] ')).length > 0 ? (
+                                  activities[project.id].filter(a => !a.description.startsWith('[NOTE] ')).map(a => (
                                     <div key={a.id} className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50 flex flex-col gap-1.5">
                                       <span className="text-sm text-slate-200">{a.description}</span>
                                       <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium">
@@ -1162,6 +1162,30 @@ const ClientPortalPage: React.FC = () => {
                                )}
                             </div>
                           </div>
+
+                          {/* Meeting Notes */}
+                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col max-h-[400px] mt-6">
+                            <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                              Meeting Notes
+                            </div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
+                               {activities[project.id] && activities[project.id].filter(a => a.description.startsWith('[NOTE] ')).length > 0 ? (
+                                  activities[project.id].filter(a => a.description.startsWith('[NOTE] ')).map(act => (
+                                    <div key={act.id} className="bg-slate-900/40 p-4 rounded-lg border border-slate-700/50 flex flex-col gap-2">
+                                      <p className="text-sm text-slate-300 whitespace-pre-wrap">{act.description.substring(7)}</p>
+                                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium">
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        {new Date(act.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      </div>
+                                    </div>
+                                  ))
+                               ) : (
+                                 <p className="text-slate-500 text-sm italic text-center mt-6">No meeting notes yet.</p>
+                               )}
+                            </div>
+                          </div>
+
 
                         </div>
 
