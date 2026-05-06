@@ -551,7 +551,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
 };
 
 
-const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refreshData: () => void; selectedEntityId: string; payeSalary: number }> = ({ invoices, projects, refreshData, selectedEntityId, payeSalary }) => {
+const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients: any[]; refreshData: () => void; selectedEntityId: string; payeSalary: number }> = ({ invoices, projects, clients, refreshData, selectedEntityId, payeSalary }) => {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
@@ -758,8 +758,8 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; refresh
                     </tbody>
                 </table>
             </div>
-            {showInvoiceModal && <InvoiceForm projects={projects} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} selectedEntityId={selectedEntityId} />}
-            {showProjectModal && <ProjectForm onClose={() => setShowProjectModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {showInvoiceModal && <InvoiceForm projects={projects} clients={clients} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} selectedEntityId={selectedEntityId} />}
+            {showProjectModal && <ProjectForm clients={clients} onClose={() => setShowProjectModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
 };
@@ -1224,7 +1224,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
 
 
 // --- FORMS ---
-const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; selectedEntityId: string }> = ({ projects, onClose, refreshData, onAddNewProject, selectedEntityId }) => {
+const InvoiceForm: React.FC<{ projects: Project[]; clients: any[]; onClose: () => void; refreshData: () => void; onAddNewProject: () => void; selectedEntityId: string }> = ({ projects, clients, onClose, refreshData, onAddNewProject, selectedEntityId }) => {
     const [formData, setFormData] = useState({ 
         project_id: '', 
         invoice_number: '', 
@@ -1240,14 +1240,15 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
 
     const groupedProjects = useMemo(() => {
         return projects.reduce((acc, project) => {
-            const clientName = project.client_name || 'No Client';
+            const client = clients.find(c => c.id === project.client_id);
+            const clientName = client ? client.name : (project.client_name || 'No Client');
             if (!acc[clientName]) {
                 acc[clientName] = [];
             }
             acc[clientName].push(project);
             return acc;
         }, {} as Record<string, Project[]>);
-    }, [projects]);
+    }, [projects, clients]);
 
 
     useEffect(() => {
@@ -1407,8 +1408,19 @@ const InvoiceForm: React.FC<{ projects: Project[]; onClose: () => void; refreshD
                     </div>
                 )}
                 {!isSplitInvoice && (
-                     <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required={!isSplitInvoice} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div><label className="block text-sm font-medium text-slate-300">Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleFormChange} required={!isSplitInvoice} className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white" /></div>
+                     </div>
                 )}
+                
+                <div>
+                    <label className="block text-sm font-medium text-slate-300">Initial Status</label>
+                    <select name="status" value={formData.status} onChange={handleFormChange} required className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white">
+                        <option value="draft">Draft (Hidden from client)</option>
+                        <option value="sent">Sent (Visible to client)</option>
+                        <option value="paid">Paid</option>
+                    </select>
+                </div>
                 
                 <div className="border-t border-b border-slate-700 py-4 space-y-3">
                     <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
@@ -2374,7 +2386,7 @@ const DashboardPage: React.FC = () => {
                                 <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} projects={projects} />} />
                                 <Route path="clients" element={<ClientsPage />} />
                                 <Route path="projects" element={<ProjectsPage projects={projects} clients={clients} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
-                                <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />
+                                <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} clients={clients} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />
                                 <Route path="expenses" element={<ExpensesPage expenses={processedExpenses} refreshData={fetchData} selectedEntityId={selectedEntityId} selectedEntitySlug={selectedEntitySlug} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="tax" element={<TaxCentrePage invoices={invoices} expenses={processedExpenses} setAttachmentModalExpense={setAttachmentModalExpense} />} />
                                 <Route path="calculator" element={<QuoteCalculatorPage />} />
