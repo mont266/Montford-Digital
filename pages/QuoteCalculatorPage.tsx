@@ -113,24 +113,46 @@ const QuoteCalculatorPage: React.FC = () => {
     const [matesRates, setMatesRates] = useState(false);
     const [maintenanceTier, setMaintenanceTier] = useState<MaintenanceTier>('none');
 
+    const featureLabels: Record<string, string> = {
+        auth: 'User Authentication',
+        roles: 'Roles & Permissions',
+        profile: 'User Profiles',
+        cms: 'Admin / CMS',
+        ecommerce: 'E-commerce',
+        api: 'API Integrations',
+        dashboard: 'Data Dashboard',
+        realtime: 'Real-time Data',
+        search: 'Advanced Search',
+        seo: 'SEO Optimization',
+        multilingual: 'Multi-language',
+        notifications: 'Push/Email Alerts',
+        offline: 'Offline/PWA',
+        animations: 'Custom Animations',
+    };
+
     // --- Calculation Logic ---
     const priceBreakdown = useMemo(() => {
         let totalPoints = 0;
+        const selectedFeaturesList = [];
         
         for (const [key, value] of Object.entries(features)) {
             if (value) {
-                totalPoints += PRICING_CONFIG.FEATURE_POINTS[key as keyof typeof PRICING_CONFIG.FEATURE_POINTS];
+                const points = PRICING_CONFIG.FEATURE_POINTS[key as keyof typeof PRICING_CONFIG.FEATURE_POINTS];
+                totalPoints += points;
+                selectedFeaturesList.push({ key, label: featureLabels[key], points });
             }
         }
         
-        const featureCost = totalPoints * PRICING_CONFIG.COST_PER_POINT;
+        const clientProfileMultiplier = PRICING_CONFIG.CLIENT_PROFILE_MULTIPLIER[clientProfile];
+        const effectiveCostPerPoint = PRICING_CONFIG.COST_PER_POINT * clientProfileMultiplier;
+
+        const featureCost = totalPoints * effectiveCostPerPoint;
         const subtotalBeforeMultipliers = PRICING_CONFIG.BASE_SETUP_FEE + featureCost;
         
         const timelineMultiplier = PRICING_CONFIG.TIMELINE_MULTIPLIER[timeline];
         const platformMultiplier = projectType === 'mobileapp' ? PRICING_CONFIG.PLATFORM_MULTIPLIER[mobilePlatform] : 1;
-        const clientProfileMultiplier = PRICING_CONFIG.CLIENT_PROFILE_MULTIPLIER[clientProfile];
         
-        const subtotal = subtotalBeforeMultipliers * timelineMultiplier * platformMultiplier * clientProfileMultiplier;
+        const subtotal = subtotalBeforeMultipliers * timelineMultiplier * platformMultiplier;
         
         const discount = matesRates ? subtotal * PRICING_CONFIG.MATES_RATES_DISCOUNT : 0;
         
@@ -143,7 +165,7 @@ const QuoteCalculatorPage: React.FC = () => {
         const monthlyMaintenance = PRICING_CONFIG.MAINTENANCE_TIERS[maintenanceTier].price;
         const yearlyMaintenance = monthlyMaintenance * 12;
 
-        return { totalPoints, featureCost, platformMultiplier, clientProfileMultiplier, timelineMultiplier, subtotal, discount, finalPrice, priceRange, monthlyMaintenance, yearlyMaintenance };
+        return { totalPoints, selectedFeaturesList, effectiveCostPerPoint, featureCost, platformMultiplier, clientProfileMultiplier, timelineMultiplier, subtotal, discount, finalPrice, priceRange, monthlyMaintenance, yearlyMaintenance };
 
     }, [projectType, clientProfile, mobilePlatform, timeline, features, matesRates, maintenanceTier]);
     
@@ -269,15 +291,24 @@ const QuoteCalculatorPage: React.FC = () => {
                                 <span>{formatCurrency(priceBreakdown.featureCost)}</span>
                             </div>
                             <div className="flex justify-between text-xs text-slate-400 pl-4">
-                                <span>@ {formatCurrency(PRICING_CONFIG.COST_PER_POINT)} / point</span>
+                                <span>@ {formatCurrency(priceBreakdown.effectiveCostPerPoint)} / point (base: {formatCurrency(PRICING_CONFIG.COST_PER_POINT)}, multiplier: &times;{priceBreakdown.clientProfileMultiplier})</span>
                             </div>
+                            {priceBreakdown.selectedFeaturesList.length > 0 && (
+                                <div className="mt-2 pl-4 border-l border-slate-700 space-y-1">
+                                    {priceBreakdown.selectedFeaturesList.map(feat => (
+                                        <div key={feat.key} className="flex justify-between text-xs text-slate-400">
+                                            <span>- {feat.label}</span>
+                                            <span>{formatCurrency(feat.points * priceBreakdown.effectiveCostPerPoint)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                          <div className="space-y-2 text-slate-300 border-b border-slate-700 pb-4 mb-4">
                             <div className="flex justify-between font-semibold"><span>Subtotal</span> <span>{formatCurrency(PRICING_CONFIG.BASE_SETUP_FEE + priceBreakdown.featureCost)}</span></div>
                             {priceBreakdown.timelineMultiplier > 1 && <div className="flex justify-between"><span>Timeline ({timelineLabels[timeline]})</span> <span>&times;{priceBreakdown.timelineMultiplier}</span></div>}
                             {priceBreakdown.platformMultiplier > 1 && <div className="flex justify-between"><span>Platform ({platformLabels[mobilePlatform]})</span> <span>&times;{priceBreakdown.platformMultiplier}</span></div>}
-                             <div className="flex justify-between"><span>Client Profile ({clientProfileLabels[clientProfile]})</span> <span>&times;{priceBreakdown.clientProfileMultiplier}</span></div>
                         </div>
                         
                         <div className="space-y-2 text-slate-300">
