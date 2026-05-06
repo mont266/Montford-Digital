@@ -1479,7 +1479,7 @@ export interface SupportTicket {
 }
 
 const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }> = ({ project, onClose }) => {
-    const [activeTab, setActiveTab] = useState<'todos' | 'milestones' | 'activity' | 'tickets' | 'notes'>('todos');
+    const [activeTab, setActiveTab] = useState<'todos' | 'milestones' | 'activity' | 'notes' | 'tickets' | 'settings'>('todos');
     
     // Todos State
     const [todos, setTodos] = useState<ProjectTodo[]>([]);
@@ -1489,6 +1489,7 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
     const [milestones, setMilestones] = useState<ProjectMilestone[]>([]);
     const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
     const [newMilestoneDesc, setNewMilestoneDesc] = useState('');
+    const [newMilestoneDate, setNewMilestoneDate] = useState('');
 
     // Activity State
     const [activities, setActivities] = useState<ProjectActivity[]>([]);
@@ -1497,6 +1498,10 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
 
     // Tickets State
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
+
+    // Settings State
+    const [deadlineDate, setDeadlineDate] = useState('');
+    const [isSavingDeadline, setIsSavingDeadline] = useState(false);
 
     const [loading, setLoading] = useState(true);
     const [dbError, setDbError] = useState<string | null>(null);
@@ -1508,10 +1513,16 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                 const { data, error } = await supabase.from('project_todos').select('*').eq('project_id', project.id).order('created_at', { ascending: true });
                 if (error) throw error;
                 setTodos(data || []);
-            } else if (activeTab === 'milestones') {
+            } else if (activeTab === 'milestones' || activeTab === 'settings') {
                 const { data, error } = await supabase.from('project_milestones').select('*').eq('project_id', project.id).order('created_at', { ascending: true });
                 if (error) throw error;
                 setMilestones(data || []);
+                const deadlineMilestone = data?.find(m => m.title === '[DEADLINE]');
+                if (deadlineMilestone && deadlineMilestone.due_date) {
+                    setDeadlineDate(deadlineMilestone.due_date.split('T')[0]);
+                } else {
+                    setDeadlineDate('');
+                }
             } else if (activeTab === 'activity' || activeTab === 'notes') {
                 const { data, error } = await supabase.from('project_activities').select('*').eq('project_id', project.id).order('created_at', { ascending: false });
                 if (error) throw error;
@@ -1555,10 +1566,24 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
     const handleAddMilestone = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMilestoneTitle.trim()) return;
-        await supabase.from('project_milestones').insert([{ project_id: project.id, title: newMilestoneTitle.trim(), description: newMilestoneDesc.trim() }]);
-        setNewMilestoneTitle(''); setNewMilestoneDesc('');
+        await supabase.from('project_milestones').insert([{ project_id: project.id, title: newMilestoneTitle.trim(), description: newMilestoneDesc.trim(), due_date: newMilestoneDate ? newMilestoneDate : null }]);
+        setNewMilestoneTitle(''); setNewMilestoneDesc(''); setNewMilestoneDate('');
         fetchData();
     };
+    
+    const handleSaveDeadline = async () => {
+        if (!deadlineDate) return;
+        setIsSavingDeadline(true);
+        const existingDeadline = milestones.find(m => m.title === '[DEADLINE]');
+        if (existingDeadline) {
+            await supabase.from('project_milestones').update({ due_date: deadlineDate }).eq('id', existingDeadline.id);
+        } else {
+            await supabase.from('project_milestones').insert([{ project_id: project.id, title: '[DEADLINE]', description: 'Project Deadline', due_date: deadlineDate }]);
+        }
+        setIsSavingDeadline(false);
+        fetchData();
+    };
+
     const handleUpdateMilestoneStatus = async (id: string, status: string) => {
         await supabase.from('project_milestones').update({ status }).eq('id', id);
         fetchData();
@@ -1595,7 +1620,7 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
     return (
         <Modal onClose={onClose} title={`Manage Workspace: ${project.name}`} size="lg">
             <div className="flex border-b border-slate-700 mb-4 overflow-x-auto">
-                {['todos', 'milestones', 'activity', 'tickets'].map(tab => (
+                {['todos', 'milestones', 'activity', 'notes', 'tickets', 'settings'].map(tab => (
                     <button key={tab} className={`px-4 py-2 capitalize font-medium whitespace-nowrap ${activeTab === tab ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-400 hover:text-slate-300'}`} onClick={() => setActiveTab(tab as any)}>
                         {tab}
                     </button>
@@ -1635,12 +1660,15 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                         <>
                             <form onSubmit={handleAddMilestone} className="flex flex-col space-y-2 bg-slate-900/50 p-3 rounded border border-slate-700">
                                 <input type="text" value={newMilestoneTitle} onChange={e => setNewMilestoneTitle(e.target.value)} placeholder="Milestone Title" className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500" />
-                                <input type="text" value={newMilestoneDesc} onChange={e => setNewMilestoneDesc(e.target.value)} placeholder="Description (Optional)" className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500" />
-                                <button type="submit" disabled={!newMilestoneTitle.trim() || loading} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded disabled:opacity-50 transition-colors">Add Milestone</button>
+                                <textarea value={newMilestoneDesc} onChange={e => setNewMilestoneDesc(e.target.value)} placeholder="Description (Optional)" className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500" rows={2}></textarea>
+                                <div className="flex space-x-2">
+                                    <input type="date" value={newMilestoneDate} onChange={e => setNewMilestoneDate(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-300 focus:outline-none focus:border-cyan-500 text-sm flex-1" />
+                                    <button type="submit" disabled={!newMilestoneTitle.trim() || loading} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded disabled:opacity-50 transition-colors w-1/2">Add Milestone</button>
+                                </div>
                             </form>
                             {loading ? <div className="text-slate-400">Loading...</div> : (
-                                <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                                    {milestones.map(m => (
+                                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar mt-4">
+                                    {milestones.filter(m => m.title !== '[DEADLINE]').map(m => (
                                         <div key={m.id} className="bg-slate-900/50 p-3 rounded border border-slate-700">
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-bold text-slate-200">{m.title}</h4>
@@ -1750,6 +1778,20 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                                 </div>
                             )}
                         </>
+                    )}
+{activeTab === 'settings' && (
+                        <div className="space-y-4">
+                            <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+                                <h4 className="text-white font-bold mb-2">Project Deadline</h4>
+                                <p className="text-sm text-slate-400 mb-4">Set the agreed deadline for this project. This will be shown on the client portal.</p>
+                                <div className="flex items-center space-x-2">
+                                    <input type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} className="bg-slate-800 border border-slate-600 rounded-md px-3 py-2 text-white focus:outline-none focus:border-cyan-500" />
+                                    <button onClick={handleSaveDeadline} disabled={isSavingDeadline || !deadlineDate} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded disabled:opacity-50 transition-colors">
+                                        {isSavingDeadline ? 'Saving...' : 'Save Deadline'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             )}

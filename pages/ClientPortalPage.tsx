@@ -925,7 +925,9 @@ const ClientPortalPage: React.FC = () => {
                     const project = projects.find(p => p.id === activeProjectId) || projects[0];
                     if (!project) return null;
 
-                    const projectMilestones = milestones[project.id] || [];
+                    const projectMilestonesRaw = milestones[project.id] || [];
+                    const deadlineMilestone = projectMilestonesRaw.find(m => m.title === '[DEADLINE]');
+                    const projectMilestones = projectMilestonesRaw.filter(m => m.title !== '[DEADLINE]');
                     const projectTodos = todos[project.id] || [];
                     const completedTodos = projectTodos.filter(t => t.is_completed).length;
                     const progressPercent = projectTodos.length > 0 ? Math.round((completedTodos / projectTodos.length) * 100) : 0;
@@ -955,7 +957,20 @@ const ClientPortalPage: React.FC = () => {
                             <h2 className="text-2xl md:text-4xl font-bold text-white tracking-tight">{project.name}</h2>
                           </div>
 
-                          <div className="w-full md:w-auto flex flex-col md:items-end gap-4">
+                          <div className="w-full md:w-auto flex flex-col md:flex-row md:items-end gap-4">
+                             {deadlineMilestone && deadlineMilestone.due_date && (
+                               <div className="flex items-center gap-4 bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-700/50">
+                                 <div className="flex flex-col">
+                                   <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Deadline</span>
+                                   <span className="text-xl font-bold text-white max-w-[120px] truncate" title={new Date(deadlineMilestone.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}>
+                                     {new Date(deadlineMilestone.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                   </span>
+                                 </div>
+                                 <div className="w-8 h-8 rounded-full bg-slate-800/40 border border-slate-600/30 flex items-center justify-center">
+                                   <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                 </div>
+                               </div>
+                             )}
                              <div className="flex items-center gap-4 bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-700/50">
                                <div className="flex flex-col">
                                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Progress</span>
