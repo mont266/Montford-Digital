@@ -171,6 +171,7 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
 const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; payeSalary: number; projects: Project[] }> = ({ invoices, expenses, payeSalary, projects }) => {
     type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
+    const [showTakeHomeMRR, setShowTakeHomeMRR] = useState(false);
 
     const { 
         filteredInvoices, 
@@ -370,6 +371,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
     const overdueAmount = filteredInvoices.filter(inv => inv.status === 'overdue' || (inv.status === 'sent' && new Date(inv.due_date) < new Date())).reduce((acc, inv) => acc + inv.amount, 0);
     
     // Recurring Revenue Calculations
+    let totalRecurringIncomeTakeHome = 0;
     const totalRecurringIncomeReceived = invoices
         .filter(inv => inv.status === 'paid')
         .reduce((sum, inv) => {
@@ -377,11 +379,27 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                 item.description.toLowerCase().includes('subscription') || 
                 item.description.toLowerCase().includes('recurring')
             );
-            return isRecurring ? sum + inv.amount : sum;
+            if (isRecurring) {
+                const calculatedStripeFee = (inv.amount * 0.025) + 0.20;
+                const effectiveStripeFee = calculatedStripeFee > 50 ? 0 : calculatedStripeFee;
+                const taxPaid = invoiceTaxMap.get(inv.id) || 0;
+                totalRecurringIncomeTakeHome += (inv.amount - effectiveStripeFee - taxPaid);
+                return sum + inv.amount;
+            }
+            return sum;
         }, 0);
 
     const activeMRR = projects.reduce((sum, p) => sum + (p.recurring_fee || 0), 0);
     const expectedYearlyRecurring = activeMRR * 12;
+
+    const expectedYearlyStripeFees = projects.filter(p => (p.recurring_fee || 0) > 0).reduce((sum, p) => {
+        const calculatedFee = (p.recurring_fee! * 0.025) + 0.20;
+        const effectiveFee = calculatedFee > 50 ? 0 : calculatedFee;
+        return sum + (effectiveFee * 12);
+    }, 0);
+    const expectedYearlyTax = calculateTaxForInvoice(expectedYearlyRecurring, payeSalary, 0).totalTax;
+    const expectedYearlyRecurringTakeHome = expectedYearlyRecurring - expectedYearlyStripeFees - expectedYearlyTax;
+    const activeMRRTakeHome = expectedYearlyRecurringTakeHome / 12;
 
     const timeSpanLabels: Record<TimeSpan, string> = {
         '7d': '7 Days',
@@ -417,11 +435,27 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
             </div>
 
             <div>
-                <h3 className="text-xl font-bold text-white mb-4">Recurring Revenue</h3>
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
+                    <h3 className="text-xl font-bold text-white mb-4">Recurring Revenue</h3>
+                    <div className="flex items-center space-x-2 bg-slate-800 border border-slate-700 rounded-md p-1">
+                        <button 
+                            onClick={() => setShowTakeHomeMRR(false)} 
+                            className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${!showTakeHomeMRR ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
+                        >
+                            Gross
+                        </button>
+                        <button 
+                            onClick={() => setShowTakeHomeMRR(true)} 
+                            className={`px-3 py-1 text-sm font-semibold rounded transition-colors ${showTakeHomeMRR ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
+                        >
+                            Take-Home
+                        </button>
+                    </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <StatCard title="Total Recurring Received" value={formatCurrency(totalRecurringIncomeReceived)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
-                    <StatCard title="Active MRR" value={`${formatCurrency(activeMRR)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
-                    <StatCard title="Expected Yearly (ARR)" value={`${formatCurrency(expectedYearlyRecurring)}/yr`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>} />
+                    <StatCard title="Total Recurring Received" value={formatCurrency(showTakeHomeMRR ? totalRecurringIncomeTakeHome : totalRecurringIncomeReceived)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                    <StatCard title="Active MRR" value={`${formatCurrency(showTakeHomeMRR ? activeMRRTakeHome : activeMRR)}/mo`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
+                    <StatCard title="Expected Yearly (ARR)" value={`${formatCurrency(showTakeHomeMRR ? expectedYearlyRecurringTakeHome : expectedYearlyRecurring)}/yr`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>} />
                 </div>
             </div>
 
