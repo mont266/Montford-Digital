@@ -1490,8 +1490,27 @@ export interface SupportTicket {
   created_at: string;
 }
 
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  file_name: string;
+  file_path: string;
+  file_type?: string;
+  file_size?: number;
+  uploaded_by: 'client' | 'admin';
+  created_at: string;
+}
+
+const formatBytes = (bytes?: number) => {
+    if (!bytes) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
 const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }> = ({ project, onClose }) => {
-    const [activeTab, setActiveTab] = useState<'todos' | 'milestones' | 'activity' | 'notes' | 'tickets' | 'settings'>('todos');
+    const [activeTab, setActiveTab] = useState<'todos' | 'milestones' | 'activity' | 'notes' | 'tickets' | 'files' | 'settings'>('todos');
     
     // Todos State
     const [todos, setTodos] = useState<ProjectTodo[]>([]);
@@ -1510,6 +1529,10 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
 
     // Tickets State
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
+
+    // Files State
+    const [files, setFiles] = useState<ProjectFile[]>([]);
+    const [uploadingFile, setUploadingFile] = useState(false);
 
     // Settings State
     const [deadlineDate, setDeadlineDate] = useState('');
@@ -1543,6 +1566,10 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                 const { data, error } = await supabase.from('support_tickets').select('*').eq('project_id', project.id).order('created_at', { ascending: false });
                 if (error) throw error;
                 setTickets(data || []);
+            } else if (activeTab === 'files') {
+                const { data, error } = await supabase.from('project_files').select('*').eq('project_id', project.id).order('created_at', { ascending: false });
+                if (error) throw error;
+                setFiles(data || []);
             }
             setDbError(null);
         } catch (err: any) {
@@ -1629,10 +1656,57 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
         fetchData();
     };
 
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const file = e.target.files[0];
+        
+        setUploadingFile(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const filePath = `${project.id}/${Math.random().toString(36).substring(2)}.${fileExt}`;
+            
+            const { error: uploadError } = await supabase.storage
+                .from('project_files')
+                .upload(filePath, file);
+                
+            if (uploadError) throw uploadError;
+            
+            await supabase.from('project_files').insert([{
+                project_id: project.id,
+                file_name: file.name,
+                file_path: filePath,
+                file_type: file.type,
+                file_size: file.size,
+                uploaded_by: 'admin'
+            }]);
+            
+            fetchData();
+        } catch (err: any) {
+            console.error("Error uploading:", err);
+            alert("Upload failed: " + err.message);
+        } finally {
+            setUploadingFile(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleFileDelete = async (id: string, filePath: string) => {
+        if(!confirm("Delete this file?")) return;
+        setLoading(true);
+        try {
+            await supabase.storage.from('project_files').remove([filePath]);
+            await supabase.from('project_files').delete().eq('id', id);
+            fetchData();
+        } catch(e) {
+            console.error(e);
+            setLoading(false);
+        }
+    };
+
     return (
         <Modal onClose={onClose} title={`Manage Workspace: ${project.name}`} size="lg">
             <div className="flex border-b border-slate-700 mb-4 overflow-x-auto">
-                {['todos', 'milestones', 'activity', 'notes', 'tickets', 'settings'].map(tab => (
+                {['todos', 'milestones', 'activity', 'notes', 'tickets', 'files', 'settings'].map(tab => (
                     <button key={tab} className={`px-4 py-2 capitalize font-medium whitespace-nowrap ${activeTab === tab ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-400 hover:text-slate-300'}`} onClick={() => setActiveTab(tab as any)}>
                         {tab}
                     </button>
@@ -1790,6 +1864,57 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                                 </div>
                             )}
                         </>
+                    )}
+
+                    {activeTab === 'files' && (
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+                                <div>
+                                    <h4 className="text-white font-bold mb-1">Upload File</h4>
+                                    <p className="text-sm text-slate-400">Share PDFs, images, and other assets. Max size 50MB.</p>
+                                </div>
+                                <div>
+                                    <label className="cursor-pointer bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-md font-medium transition-colors inline-block text-center">
+                                        {uploadingFile ? 'Uploading...' : 'Choose File'}
+                                        <input type="file" className="hidden" disabled={uploadingFile} onChange={handleFileUpload} />
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            {loading && !uploadingFile ? <div className="text-slate-400">Loading files...</div> : files.length === 0 ? <p className="text-slate-500 italic p-4 text-center border border-dashed border-slate-700 rounded-lg">No files uploaded yet.</p> : (
+                                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {files.map(file => (
+                                        <div key={file.id} className="bg-slate-800 rounded-lg p-3 flex items-center justify-between group hover:bg-slate-700 transition-colors border border-slate-700">
+                                            <div className="flex items-center space-x-3 overflow-hidden">
+                                                <div className="flex-shrink-0 w-10 h-10 bg-slate-900 rounded bg-cyan-900/30 text-cyan-400 flex items-center justify-center">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <a
+                                                        href={`${supabase.storage.from('project_files').getPublicUrl(file.file_path).data.publicUrl}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-white font-medium hover:text-cyan-400 truncate block"
+                                                    >
+                                                        {file.file_name}
+                                                    </a>
+                                                    <div className="flex items-center text-xs text-slate-400 space-x-2 mt-0.5">
+                                                        <span>{formatBytes(file.file_size)}</span>
+                                                        <span>&bull;</span>
+                                                        <span className="capitalize">{file.uploaded_by}</span>
+                                                        <span>&bull;</span>
+                                                        <span>{new Date(file.created_at).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => handleFileDelete(file.id, file.file_path)} className="text-slate-500 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Delete File">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     )}
 {activeTab === 'settings' && (
                         <div className="space-y-4">

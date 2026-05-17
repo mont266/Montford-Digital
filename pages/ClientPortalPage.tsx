@@ -80,7 +80,26 @@ export interface SupportTicket {
   created_at: string;
 }
 
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  file_name: string;
+  file_path: string;
+  file_type?: string;
+  file_size?: number;
+  uploaded_by: 'client' | 'admin';
+  created_at: string;
+}
+
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+
+const formatBytes = (bytes?: number) => {
+    if (!bytes) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 const ClientPortalPage: React.FC = () => {
   const { token } = useParams<{ token: string }>();
@@ -92,6 +111,7 @@ const ClientPortalPage: React.FC = () => {
   const [milestones, setMilestones] = useState<Record<string, ProjectMilestone[]>>({});
   const [activities, setActivities] = useState<Record<string, ProjectActivity[]>>({});
   const [tickets, setTickets] = useState<Record<string, SupportTicket[]>>({});
+  const [files, setFiles] = useState<Record<string, ProjectFile[]>>({});
   const [subscriptionDetails, setSubscriptionDetails] = useState<Record<string, SubscriptionDetails>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,9 +137,10 @@ const ClientPortalPage: React.FC = () => {
   const [newTicketCategories, setNewTicketCategories] = useState<Record<string, string>>({});
   const [newTicketPriorities, setNewTicketPriorities] = useState<Record<string, string>>({});
   const [isSubmittingTicket, setIsSubmittingTicket] = useState<string | null>(null);
+  const [uploadingFile, setUploadingFile] = useState<string | null>(null);
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'dashboard' | 'invoices'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'invoices' | 'files'>('dashboard');
   const [forceLoginView, setForceLoginView] = useState(false);
 
   useEffect(() => {
@@ -277,15 +298,17 @@ const ClientPortalPage: React.FC = () => {
             setTodos(todosMap);
           }
 
-          // 5. Fetch Milestones, Activities, Tickets
+          // 5. Fetch Milestones, Activities, Tickets, Files
           const [
             { data: milestonesData, error: milestonesError },
             { data: activitiesData, error: activitiesError },
-            { data: ticketsData, error: ticketsError }
+            { data: ticketsData, error: ticketsError },
+            { data: filesData, error: filesError }
           ] = await Promise.all([
             supabase.from('project_milestones').select('*').in('project_id', projectIds).order('created_at', { ascending: true }),
             supabase.from('project_activities').select('*').in('project_id', projectIds).order('created_at', { ascending: false }),
-            supabase.from('support_tickets').select('*').in('project_id', projectIds).order('created_at', { ascending: false })
+            supabase.from('support_tickets').select('*').in('project_id', projectIds).order('created_at', { ascending: false }),
+            supabase.from('project_files').select('*').in('project_id', projectIds).order('created_at', { ascending: false })
           ]);
 
           if (milestonesData) {
@@ -302,6 +325,11 @@ const ClientPortalPage: React.FC = () => {
             const map: Record<string, SupportTicket[]> = {};
             ticketsData.forEach(t => { if(!map[t.project_id]) map[t.project_id]=[]; map[t.project_id].push(t); });
             setTickets(map);
+          }
+          if (filesData) {
+            const map: Record<string, ProjectFile[]> = {};
+            filesData.forEach(f => { if(!map[f.project_id]) map[f.project_id]=[]; map[f.project_id].push(f); });
+            setFiles(map);
           }
         }
 
@@ -707,6 +735,64 @@ const ClientPortalPage: React.FC = () => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, projectId: string) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    setUploadingFile(projectId);
+    try {
+        const fileExt = file.name.split('.').pop();
+        const filePath = `${projectId}/${Math.random().toString(36).substring(2)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+            .from('project_files')
+            .upload(filePath, file);
+            
+        if (uploadError) throw uploadError;
+        
+        await supabase.from('project_files').insert([{
+            project_id: projectId,
+            file_name: file.name,
+            file_path: filePath,
+            file_type: file.type,
+            file_size: file.size,
+            uploaded_by: 'client'
+        }]);
+        
+        // Refresh files
+        const { data } = await supabase.from('project_files').select('*').in('project_id', projects.map(p => p.id)).order('created_at', { ascending: false });
+        if (data) {
+          const map: Record<string, ProjectFile[]> = {};
+          data.forEach(f => { if(!map[f.project_id]) map[f.project_id]=[]; map[f.project_id].push(f); });
+          setFiles(map);
+        }
+    } catch (err: any) {
+        console.error("Error uploading:", err);
+        alert("Upload failed: " + err.message);
+    } finally {
+        setUploadingFile(null);
+        e.target.value = '';
+    }
+  };
+
+  const handleFileDelete = async (id: string, filePath: string) => {
+      if(!confirm("Delete this file?")) return;
+      try {
+          await supabase.storage.from('project_files').remove([filePath]);
+          await supabase.from('project_files').delete().eq('id', id);
+          
+          // Refresh files
+          const { data } = await supabase.from('project_files').select('*').in('project_id', projects.map(p => p.id)).order('created_at', { ascending: false });
+          if (data) {
+            const map: Record<string, ProjectFile[]> = {};
+            data.forEach(f => { if(!map[f.project_id]) map[f.project_id]=[]; map[f.project_id].push(f); });
+            setFiles(map);
+          }
+      } catch(e) {
+          console.error(e);
+      }
+  };
+
   const outstandingInvoices = invoices.filter(i => i.status === 'sent' || i.status === 'overdue');
   const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
@@ -762,19 +848,25 @@ const ClientPortalPage: React.FC = () => {
 
         
         {/* Navigation Tabs */}
-        <div className="flex gap-4 border-b border-slate-700 w-full mb-6 relative">
+        <div className="flex gap-4 border-b border-slate-700 w-full mb-6 relative overflow-x-auto custom-scrollbar">
           <button 
-            className={`pb-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 px-2 ${activeView === 'dashboard' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            className={`pb-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 px-2 whitespace-nowrap ${activeView === 'dashboard' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
             onClick={() => setActiveView('dashboard')}
           >
             Project Dashboard
           </button>
           <button 
-            className={`pb-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 px-2 ${activeView === 'invoices' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            className={`pb-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 px-2 whitespace-nowrap ${activeView === 'invoices' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
             onClick={() => setActiveView('invoices')}
           >
             Invoices
             {outstandingInvoices.length > 0 && <span className="ml-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{outstandingInvoices.length}</span>}
+          </button>
+          <button 
+            className={`pb-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 px-2 whitespace-nowrap ${activeView === 'files' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            onClick={() => setActiveView('files')}
+          >
+            File Hub
           </button>
         </div>
 
@@ -877,6 +969,77 @@ const ClientPortalPage: React.FC = () => {
                   </table>
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+        {activeView === 'files' && (
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 md:p-6 shadow-lg animate-in fade-in duration-300">
+            <h2 className="text-xl font-bold text-white mb-6">File Hub</h2>
+            {projects.length === 0 ? (
+               <p className="text-slate-400 text-sm italic">No active projects found.</p>
+            ) : (
+                <div className="space-y-8">
+                   {projects.map(project => {
+                     const projectFiles = files[project.id] || [];
+                     return (
+                         <div key={project.id} className="space-y-4">
+                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+                                 <div>
+                                     <h3 className="text-lg font-bold text-cyan-400">{project.name}</h3>
+                                     <p className="text-sm text-slate-400 mt-1">Upload files related to this project (Max 50MB).</p>
+                                 </div>
+                                 <label className={`cursor-pointer justify-center sm:w-auto w-full px-5 py-2 inline-flex items-center gap-2 rounded-md font-bold transition-all border ${uploadingFile === project.id ? 'bg-slate-700 border-slate-600 text-slate-300' : 'bg-cyan-600/20 border-cyan-500 text-cyan-400 hover:bg-cyan-600/30'}`}>
+                                      {uploadingFile === project.id ? (
+                                          <><span className="w-4 h-4 border-2 border-slate-400/30 border-t-slate-300 rounded-full animate-spin"></span> Uploading...</>
+                                      ) : (
+                                          <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg> Choose File</>
+                                      )}
+                                      <input type="file" className="hidden" disabled={uploadingFile === project.id} onChange={(e) => handleFileUpload(e, project.id)} />
+                                 </label>
+                             </div>
+                             
+                             {projectFiles.length === 0 ? (
+                                 <p className="text-slate-500 italic p-6 text-center border border-dashed border-slate-700 rounded-lg">No files uploaded for {project.name}.</p>
+                             ) : (
+                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                     {projectFiles.map(file => (
+                                         <div key={file.id} className="bg-slate-900/40 rounded-lg p-4 flex items-center justify-between group hover:bg-slate-700/40 transition-colors border border-slate-700/50">
+                                            <div className="flex items-center space-x-3 overflow-hidden">
+                                                <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${file.uploaded_by === 'client' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-cyan-900/30 text-cyan-400'}`}>
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <a
+                                                        href={`${supabase.storage.from('project_files').getPublicUrl(file.file_path).data.publicUrl}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-white font-medium hover:text-cyan-400 truncate block"
+                                                    >
+                                                        {file.file_name}
+                                                    </a>
+                                                    <div className="flex items-center text-[10px] text-slate-500 space-x-2 mt-1">
+                                                        <span>{formatBytes(file.file_size)}</span>
+                                                        <span>&bull;</span>
+                                                        <span className="capitalize">{file.uploaded_by}</span>
+                                                        <span>&bull;</span>
+                                                        <span>{new Date(file.created_at).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {file.uploaded_by === 'client' && (
+                                                <button onClick={() => handleFileDelete(file.id, file.file_path)} className="text-slate-500 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 shrink-0 ml-2" title="Delete File">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            )}
+                                         </div>
+                                     ))}
+                                 </div>
+                             )}
+                         </div>
+                     );
+                   })}
+                </div>
             )}
           </div>
         )}
