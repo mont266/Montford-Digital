@@ -173,7 +173,7 @@ const Hero: React.FC = () => {
           <ScrambleText />
         </h1>
         <p className="max-w-2xl mx-auto text-lg md:text-xl text-slate-300 mb-8 mt-6">
-          We build beautiful, functional, and high-performing websites that drive results and elevate your brand.
+          We build beautiful, functional, and high-performing websites, web apps, and mobile applications that drive results and elevate your brand.
         </p>
         <div className="flex justify-center space-x-4">
           <a href="#portfolio" onClick={handleSmoothScroll} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
