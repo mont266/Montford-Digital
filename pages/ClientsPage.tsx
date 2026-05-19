@@ -116,17 +116,17 @@ const ClientsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
+      <div className="bg-slate-800 md:border md:border-slate-700 md:rounded-lg overflow-x-auto">
+        <table className="min-w-full md:divide-y md:divide-slate-700 responsive-table text-left border-collapse">
+          <thead className="bg-slate-900/50">
             <tr className="bg-slate-900/50 border-b border-slate-700 text-sm text-slate-400">
-              <th className="p-4 font-medium">Name</th>
-              <th className="p-4 font-medium">Email</th>
-              <th className="p-4 font-medium">Portal Link</th>
-              <th className="p-4 font-medium text-right">Actions</th>
+              <th className="px-4 py-3 font-medium uppercase tracking-wider">Name</th>
+              <th className="px-4 py-3 font-medium uppercase tracking-wider">Email</th>
+              <th className="px-4 py-3 font-medium uppercase tracking-wider">Portal Link</th>
+              <th className="px-4 py-3 font-medium uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="md:divide-y md:divide-slate-700">
             {clients.length === 0 ? (
               <tr>
                 <td colSpan={4} className="p-4 text-center text-slate-400">No clients found.</td>
@@ -136,27 +136,29 @@ const ClientsPage: React.FC = () => {
                 const portalLink = `${window.location.origin}/#/portal/${client.portal_token}`;
                 return (
                   <tr key={client.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
-                    <td className="p-4 text-white font-medium">{client.name}</td>
-                    <td className="p-4 text-slate-400">{client.email || 'N/A'}</td>
-                    <td className="p-4">
-                      <div className="flex items-center space-x-2">
+                    <td data-label="Name" className="px-4 py-3 text-white font-medium">{client.name}</td>
+                    <td data-label="Email" className="px-4 py-3 text-slate-400 truncate max-w-[200px]">{client.email || 'N/A'}</td>
+                    <td data-label="Portal Link" className="px-4 py-3">
+                      <div className="flex items-center space-x-2 md:w-auto w-full justify-end md:justify-start">
                         <input 
                           type="text" 
                           readOnly 
                           value={portalLink} 
-                          className="bg-slate-900 border border-slate-700 text-slate-400 text-xs rounded px-2 py-1 w-48 truncate"
+                          className="bg-slate-900 border border-slate-700 text-slate-400 text-xs rounded px-2 py-1 w-48 truncate flex-1 md:flex-none"
                         />
                         <button 
                           onClick={() => copyToClipboard(portalLink)}
-                          className="text-cyan-400 hover:text-cyan-300 text-xs"
+                          className="text-cyan-400 hover:text-cyan-300 text-xs shrink-0 bg-slate-800 border border-slate-700 p-1.5 rounded"
                         >
                           Copy
                         </button>
                       </div>
                     </td>
-                    <td className="p-4 text-right space-x-3">
-                      <button onClick={() => handleOpenModal(client)} className="text-cyan-400 hover:text-cyan-300 text-sm transition-colors">Edit</button>
-                      <button onClick={() => handleDelete(client.id)} className="text-red-400 hover:text-red-300 text-sm transition-colors">Delete</button>
+                    <td data-label="Actions" className="px-4 py-3 text-right space-x-3">
+                      <div className="flex justify-end space-x-3">
+                        <button onClick={() => handleOpenModal(client)} className="text-cyan-400 hover:text-cyan-300 text-sm transition-colors border border-cyan-700/50 bg-cyan-900/20 px-2 py-1 rounded">Edit</button>
+                        <button onClick={() => handleDelete(client.id)} className="text-red-400 hover:text-red-300 text-sm transition-colors border border-red-700/50 bg-red-900/20 px-2 py-1 rounded">Delete</button>
+                      </div>
                     </td>
                   </tr>
                 );
