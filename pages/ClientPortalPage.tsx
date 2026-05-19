@@ -797,7 +797,7 @@ const ClientPortalPage: React.FC = () => {
   const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-300 p-4 md:p-8">
+    <div className="min-h-screen bg-slate-900 text-slate-300 pb-24 md:pb-8 p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-8">
         
         {/* Header */}
@@ -847,8 +847,8 @@ const ClientPortalPage: React.FC = () => {
         )}
 
         
-        {/* Navigation Tabs */}
-        <div className="flex gap-4 border-b border-slate-700 w-full mb-6 relative overflow-x-auto custom-scrollbar">
+        {/* Desktop Navigation Tabs */}
+        <div className="hidden md:flex gap-4 border-b border-slate-700 w-full mb-6 relative">
           <button 
             className={`pb-3 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 px-2 whitespace-nowrap ${activeView === 'dashboard' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
             onClick={() => setActiveView('dashboard')}
@@ -1054,9 +1054,29 @@ const ClientPortalPage: React.FC = () => {
               <>
                  {projects.length > 1 && (
                    <div className="w-full lg:w-64 shrink-0">
-                     <div className="bg-slate-800/40 rounded-xl border border-slate-700/50 p-4 sticky top-6">
-                       <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3 px-1">Your Projects</h3>
-                       <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-visible custom-scrollbar pb-2 lg:pb-0">
+                     <div className="bg-slate-800/40 rounded-xl border border-slate-700/50 p-4 lg:sticky lg:top-6">
+                       <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3 px-1 hidden lg:block">Your Projects</h3>
+                       
+                       {/* Mobile Native Select wrapper */}
+                       <div className="lg:hidden relative">
+                         <select
+                           value={activeProjectId || ''}
+                           onChange={(e) => setActiveProjectId(e.target.value)}
+                           className="w-full appearance-none bg-slate-900/80 border border-slate-700 text-cyan-400 font-bold py-3 pl-4 pr-10 rounded-lg focus:outline-none focus:border-cyan-500 truncate shadow-inner"
+                         >
+                           {projects.map(p => (
+                             <option key={p.id} value={p.id}>
+                               {p.name}
+                             </option>
+                           ))}
+                         </select>
+                         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                           <svg className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                         </div>
+                       </div>
+
+                       {/* Desktop Project List */}
+                       <div className="hidden lg:flex flex-col gap-2">
                          {projects.map(p => {
                            const pTodos = todos[p.id] || [];
                            const completed = pTodos.filter(t => t.is_completed).length;
@@ -1066,7 +1086,7 @@ const ClientPortalPage: React.FC = () => {
                              <button
                                key={p.id}
                                onClick={() => setActiveProjectId(p.id)}
-                               className={`flex flex-col items-start p-3 rounded-lg text-left whitespace-nowrap lg:whitespace-normal transition-all min-w-[200px] lg:min-w-0 border ${activeProjectId === p.id ? 'bg-cyan-900/20 border-cyan-500/50 shadow-lg shadow-cyan-900/10' : 'bg-slate-800/50 hover:bg-slate-700/50 border-slate-700/30'}`}
+                               className={`flex flex-col items-start p-3 rounded-lg text-left transition-all border ${activeProjectId === p.id ? 'bg-cyan-900/20 border-cyan-500/50 shadow-lg shadow-cyan-900/10' : 'bg-slate-800/50 hover:bg-slate-700/50 border-slate-700/30'}`}
                              >
                                <span className={`text-sm font-bold truncate w-full mb-2 ${activeProjectId === p.id ? 'text-cyan-400' : 'text-slate-300'}`}>{p.name}</span>
                                <div className="w-full flex items-center gap-2">
@@ -1549,6 +1569,34 @@ const ClientPortalPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.3)] pb-safe">
+        <div className="flex justify-around items-center h-16 px-2">
+          <button 
+            className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeView === 'dashboard' ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-300'}`}
+            onClick={() => setActiveView('dashboard')}
+          >
+            <svg className="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Dashboard</span>
+          </button>
+          <button 
+            className={`flex flex-col items-center justify-center w-full h-full space-y-1 relative transition-colors ${activeView === 'invoices' ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-300'}`}
+            onClick={() => setActiveView('invoices')}
+          >
+            <svg className="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Invoices</span>
+            {outstandingInvoices.length > 0 && <span className="absolute top-2 right-[25%] bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full font-bold">{outstandingInvoices.length}</span>}
+          </button>
+          <button 
+            className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeView === 'files' ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-300'}`}
+            onClick={() => setActiveView('files')}
+          >
+            <svg className="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">File Hub</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
