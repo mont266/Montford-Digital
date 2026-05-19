@@ -1099,7 +1099,7 @@ const ClientPortalPage: React.FC = () => {
                       <div className="flex flex-col gap-6">
                       
                       {/* Project Header & Progress */}
-                      <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 md:p-8 shadow-xl relative overflow-hidden">
+                      <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 md:p-8 shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-1 bg-slate-700">
                           <div 
                             className="h-full bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)] transition-all duration-1000 ease-out" 
@@ -1117,10 +1117,10 @@ const ClientPortalPage: React.FC = () => {
                             }`}>
                               {project.status || 'Active'}
                             </span>
-                            <h2 className="text-2xl md:text-4xl font-bold text-white tracking-tight">{project.name}</h2>
+                            <h2 className="text-2xl md:text-4xl font-bold text-white tracking-tight break-words">{project.name}</h2>
                           </div>
 
-                          <div className="w-full md:w-auto flex flex-col md:flex-row md:items-end gap-4">
+                          <div className="w-full md:w-auto flex flex-col sm:flex-row flex-wrap md:items-end gap-3 sm:gap-4">
                              {deadlineMilestone && deadlineMilestone.due_date && (
                                <div className="flex items-center gap-4 bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-700/50">
                                  <div className="flex flex-col">
@@ -1246,7 +1246,7 @@ const ClientPortalPage: React.FC = () => {
                            )}
 
                            {/* Task Board */}
-                           <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col h-[400px]">
+                           <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sm:p-5 shadow-lg flex flex-col min-h-[300px] md:h-[400px]">
                             <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
                               Task Board
@@ -1282,7 +1282,7 @@ const ClientPortalPage: React.FC = () => {
                         <div className="space-y-6">
                           
                           {/* Milestones */}
-                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col max-h-[500px]">
+                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sm:p-5 shadow-lg flex flex-col max-h-[350px] md:max-h-[500px]">
                             <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                               Project Milestones
@@ -1318,7 +1318,7 @@ const ClientPortalPage: React.FC = () => {
                           </div>
 
                           {/* Activity Log */}
-                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col max-h-[350px]">
+                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sm:p-5 shadow-lg flex flex-col max-h-[300px] md:max-h-[350px]">
                             <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                               Activity Log
@@ -1342,7 +1342,7 @@ const ClientPortalPage: React.FC = () => {
                           </div>
 
                           {/* Meeting Notes */}
-                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col max-h-[400px] mt-6">
+                          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sm:p-5 shadow-lg flex flex-col max-h-[300px] md:max-h-[400px] mt-6">
                             <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                               Meeting Notes
@@ -1371,7 +1371,7 @@ const ClientPortalPage: React.FC = () => {
                         <div className="space-y-6">
                            
                            {/* Support Tickets */}
-                           <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col h-[775px]">
+                           <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sm:p-5 shadow-lg flex flex-col min-h-[500px] md:h-[775px]">
                             <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                               Support & Requests
