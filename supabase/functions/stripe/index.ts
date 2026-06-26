@@ -359,8 +359,8 @@ export default async function serve(req: Request) {
         
         if (projError) console.error('Error syncing project status:', projError);
 
-        // If active, check for invoices
-        if (subscription.status === 'active') {
+        // If active or past_due, sync all paid invoices
+        if (subscription.status === 'active' || subscription.status === 'past_due' || subscription.status === 'canceled') {
           const { data: project } = await supabase
             .from('projects')
             .select('client_id, entity_id, name')
@@ -368,41 +368,43 @@ export default async function serve(req: Request) {
             .single();
 
           if (project) {
-            // Check if we already have an invoice for this subscription's latest invoice
-            const latestInvoiceId = subscription.latest_invoice as string;
-            if (latestInvoiceId) {
-              const stripeInvoice = await stripe.invoices.retrieve(latestInvoiceId);
-              if (stripeInvoice.status === 'paid') {
-                // Check if we already have an invoice with this amount and date for this project
-                const { data: existingInvoices } = await supabase
-                  .from('invoices')
-                  .select('id')
-                  .eq('project_id', projectId)
-                  .eq('status', 'paid')
-                  .gte('issue_date', new Date(stripeInvoice.created * 1000 - 86400000).toISOString()) // Within 1 day
-                  .lte('issue_date', new Date(stripeInvoice.created * 1000 + 86400000).toISOString());
+            // Fetch all paid invoices for this subscription from Stripe
+            const stripeInvoices = await stripe.invoices.list({
+              subscription: subscriptionId,
+              status: 'paid',
+              limit: 100 // Should cover most cases
+            });
 
-                if (!existingInvoices || existingInvoices.length === 0) {
-                  console.log(`No existing invoice found for subscription ${subscriptionId}. Creating one.`);
-                  const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
-                  const { data: newInvoice, error: invError } = await supabase.from('invoices').insert({
-                    project_id: projectId,
-                    entity_id: project.entity_id,
-                    invoice_number: invoiceNumber,
-                    issue_date: new Date(stripeInvoice.created * 1000).toISOString(),
-                    due_date: new Date(stripeInvoice.created * 1000).toISOString(),
-                    amount: stripeInvoice.amount_paid / 100,
-                    status: 'paid',
-                  }).select().single();
+            for (const stripeInvoice of stripeInvoices.data) {
+              // Check if we already have an invoice with this amount and date for this project
+              const { data: existingInvoices } = await supabase
+                .from('invoices')
+                .select('id')
+                .eq('project_id', projectId)
+                .eq('status', 'paid')
+                .gte('issue_date', new Date(stripeInvoice.created * 1000 - 86400000).toISOString()) // Within 1 day
+                .lte('issue_date', new Date(stripeInvoice.created * 1000 + 86400000).toISOString());
 
-                  if (newInvoice && !invError) {
-                    await supabase.from('invoice_items').insert({
-                      invoice_id: newInvoice.id,
-                      description: `Subscription payment for ${project.name}`,
-                      quantity: 1,
-                      unit_price: stripeInvoice.amount_paid / 100
-                    });
-                  }
+              if (!existingInvoices || existingInvoices.length === 0) {
+                console.log(`No existing invoice found for subscription ${subscriptionId} (Stripe Invoice ${stripeInvoice.id}). Creating one.`);
+                const invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
+                const { data: newInvoice, error: invError } = await supabase.from('invoices').insert({
+                  project_id: projectId,
+                  entity_id: project.entity_id,
+                  invoice_number: invoiceNumber,
+                  issue_date: new Date(stripeInvoice.created * 1000).toISOString(),
+                  due_date: new Date(stripeInvoice.created * 1000).toISOString(),
+                  amount: stripeInvoice.amount_paid / 100,
+                  status: 'paid',
+                }).select().single();
+
+                if (newInvoice && !invError) {
+                  await supabase.from('invoice_items').insert({
+                    invoice_id: newInvoice.id,
+                    description: `Subscription payment for ${project.name}`,
+                    quantity: 1,
+                    unit_price: stripeInvoice.amount_paid / 100
+                  });
                 }
               }
             }

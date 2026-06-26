@@ -599,6 +599,31 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
         };
     }, [openDropdownId]);
 
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleSyncStripe = async () => {
+        setIsSyncing(true);
+        try {
+            const projectsWithSubs = projects.filter(p => p.stripe_subscription_id);
+            for (const project of projectsWithSubs) {
+                await supabase.functions.invoke('stripe', {
+                    method: 'POST',
+                    body: {
+                        action: 'sync-subscription',
+                        subscriptionId: project.stripe_subscription_id,
+                        projectId: project.id
+                    }
+                });
+            }
+            refreshData();
+        } catch (error) {
+            console.error("Error syncing with Stripe:", error);
+            alert("Error syncing with Stripe. Check console for details.");
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const handleUpdateStatus = async (id: string, status: Invoice['status']) => {
         const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
         if (error) console.error("Error updating status:", error);
@@ -723,6 +748,14 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white">Invoices</h2>
                 <div className="flex space-x-3">
+                    <button onClick={handleSyncStripe} disabled={isSyncing} title="Sync Stripe Subscriptions" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors flex items-center justify-center disabled:opacity-50">
+                        {isSyncing ? (
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
+                        )}
+                        <span className="hidden md:inline ml-1 text-sm font-medium">{isSyncing ? 'Syncing...' : 'Sync Stripe'}</span>
+                    </button>
                     <button onClick={refreshData} title="Refresh Invoices" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
                     </button>
