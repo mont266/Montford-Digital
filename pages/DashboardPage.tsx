@@ -87,6 +87,17 @@ interface Expense {
 
 type OutgoingTimeSpan = '7d' | '30d' | '90d' | '1y' | 'all';
 
+// --- Helpers ---
+const getGbpAmountForMonth = (exp: Expense, monthKey: string): number => {
+    const origAmount = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined 
+        ? exp.monthly_breakdown[monthKey] 
+        : exp.amount;
+    if (exp.currency === 'GBP' || !exp.currency || exp.amount === 0 || exp.amount === exp.amount_gbp) {
+        return origAmount;
+    }
+    return origAmount * (exp.amount_gbp / exp.amount);
+};
+
 // --- Reusable Components ---
 const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode; valueColor?: string }> = ({ title, value, icon, valueColor = 'text-white' }) => (
   <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex items-center space-x-4">
@@ -97,6 +108,22 @@ const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode; 
     </div>
   </div>
 );
+
+const ConfirmModal: React.FC<{ isOpen: boolean; message: string; onConfirm: () => void; onCancel: () => void; }> = ({ isOpen, message, onConfirm, onCancel }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[100] backdrop-blur-sm">
+            <div className="bg-slate-800 rounded-lg max-w-sm w-full p-6 shadow-xl border border-slate-700">
+                <h3 className="text-lg font-bold text-white mb-4">Confirm Action</h3>
+                <p className="text-slate-300 mb-6">{message}</p>
+                <div className="flex justify-end gap-3">
+                    <button onClick={onCancel} className="px-4 py-2 bg-slate-700 text-slate-300 rounded hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500">Cancel</button>
+                    <button onClick={onConfirm} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500">Confirm & Delete</button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: string, size?: 'md' | 'lg' | 'xl' }> = ({ children, onClose, title, size = 'lg' }) => {
     const sizeClasses = {
@@ -258,7 +285,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                 while (paymentDate <= finalEndDate) {
                     if (!startDate || paymentDate >= startDate) {
                          const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
-                         const amountForMonth = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined ? exp.monthly_breakdown[monthKey] : exp.amount_gbp;
+                         const amountForMonth = getGbpAmountForMonth(exp, monthKey);
                          spendInPeriod += amountForMonth;
                     }
                     
@@ -288,7 +315,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                 while (paymentDate <= finalEndDate) {
                     if (!startDate || paymentDate >= startDate) {
                          const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
-                         const amountForMonth = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined ? exp.monthly_breakdown[monthKey] : exp.amount_gbp;
+                         const amountForMonth = getGbpAmountForMonth(exp, monthKey);
                          spendInPeriod += amountForMonth;
                     }
                     
@@ -363,7 +390,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
             }
             const today = new Date();
             const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-            const amountForMonth = e.monthly_breakdown && e.monthly_breakdown[monthKey] !== undefined ? e.monthly_breakdown[monthKey] : e.amount_gbp;
+            const amountForMonth = getGbpAmountForMonth(e, monthKey);
             return sum + amountForMonth;
         }, 0);
     
@@ -794,7 +821,7 @@ const calculateTotalSpend = (expense: Expense): number => {
     if (expense.billing_cycle === 'monthly') {
         while (paymentDate <= calcEndDate) {
             const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
-            const amountForMonth = expense.monthly_breakdown && expense.monthly_breakdown[monthKey] !== undefined ? expense.monthly_breakdown[monthKey] : expense.amount_gbp;
+            const amountForMonth = getGbpAmountForMonth(expense, monthKey);
             total += amountForMonth;
             paymentDate.setMonth(paymentDate.getMonth() + 1);
         }
@@ -813,6 +840,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
     const [showImportModal, setShowImportModal] = useState(false);
     const [timeSpan, setTimeSpan] = useState<OutgoingTimeSpan>('all');
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     const handleEdit = (expense: Expense) => {
         setEditingExpense(expense);
@@ -833,12 +861,29 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         setAttachmentModalExpense(expense);
     };
 
-    const handleDelete = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this expense record permanently?")) {
-            const { error } = await supabase.from('expenses').delete().eq('id', id);
-            if (error) console.error("Error deleting expense:", error);
-            else refreshData();
+    const executeDelete = async (id: string) => {
+        // First get all attachments for this expense to remove files from storage
+        const { data: attachments } = await supabase.from('expense_attachments').select('file_path').eq('expense_id', id);
+        if (attachments && attachments.length > 0) {
+            const filePaths = attachments.map(a => a.file_path);
+            // We'll try to remove from storage, though it's okay if it fails
+            await supabase.storage.from('expense-invoices').remove(filePaths);
+            // Also delete from table to satisfy foreign key (if it isn't cascade)
+            await supabase.from('expense_attachments').delete().eq('expense_id', id);
         }
+
+        const { error } = await supabase.from('expenses').delete().eq('id', id);
+        if (error) {
+            console.error("Error deleting expense:", error);
+            alert("Failed to delete expense: " + error.message);
+        } else {
+            refreshData();
+        }
+        setConfirmDeleteId(null);
+    };
+
+    const handleDelete = (id: string) => {
+        setConfirmDeleteId(id);
     };
 
     const { totalSpend, recurringMonthlyCost, projectedAnnualCost } = useMemo(() => {
@@ -882,7 +927,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                     while (paymentDate <= effectiveEndDate) {
                         if (paymentDate >= periodStartDate) {
                             const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
-                            const amountForMonth = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined ? exp.monthly_breakdown[monthKey] : exp.amount_gbp;
+                            const amountForMonth = getGbpAmountForMonth(exp, monthKey);
                             spendInPeriod += amountForMonth;
                         }
 
@@ -906,7 +951,7 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 if (e.billing_cycle === 'monthly') {
                     const today = new Date();
                     const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                    const amountForMonth = e.monthly_breakdown && e.monthly_breakdown[monthKey] !== undefined ? e.monthly_breakdown[monthKey] : e.amount_gbp;
+                    const amountForMonth = getGbpAmountForMonth(e, monthKey);
                     return sum + amountForMonth;
                 }
                 return sum;
@@ -1023,8 +1068,8 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
         if (expense.type === 'subscription' && expense.billing_cycle === 'monthly' && expense.dueDate && expense.monthly_breakdown) {
             const monthKey = `${expense.dueDate.getFullYear()}-${String(expense.dueDate.getMonth() + 1).padStart(2, '0')}`;
             if (expense.monthly_breakdown[monthKey] !== undefined) {
-                displayAmount = expense.monthly_breakdown[monthKey];
-                originalDisplayAmount = displayAmount;
+                originalDisplayAmount = expense.monthly_breakdown[monthKey];
+                displayAmount = getGbpAmountForMonth(expense, monthKey);
                 hasOverride = true;
             }
         }
@@ -1218,6 +1263,12 @@ const ExpensesPage: React.FC<{ expenses: Expense[]; refreshData: () => void; sel
                 </Modal>
             )}
             {showModal && <ExpenseForm expenseToEdit={editingExpense} onClose={handleCloseModal} refreshData={refreshData} selectedEntityId={selectedEntityId} selectedEntitySlug={selectedEntitySlug} />}
+            <ConfirmModal 
+                isOpen={!!confirmDeleteId} 
+                message="Are you sure you want to delete this expense record permanently?"
+                onConfirm={() => confirmDeleteId && executeDelete(confirmDeleteId)}
+                onCancel={() => setConfirmDeleteId(null)}
+            />
         </div>
     );
 };
@@ -2533,6 +2584,35 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [uploading, setUploading] = useState<string | null>(null); // Holds the date string of the period being uploaded to
+    const [localBreakdown, setLocalBreakdown] = useState<Record<string, number>>(expense.monthly_breakdown || {});
+    const [editingAmountPeriod, setEditingAmountPeriod] = useState<string | null>(null);
+    const [overrideAmount, setOverrideAmount] = useState<string>('');
+
+    const handleUpdateAmount = async (paymentDate: Date) => {
+        const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+        
+        try {
+            const newBreakdown = { ...localBreakdown };
+            if (overrideAmount === '') {
+                 delete newBreakdown[monthKey];
+            } else {
+                 newBreakdown[monthKey] = parseFloat(overrideAmount);
+            }
+
+            const payload = Object.keys(newBreakdown).length > 0 ? newBreakdown : null;
+            const { error: dbError } = await supabase.from('expenses').update({
+                monthly_breakdown: payload
+            }).eq('id', expense.id);
+
+            if (dbError) throw dbError;
+            
+            setLocalBreakdown(newBreakdown);
+            setEditingAmountPeriod(null);
+            refreshData();
+        } catch(err: any) {
+            setError(err.message);
+        }
+    };
 
     const fetchAttachments = useCallback(async () => {
         setLoading(true);
@@ -2685,6 +2765,7 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
                         <thead className="bg-slate-900/50 sticky top-0">
                             <tr>
                                 <th className="p-3">Period / Invoice Date</th>
+                                {expense.type === 'subscription' && expense.billing_cycle === 'monthly' && <th className="p-3">Amount</th>}
                                 <th className="p-3">Attached File</th>
                                 <th className="p-3 text-right">Actions</th>
                             </tr>
@@ -2692,10 +2773,63 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
                         <tbody className="divide-y divide-slate-700">
                             {paymentPeriods.map(period => {
                                 const periodAttachments = attachments.filter(a => a.payment_date === period.date.toISOString().split('T')[0]);
+                                const isSubscription = expense.type === 'subscription' && expense.billing_cycle === 'monthly';
+                                const monthKey = `${period.date.getFullYear()}-${String(period.date.getMonth() + 1).padStart(2, '0')}`;
+                                const amountForMonthOrig = localBreakdown[monthKey] !== undefined ? localBreakdown[monthKey] : expense.amount;
+                                const isEditing = editingAmountPeriod === monthKey;
+
+                                const renderAmountCell = () => {
+                                    if (!isSubscription) return null;
+                                    return (
+                                        <td className="p-3">
+                                            {isEditing ? (
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-slate-400 text-sm">{expense.currency === 'GBP' ? '£' : ''}</span>
+                                                    <input
+                                                        type="number"
+                                                        value={overrideAmount}
+                                                        onChange={(e) => setOverrideAmount(e.target.value)}
+                                                        className="w-20 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white focus:outline-none focus:border-cyan-500"
+                                                        placeholder="Amt"
+                                                        autoFocus
+                                                    />
+                                                    {expense.currency !== 'GBP' && expense.currency && (
+                                                        <span className="text-[10px] text-slate-500 italic ml-1" title={`Enter actual ${expense.currency} charge`}>{expense.currency}</span>
+                                                    )}
+                                                    <button onClick={() => handleUpdateAmount(period.date)} className="text-cyan-400 hover:text-cyan-300 ml-1">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                    </button>
+                                                    <button onClick={() => setEditingAmountPeriod(null)} className="text-slate-400 hover:text-slate-300 ml-1">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 group">
+                                                    <span>{expense.currency !== 'GBP' ? 
+                                                        new Intl.NumberFormat('en-US', { style: 'currency', currency: expense.currency || 'USD' }).format(amountForMonthOrig) :
+                                                        new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amountForMonthOrig)}
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => {
+                                                            setEditingAmountPeriod(monthKey);
+                                                            setOverrideAmount(localBreakdown[monthKey] !== undefined ? localBreakdown[monthKey].toString() : expense.amount.toString());
+                                                        }} 
+                                                        className="text-slate-500 hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        title="Edit amount for this month"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                    );
+                                };
+
                                 if (periodAttachments.length > 0) {
                                     return periodAttachments.map((att, index) => (
                                          <tr key={att.id}>
                                             <td className="p-3">{index === 0 ? period.label : ''}</td>
+                                            {index === 0 ? renderAmountCell() : (isSubscription ? <td className="p-3"></td> : null)}
                                             <td className="p-3">
                                                 <a href={getPublicUrl(att.file_path)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">{att.file_name}</a>
                                             </td>
@@ -2709,6 +2843,7 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
                                 return (
                                     <tr key={period.date.toISOString()}>
                                         <td className="p-3">{period.label}</td>
+                                        {renderAmountCell()}
                                         <td className="p-3 text-slate-500 italic">No invoice uploaded</td>
                                         <td className="p-3 text-right">
                                             {uploading === period.date.toISOString().split('T')[0] ? 'Uploading...' : <FileInput paymentDate={period.date} />}
@@ -2718,7 +2853,7 @@ const AttachmentModal: React.FC<{ expense: Expense; onClose: () => void; refresh
                             })}
                              {expense.type === 'manual' && attachments.length === 0 && (
                                 <tr>
-                                    <td className="p-3">{formatDate(expense.start_date)}</td>
+                                    <td className="p-3">{new Date(expense.start_date).toLocaleDateString()}</td>
                                     <td className="p-3 text-slate-500 italic">No invoice uploaded</td>
                                     <td className="p-3 text-right">
                                          {uploading ? 'Uploading...' : <FileInput paymentDate={new Date(expense.start_date)} />}

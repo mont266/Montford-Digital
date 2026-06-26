@@ -46,6 +46,16 @@ interface TaxCentrePageProps {
 }
 
 // --- Helpers ---
+const getGbpAmountForMonth = (exp: Expense, monthKey: string): number => {
+    const origAmount = exp.monthly_breakdown && exp.monthly_breakdown[monthKey] !== undefined 
+        ? exp.monthly_breakdown[monthKey] 
+        : exp.amount;
+    if (exp.currency === 'GBP' || !exp.currency || exp.amount === 0 || exp.amount === exp.amount_gbp) {
+        return origAmount;
+    }
+    return origAmount * (exp.amount_gbp / exp.amount);
+};
+
 const formatCurrency = (amount: number, currency = 'GBP') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-GB');
 
@@ -177,7 +187,9 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses }) => 
                 let paymentDate = new Date(subStartDate);
                 while (paymentDate <= subEndDate && paymentDate <= end) {
                     if (paymentDate >= start) {
-                         spendInPeriod += exp.amount_gbp;
+                         const monthKey = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+                         let monthlyCost = getGbpAmountForMonth(exp, monthKey);
+                         spendInPeriod += monthlyCost;
                     }
                     
                     if (exp.billing_cycle === 'monthly') {

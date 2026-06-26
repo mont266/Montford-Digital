@@ -1249,7 +1249,7 @@ const ClientPortalPage: React.FC = () => {
                                         className="w-full bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-cyan-500"
                                       >
                                         <option value="month">Monthly Billing</option>
-                                        <option value="year">Yearly (Save 20%)</option>
+                                        <option value="year">Yearly Billing</option>
                                       </select>
                                       <button
                                         onClick={() => handleSubscribeInitiate(project)}
