@@ -231,12 +231,8 @@ const ClientPortalPage: React.FC = () => {
               }
             });
             if (!error && data) {
-              // Fetch full details for UI
-              const { data: details } = await supabase.functions.invoke(`stripe?action=subscription&id=${project.stripe_subscription_id || ''}`, {
-                method: 'GET'
-              });
-              if (details) {
-                subDetails[project.id] = details;
+              if (data.details) {
+                subDetails[project.id] = data.details;
               }
               
               // If status changed to active, we might need to refresh invoices
@@ -1200,7 +1196,7 @@ const ClientPortalPage: React.FC = () => {
                                     : `${formatCurrency((selectedIntervals[project.id] === 'year' ? 12 : 1) * project.recurring_fee)}`
                                   }
                                 </span>
-                                <span className="text-sm text-slate-500 font-medium">/{project.stripe_subscription_status === 'active' && subscriptionDetails[project.id] ? (subscriptionDetails[project.id].interval === 'year' ? 'yr' : 'mo') : (selectedIntervals[project.id] === 'year' ? 'yr' : 'mo')}</span>
+                                <span className="text-sm text-slate-500 font-medium">/{project.stripe_subscription_status === 'active' && subscriptionDetails[project.id] ? (subscriptionDetails[project.id].interval === 'year' ? 'Year' : 'Month') : (selectedIntervals[project.id] === 'year' ? 'Year' : 'Month')}</span>
                               </div>
 
                               {project.stripe_subscription_status === 'active' ? (
@@ -1212,7 +1208,7 @@ const ClientPortalPage: React.FC = () => {
                                     {subscriptionDetails[project.id] && (
                                       <span className="text-slate-400 text-xs font-medium flex items-center gap-1.5">
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                        Next billing: <span className="text-slate-200">{new Date(subscriptionDetails[project.id].current_period_end * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                                        Next billing: <span className="text-slate-200">{new Date(subscriptionDetails[project.id].current_period_end * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                                       </span>
                                     )}
                                     <button

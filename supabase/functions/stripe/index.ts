@@ -411,7 +411,17 @@ export default async function serve(req: Request) {
           }
         }
 
-        return new Response(JSON.stringify({ success: true, status: subscription.status }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ 
+          success: true, 
+          status: subscription.status,
+          details: {
+            id: subscription.id,
+            status: subscription.status,
+            current_period_end: subscription.current_period_end,
+            amount: subscription.items.data[0]?.price.unit_amount ? subscription.items.data[0].price.unit_amount / 100 : 0,
+            interval: subscription.items.data[0]?.price.recurring?.interval
+          }
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       if (action === 'sync-all-client-subscriptions') {

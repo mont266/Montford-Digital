@@ -376,7 +376,7 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
     
     const totalStripeFees = filteredExpenses.filter(e => 
         e.name === 'Stripe Processing Fee' || 
-        e.description.toLowerCase().includes('stripe')
+        (e.description || '').toLowerCase().includes('stripe')
     ).reduce((acc, e) => acc + e.amount_gbp, 0);
 
     const netProfit = totalRevenue - totalExpensesInPeriod - totalTaxPaid;
@@ -403,8 +403,8 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
         .filter(inv => inv.status === 'paid')
         .reduce((sum, inv) => {
             const isRecurring = inv.invoice_items?.some(item => 
-                item.description.toLowerCase().includes('subscription') || 
-                item.description.toLowerCase().includes('recurring')
+                (item.description || '').toLowerCase().includes('subscription') || 
+                (item.description || '').toLowerCase().includes('recurring')
             );
             if (isRecurring) {
                 const calculatedStripeFee = (inv.amount * 0.025) + 0.20;

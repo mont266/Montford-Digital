@@ -208,8 +208,8 @@ const TaxCentrePage: React.FC<TaxCentrePageProps> = ({ invoices, expenses }) => 
         
         const displayExpenses = expensesInPeriod.filter(exp => 
            (exp.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-           exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           exp.category.toLowerCase().includes(searchTerm.toLowerCase())
+           (exp.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+           (exp.category || '').toLowerCase().includes(searchTerm.toLowerCase())
         );
 
         return {
