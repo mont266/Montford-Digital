@@ -2208,11 +2208,16 @@ const ExpenseForm: React.FC<{ expenseToEdit?: Expense | null; onClose: () => voi
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: type === 'number' ? parseFloat(value) || '' : value,
-            billing_cycle: name === 'type' && value === 'manual' ? null : prev.billing_cycle
-        }));
+        setFormData(prev => {
+            const next = {
+                ...prev,
+                [name]: type === 'number' ? parseFloat(value) || '' : value,
+            };
+            if (name === 'type' && value === 'manual') {
+                next.billing_cycle = null;
+            }
+            return next;
+        });
     };
     
     const handleSubmit = async (e: React.FormEvent) => {
