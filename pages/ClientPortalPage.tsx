@@ -49,6 +49,7 @@ export interface ProjectTodo {
   project_id: string;
   description: string;
   is_completed: boolean;
+  trello_card_id?: string | null;
   created_at: string;
 }
 
@@ -430,6 +431,53 @@ const ClientPortalPage: React.FC = () => {
       setAuthError(err.message);
     } finally {
       setIsAuthLoading(false);
+    }
+  };
+
+  const handleToggleTodo = async (todo: ProjectTodo) => {
+    const newStatus = !todo.is_completed;
+    
+    // Optimistic UI update
+    setTodos(prev => {
+      const pTodos = prev[todo.project_id] || [];
+      return {
+        ...prev,
+        [todo.project_id]: pTodos.map(t => t.id === todo.id ? { ...t, is_completed: newStatus } : t)
+      };
+    });
+
+    try {
+      // 1. Update database
+      const { error } = await supabase
+        .from('project_todos')
+        .update({ is_completed: newStatus })
+        .eq('id', todo.id);
+        
+      if (error) {
+        console.error("Error updating todo in database:", error);
+        throw error;
+      }
+      
+      // 2. If linked to a Trello card, sync with Trello
+      if (todo.trello_card_id) {
+        await supabase.functions.invoke('trello', {
+          body: { 
+            action: 'move-card', 
+            cardId: todo.trello_card_id, 
+            isCompleted: newStatus 
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Failed to toggle todo:", error);
+      // Revert on error
+      setTodos(prev => {
+        const pTodos = prev[todo.project_id] || [];
+        return {
+          ...prev,
+          [todo.project_id]: pTodos.map(t => t.id === todo.id ? { ...t, is_completed: !newStatus } : t)
+        };
+      });
     }
   };
 
@@ -1271,7 +1319,11 @@ const ClientPortalPage: React.FC = () => {
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
                                {todos[project.id] && todos[project.id].length > 0 ? (
                                   [...todos[project.id]].sort((a, b) => (a.is_completed === b.is_completed ? 0 : a.is_completed ? 1 : -1)).map(todo => (
-                                    <div key={todo.id} className="flex items-start gap-3 bg-slate-900/40 p-3 rounded-lg border border-slate-700/50 hover:bg-slate-800/80 transition-colors">
+                                    <div 
+                                      key={todo.id} 
+                                      onClick={() => handleToggleTodo(todo)}
+                                      className="flex items-start gap-3 bg-slate-900/40 p-3 rounded-lg border border-slate-700/50 hover:bg-slate-800/80 transition-colors cursor-pointer"
+                                    >
                                       <div className="mt-0.5 shrink-0">
                                         {todo.is_completed ? (
                                           <div className="w-5 h-5 rounded-md bg-cyan-500/20 border border-cyan-500/50 flex flex-col items-center justify-center">

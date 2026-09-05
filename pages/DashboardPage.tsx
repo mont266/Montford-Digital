@@ -29,6 +29,7 @@ interface Project {
   entity_id: string;
   status?: string;
   preview_url?: string;
+  trello_label_id?: string | null;
 }
 
 interface InvoiceItem {
@@ -2031,7 +2032,8 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; clients: any[]; on
         recurring_fee: projectToEdit?.recurring_fee || '',
         recurring_fee_description: projectToEdit?.recurring_fee_description || '',
         status: projectToEdit?.status || 'In development',
-        preview_url: projectToEdit?.preview_url || ''
+        preview_url: projectToEdit?.preview_url || '',
+        trello_label_id: projectToEdit?.trello_label_id || ''
     });
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -2113,6 +2115,20 @@ const ProjectForm: React.FC<{ projectToEdit?: Project | null; clients: any[]; on
                         />
                     </div>
                 </div>
+                
+                <div>
+                    <label className="block text-sm font-medium text-slate-300">Trello Label ID (Optional Sync)</label>
+                    <input 
+                        type="text" 
+                        name="trello_label_id" 
+                        value={formData.trello_label_id} 
+                        onChange={handleChange} 
+                        placeholder="e.g. 5f9b3b9b8b8b8b8b8b8b8b8b"
+                        className="mt-1 w-full bg-slate-700 border-slate-600 rounded-md p-2 text-white font-mono text-sm" 
+                    />
+                    <p className="text-xs text-slate-400 mt-1">Paste the Trello Label ID for this client to automatically sync Trello tasks.</p>
+                </div>
+
 
                 {!formData.client_id && (
                     <>
