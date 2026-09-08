@@ -115,6 +115,7 @@ const ClientPortalPage: React.FC = () => {
   const [files, setFiles] = useState<Record<string, ProjectFile[]>>({});
   const [subscriptionDetails, setSubscriptionDetails] = useState<Record<string, SubscriptionDetails>>({});
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState<string | null>(null);
@@ -154,19 +155,16 @@ const ClientPortalPage: React.FC = () => {
     setSelectedIntervals(prev => ({ ...prev, [projectId]: interval }));
   };
 
-  useEffect(() => {
-    if (searchParams.get('success') === 'true') {
-      setSuccessMessage('Subscription successful! Thank you.');
-    } else if (searchParams.get('canceled') === 'true') {
-      setError('Subscription process was canceled.');
+  const fetchPortalData = useCallback(async (isManualRefresh = false) => {
+    if (!token) {
+      setError("Invalid portal link.");
+      if (!isManualRefresh) setLoading(false);
+      return;
     }
-
-    const fetchPortalData = async () => {
-      if (!token) {
-        setError("Invalid portal link.");
-        setLoading(false);
-        return;
-      }
+    
+    if (isManualRefresh) {
+      setIsRefreshing(true);
+    }
 
       try {
         // 1. Fetch Client by Token
@@ -335,11 +333,18 @@ const ClientPortalPage: React.FC = () => {
         setError(err.message || "An error occurred while loading your portal.");
       } finally {
         setLoading(false);
+        setIsRefreshing(false);
       }
-    };
-
-    fetchPortalData();
   }, [token]);
+
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      setSuccessMessage('Subscription successful! Thank you.');
+    } else if (searchParams.get('canceled') === 'true') {
+      setError('Subscription process was canceled.');
+    }
+    fetchPortalData();
+  }, [fetchPortalData, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -856,15 +861,25 @@ const ClientPortalPage: React.FC = () => {
                 <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-0.5">Total Outstanding</p>
                 <p className="text-xl md:text-2xl font-bold text-cyan-400 leading-none">{formatCurrency(totalOutstanding)}</p>
               </div>
-              <button 
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  setIsAuthenticated(false);
-                }}
-                className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white rounded-md border border-slate-600 transition-colors"
-              >
-                Logout
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => fetchPortalData(true)}
+                  disabled={isRefreshing}
+                  className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white rounded-md border border-slate-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  <svg className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button 
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    setIsAuthenticated(false);
+                  }}
+                  className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white rounded-md border border-slate-600 transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
             </div>
             {projects.some(p => p.stripe_subscription_id) && (
               <button

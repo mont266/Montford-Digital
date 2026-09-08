@@ -5,20 +5,15 @@ Deno.serve(async (req) => {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 
-  // 1. Handle CORS preflight requests IMMEDIATELY
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
   
-  // 2. Trello Webhook Verification IMMEDIATELY (HEAD or GET)
-  // Trello sends a HEAD request to verify the URL before creating the webhook.
   if (req.method === 'HEAD' || req.method === 'GET') {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // Handle actual webhook data
   try {
-    // Dynamic import to prevent cold-start delays during Trello verification
     const { createClient } = await import('jsr:@supabase/supabase-js@2');
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || Deno.env.get('VITE_SUPABASE_URL');
@@ -34,7 +29,12 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const body = await req.json();
+    let body;
+    try {
+        body = await req.json();
+    } catch (e) {
+        return new Response('Invalid JSON', { status: 400, headers: corsHeaders });
+    }
     
     // Internal API call from frontend (Portal -> Trello)
     if (body && body.action === 'move-card' && body.cardId) {
@@ -44,106 +44,103 @@ Deno.serve(async (req) => {
       
       const { cardId, isCompleted } = body;
       
-      // Determine the list to move the card to (Done vs Todo)
       const targetListId = isCompleted ? trelloDoneListId : trelloTodoListId;
       
       if (!targetListId) {
-        return new Response(JSON.stringify({ error: 'Trello target list ID not configured in environment (TRELLO_DONE_LIST_ID or TRELLO_TODO_LIST_ID)' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Trello target list ID not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Call Trello API to move the card
       const response = await fetch(`https://api.trello.com/1/cards/${cardId}?idList=${targetListId}&key=${trelloKey}&token=${trelloToken}`, {
         method: 'PUT',
-        headers: {
-          'Accept': 'application/json'
-        }
+        headers: { 'Accept': 'application/json' }
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error moving Trello card:', errorText);
         return new Response(JSON.stringify({ error: 'Failed to move Trello card' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      return new Response(JSON.stringify({ success: true }), { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Trello Webhook Payload
-    if (body && body.action) {
+    // Trello Webhook Payload - Robust Sync Approach
+    if (body && body.action && body.action.data && body.action.data.card) {
       const action = body.action;
+      const cardId = action.data.card.id;
 
-      // 1. A label was added to a card (Trigger to create Todo)
-      if (action.type === 'addLabelToCard') {
-        const labelId = action.data.label.id;
-        const cardId = action.data.card.id;
-        const cardName = action.data.card.name;
+      // Handle card deletion
+      if (action.type === 'deleteCard') {
+        await supabase.from('project_todos').delete().eq('trello_card_id', cardId);
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
-        // Find if we have a project matching this Trello label ID
-        const { data: project } = await supabase
-          .from('projects')
-          .select('id')
-          .eq('trello_label_id', labelId)
-          .single();
+      // For all other actions (create, update, label changes), fetch the absolute latest state from Trello
+      if (trelloKey && trelloToken) {
+        const cardRes = await fetch(`https://api.trello.com/1/cards/${cardId}?key=${trelloKey}&token=${trelloToken}`);
+        
+        if (cardRes.ok) {
+          const cardData = await cardRes.json();
+          const cardLabels = cardData.idLabels || [];
+          const cardName = cardData.name;
+          const cardListId = cardData.idList;
 
-        if (project) {
-          // Check if a todo with this card ID already exists to prevent duplicates
-          const { data: existingTodo } = await supabase
-            .from('project_todos')
-            .select('id')
-            .eq('trello_card_id', cardId)
-            .single();
-            
-          if (!existingTodo) {
-            await supabase.from('project_todos').insert({
-              project_id: project.id,
-              description: cardName,
-              is_completed: false,
-              trello_card_id: cardId
-            });
+          // Check if it's completed based on the list it's currently in
+          let isCompleted = false;
+          if (trelloDoneListId && cardListId === trelloDoneListId) {
+             isCompleted = true;
+          } else {
+             // Fallback: Check list name if ID doesn't match or isn't set
+             const listRes = await fetch(`https://api.trello.com/1/lists/${cardListId}?key=${trelloKey}&token=${trelloToken}`);
+             if (listRes.ok) {
+               const listData = await listRes.json();
+               const listName = listData.name.toLowerCase();
+               isCompleted = listName.includes('completed') || listName.includes('done');
+             }
+          }
+
+          if (cardLabels.length > 0) {
+            // Find any projects that match these labels
+            const { data: projects } = await supabase
+              .from('projects')
+              .select('id, trello_label_id')
+              .in('trello_label_id', cardLabels);
+
+            if (projects && projects.length > 0) {
+              for (const project of projects) {
+                // Upsert the Todo
+                const { data: existingTodo } = await supabase
+                  .from('project_todos')
+                  .select('id')
+                  .eq('trello_card_id', cardId)
+                  .eq('project_id', project.id)
+                  .single();
+
+                if (existingTodo) {
+                  await supabase.from('project_todos').update({
+                    description: cardName,
+                    is_completed: isCompleted
+                  }).eq('id', existingTodo.id);
+                } else {
+                  await supabase.from('project_todos').insert({
+                    project_id: project.id,
+                    description: cardName,
+                    is_completed: isCompleted,
+                    trello_card_id: cardId
+                  });
+                }
+              }
+            } else {
+               // Card has labels, but none belong to our tracked projects
+               await supabase.from('project_todos').delete().eq('trello_card_id', cardId);
+            }
+          } else {
+            // Card has no labels, ensure it's not in the database
+            await supabase.from('project_todos').delete().eq('trello_card_id', cardId);
           }
         }
       }
-
-      // 2. A card was moved to another list
-      if (action.type === 'updateCard' && action.data.listAfter) {
-        const cardId = action.data.card.id;
-        const listName = action.data.listAfter.name.toLowerCase();
-        
-        const isCompleted = listName.includes('completed') || listName.includes('done');
-        
-        // Update the todo status in our database
-        await supabase
-          .from('project_todos')
-          .update({ is_completed: isCompleted })
-          .eq('trello_card_id', cardId);
-      }
-      
-      // 3. A card name was changed
-      if (action.type === 'updateCard' && action.data.old && action.data.old.name) {
-        const cardId = action.data.card.id;
-        const newName = action.data.card.name;
-        
-        await supabase
-          .from('project_todos')
-          .update({ description: newName })
-          .eq('trello_card_id', cardId);
-      }
-      
-      // 4. A card was deleted
-      if (action.type === 'deleteCard') {
-        const cardId = action.data.card.id;
-        await supabase
-          .from('project_todos')
-          .delete()
-          .eq('trello_card_id', cardId);
-      }
     }
 
-    return new Response(JSON.stringify({ success: true }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
+    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     
   } catch (error: any) {
     console.error('Error processing Trello webhook:', error);
