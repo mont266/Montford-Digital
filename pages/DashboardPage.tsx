@@ -9,6 +9,10 @@ import QuoteCalculatorPage from './QuoteCalculatorPage';
 import WidgetsPage from './WidgetsPage';
 import ClientsPage from './ClientsPage';
 import PortfolioPage from './PortfolioPage';
+import { InvoiceFromQuoteModal } from '../components/InvoiceFromQuoteModal';
+import { Estimate, fetchAllEstimates } from '../lib/estimates';
+import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationModal';
+import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
 
 // --- Types ---
 interface TradingIdentity {
@@ -196,10 +200,22 @@ const calculateTaxForInvoice = (invoiceAmount: number, baseIncome: number, alrea
 };
 
 // --- Page Components ---
-const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; payeSalary: number; projects: Project[] }> = ({ invoices, expenses, payeSalary, projects }) => {
+const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; payeSalary: number; projects: Project[]; refreshData?: () => void }> = ({ invoices, expenses, payeSalary, projects, refreshData }) => {
     type TimeSpan = '7d' | 'mtd' | 'tfy' | 'lfy' | 'all';
     const [timeSpan, setTimeSpan] = useState<TimeSpan>('all');
     const [showTakeHomeMRR, setShowTakeHomeMRR] = useState(false);
+    const [overviewEstimates, setOverviewEstimates] = useState<Estimate[]>([]);
+    const [overviewCalibratingEstimate, setOverviewCalibratingEstimate] = useState<Estimate | null>(null);
+    const [overviewInvoicingEstimate, setOverviewInvoicingEstimate] = useState<Estimate | null>(null);
+
+    const loadOverviewEstimates = useCallback(async () => {
+        const list = await fetchAllEstimates();
+        setOverviewEstimates(list);
+    }, []);
+
+    useEffect(() => {
+        loadOverviewEstimates();
+    }, [loadOverviewEstimates]);
 
     const { 
         filteredInvoices, 
@@ -495,6 +511,157 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
                     <StatCard title="One-Time Payments" value={formatCurrency(oneTimePayments)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.085a2 2 0 00-1.736.93L5 10m7 0a2 2 0 012 2v5" /></svg>} />
                 </div>
             </div>
+
+            {/* QUOTES & ESTIMATES INVOICING COMMAND CENTRE */}
+            <div className="bg-slate-800 border-2 border-slate-700/80 rounded-2xl p-6 shadow-xl space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-700 pb-4">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                Scope &bull; Quote &bull; Invoice
+                            </span>
+                            <span className="text-xs text-slate-400">
+                                {overviewEstimates.length} Saved Scopes &bull; {overviewEstimates.filter(e => !e.invoice_number).length} Ready to Invoice
+                            </span>
+                        </div>
+                        <h3 className="text-xl font-bold text-white mt-1">Quotes &amp; Estimates Ready to Invoice</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                            Set exact quoted amounts for customer proposals and turn them directly into customer invoices with 1 click.
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <Link
+                            to="/dashboard/calculator"
+                            className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                        >
+                            <span>+ Open Quote Calculator</span>
+                            <span>&rarr;</span>
+                        </Link>
+                    </div>
+                </div>
+
+                {overviewEstimates.length === 0 ? (
+                    <div className="py-12 text-center bg-slate-900/50 border border-slate-700/60 rounded-xl space-y-3">
+                        <p className="text-slate-400 text-sm">No quotes or estimates created yet.</p>
+                        <Link
+                            to="/dashboard/calculator"
+                            className="inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-bold text-xs px-4 py-2 rounded-lg"
+                        >
+                            Launch Quote Calculator
+                        </Link>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {overviewEstimates.slice(0, 6).map((est) => {
+                            const isInvoiced = Boolean(est.invoice_number);
+                            return (
+                                <div
+                                    key={est.id}
+                                    className="bg-slate-900/70 border border-slate-700/80 hover:border-slate-600 rounded-xl p-4.5 space-y-3 flex flex-col justify-between transition-colors shadow-md"
+                                >
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-start gap-2">
+                                            <div>
+                                                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
+                                                    {est.project_type.toUpperCase()}
+                                                </span>
+                                                <h4 className="text-sm font-bold text-white mt-0.5 line-clamp-1">{est.title}</h4>
+                                            </div>
+                                            {isInvoiced ? (
+                                                <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded-full font-semibold">
+                                                    Invoiced ({est.invoice_number})
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] bg-cyan-950/80 text-cyan-400 border border-cyan-800/40 px-2 py-0.5 rounded-full font-semibold">
+                                                    Draft / Active
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="text-xs text-slate-300 space-y-1 bg-slate-950/50 p-2.5 rounded-lg border border-slate-800">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">Client:</span>
+                                                <span className="font-semibold text-white">{est.client_name || 'Unassigned'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-400">Scope Range:</span>
+                                                <span className="text-slate-200">{formatCurrency(est.estimated_low)} &ndash; {formatCurrency(est.estimated_high)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-baseline pt-1 border-t border-slate-850">
+                                                <span className="text-slate-400 font-medium">Agreed Exact Quote:</span>
+                                                {est.quoted_amount ? (
+                                                    <span className="text-emerald-400 font-extrabold text-sm">{formatCurrency(est.quoted_amount)}</span>
+                                                ) : (
+                                                    <span className="text-amber-400 italic text-[11px]">Not calibrated</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
+                                        <button
+                                            type="button"
+                                            onClick={() => setOverviewCalibratingEstimate(est)}
+                                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg border border-slate-700 font-semibold"
+                                        >
+                                            {est.quoted_amount ? 'Edit Exact Quote' : 'Set Exact Quote'}
+                                        </button>
+
+                                        {isInvoiced ? (
+                                            <a
+                                                href={`/#/invoice/${est.invoice_id}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="px-3 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 font-bold rounded-lg border border-emerald-800/40"
+                                            >
+                                                View Invoice
+                                            </a>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setOverviewInvoicingEstimate(est)}
+                                                className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-bold rounded-lg shadow-sm flex items-center gap-1"
+                                            >
+                                                <span>Turn into Invoice</span>
+                                                {est.quoted_amount && <span className="font-normal opacity-90">({formatCurrency(est.quoted_amount)})</span>}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* OVERVIEW QUOTE CALIBRATION MODAL */}
+            {overviewCalibratingEstimate && (
+                <ExactQuoteCalibrationModal
+                    estimate={overviewCalibratingEstimate}
+                    onClose={() => setOverviewCalibratingEstimate(null)}
+                    onSaved={(updated) => {
+                        setOverviewEstimates(prev => prev.map(e => e.id === updated.id ? updated : e));
+                    }}
+                    onConvertToInvoice={(updated) => {
+                        setOverviewCalibratingEstimate(null);
+                        setOverviewInvoicingEstimate(updated);
+                    }}
+                />
+            )}
+
+            {/* OVERVIEW CONVERT TO INVOICE MODAL */}
+            {overviewInvoicingEstimate && (
+                <ConvertToInvoiceModal
+                    estimate={overviewInvoicingEstimate}
+                    onClose={() => setOverviewInvoicingEstimate(null)}
+                    onSuccess={() => {
+                        setOverviewInvoicingEstimate(null);
+                        loadOverviewEstimates();
+                        if (refreshData) refreshData();
+                    }}
+                />
+            )}
         </div>
     );
 };
@@ -581,10 +748,20 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
 
 const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients: any[]; refreshData: () => void; selectedEntityId: string; payeSalary: number }> = ({ invoices, projects, clients, refreshData, selectedEntityId, payeSalary }) => {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+    const [showInvoiceFromQuoteModal, setShowInvoiceFromQuoteModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
     const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
+    const [invoicePageEstimates, setInvoicePageEstimates] = useState<Estimate[]>([]);
     const TAX_YEAR_START = useMemo(() => new Date('2024-04-06'), []);
+
+    useEffect(() => {
+        fetchAllEstimates().then(setInvoicePageEstimates);
+    }, [invoices]);
+
+    const unbilledQuotes = useMemo(() => {
+        return invoicePageEstimates.filter(e => !e.invoice_number);
+    }, [invoicePageEstimates]);
 
     useEffect(() => {
         const handleDocumentClick = (e: MouseEvent) => {
@@ -760,9 +937,43 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
                     <button onClick={refreshData} title="Refresh Invoices" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
                     </button>
+                    <button onClick={() => setShowInvoiceFromQuoteModal(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3.5 rounded-md transition-colors flex items-center space-x-1.5 shadow-sm">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                        <span>Invoice from Quote</span>
+                    </button>
                     <button onClick={() => setShowInvoiceModal(true)} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Invoice</button>
                 </div>
             </div>
+
+            {/* Banner for quotes ready to be invoiced */}
+            {unbilledQuotes.length > 0 && (
+                <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/40 rounded-xl p-4 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-white">
+                                {unbilledQuotes.length} {unbilledQuotes.length === 1 ? 'Scope Quote' : 'Scope Quotes'} Ready to Turn into Customer Invoices
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                                You can pick an exact agreed amount within the estimate range to invoice the customer.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowInvoiceFromQuoteModal(true)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                    >
+                        <span>Select Quote &amp; Set Exact Amount</span>
+                        <span>&rarr;</span>
+                    </button>
+                </div>
+            )}
+
             <div className={`bg-slate-800 md:border md:border-slate-700 md:rounded-lg ${openDropdownId ? 'overflow-visible' : 'overflow-x-auto'}`}>
                 <table className="min-w-full md:divide-y md:divide-slate-700 responsive-table">
                     <thead className="bg-slate-900/50">
@@ -820,6 +1031,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
                 </table>
             </div>
             {showInvoiceModal && <InvoiceForm projects={projects} clients={clients} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} selectedEntityId={selectedEntityId} />}
+            {showInvoiceFromQuoteModal && <InvoiceFromQuoteModal onClose={() => setShowInvoiceFromQuoteModal(false)} onInvoiceCreated={refreshData} />}
             {showProjectModal && <ProjectForm clients={clients} onClose={() => setShowProjectModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
         </div>
     );
@@ -2531,11 +2743,11 @@ const DashboardPage: React.FC = () => {
             { path: "/dashboard/clients", label: "Clients" },
             { path: "/dashboard/projects", label: "Projects" },
             { path: "/dashboard/invoices", label: "Invoices" },
+            { path: "/dashboard/calculator", label: "Quotes & Invoicing" },
             { path: "/dashboard/expenses", label: "Outgoings" },
             { path: "/dashboard/tax", label: "Tax Centre" },
         ];
         if (selectedEntityId === 'all' || selectedEntitySlug === 'montford-digital') {
-            baseItems.push({ path: "/dashboard/calculator", label: "Quote Calculator" });
             baseItems.push({ path: "/dashboard/widgets", label: "Widgets" });
             baseItems.push({ path: "/dashboard/portfolio", label: "Portfolio" });
         }
@@ -2549,7 +2761,7 @@ const DashboardPage: React.FC = () => {
         "/dashboard/invoices": "Invoices",
         "/dashboard/expenses": "Outgoings",
         "/dashboard/tax": "Tax Centre",
-        "/dashboard/calculator": "Quote Calculator",
+        "/dashboard/calculator": "Quotes & Invoicing",
         "/dashboard/widgets": "Widgets & Snippets",
         "/dashboard/portfolio": "Portfolio",
     };
@@ -2613,7 +2825,7 @@ const DashboardPage: React.FC = () => {
                     {!loading && !error && (
                         <>
                             <Routes>
-                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} projects={projects} />} />
+                                <Route index element={<DashboardOverview invoices={invoices} expenses={processedExpenses} payeSalary={payeSalary} projects={projects} refreshData={fetchData} />} />
                                 <Route path="clients" element={<ClientsPage />} />
                                 <Route path="projects" element={<ProjectsPage projects={projects} clients={clients} refreshData={fetchData} selectedEntityId={selectedEntityId} />} />
                                 <Route path="invoices" element={<InvoicesPage invoices={invoices} projects={projects} clients={clients} refreshData={fetchData} selectedEntityId={selectedEntityId} payeSalary={payeSalary} />} />

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import {
   Estimate,
@@ -20,6 +21,7 @@ import {
 } from '../lib/pricingConfig';
 import { QuoteSettingsView } from '../components/QuoteSettingsView';
 import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
+import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationModal';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(amount);
@@ -123,16 +125,24 @@ const PROJECT_TYPE_METAS = {
 };
 
 const QuoteCalculatorPage: React.FC = () => {
-  // --- View Mode ---
-  const [activeTab, setActiveTab] = useState<'calculator' | 'history' | 'settings'>('calculator');
+  const [searchParams] = useSearchParams();
 
-  // --- Dynamic Pricing Configuration State (from DB / Local Storage) ---
+  // --- View Mode ---
+  const [activeTab, setActiveTab] = useState<'calculator' | 'history' | 'settings'>(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'history' || tabParam === 'settings') return tabParam;
+    return 'calculator';
+  });
+
+  // --- Dynamic Pricing Configuration State ---
   const [pricingConfig, setPricingConfig] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
   const [isRemoteConfig, setIsRemoteConfig] = useState(false);
 
   // --- Clients State ---
   const [clients, setClients] = useState<ClientOption[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [selectedClientId, setSelectedClientId] = useState<string>(
+    searchParams.get('clientId') || searchParams.get('client_id') || ''
+  );
   const [customClientName, setCustomClientName] = useState<string>('');
   const [customClientEmail, setCustomClientEmail] = useState<string>('');
   const [estimateTitle, setEstimateTitle] = useState<string>('');
@@ -179,11 +189,12 @@ const QuoteCalculatorPage: React.FC = () => {
 
   // Convert to Invoice Modal
   const [convertModalEstimate, setConvertModalEstimate] = useState<Estimate | null>(null);
+  const [calibratingEstimate, setCalibratingEstimate] = useState<Estimate | null>(null);
 
   // Fetch initial config, clients, and estimates
   useEffect(() => {
     const fetchInitialData = async () => {
-      // 1. Fetch dynamic pricing config from backend or local storage
+      // 1. Fetch dynamic pricing config
       const { config, isRemote } = await fetchPricingConfig();
       setPricingConfig(config);
       setIsRemoteConfig(isRemote);
@@ -196,6 +207,17 @@ const QuoteCalculatorPage: React.FC = () => {
           .order('name');
         if (clientsData) {
           setClients(clientsData as ClientOption[]);
+
+          // Check if clientId was passed in URL query param
+          const paramClientId = searchParams.get('clientId') || searchParams.get('client_id');
+          if (paramClientId) {
+            setSelectedClientId(paramClientId);
+            const found = (clientsData as ClientOption[]).find((c) => c.id === paramClientId);
+            if (found) {
+              setCustomClientName(found.name);
+              setCustomClientEmail(found.email || '');
+            }
+          }
         }
       } catch (err) {
         console.warn('Error fetching clients:', err);
@@ -207,7 +229,7 @@ const QuoteCalculatorPage: React.FC = () => {
     };
 
     fetchInitialData();
-  }, []);
+  }, [searchParams]);
 
   // Set default title based on project archetype if empty
   useEffect(() => {
@@ -218,7 +240,7 @@ const QuoteCalculatorPage: React.FC = () => {
         : customClientName;
       setEstimateTitle(clientName ? `${clientName} - ${typeLabel} Scope` : `${typeLabel} Estimate`);
     }
-  }, [projectType, selectedClientId, customClientName]);
+  }, [projectType, selectedClientId, customClientName, clients]);
 
   const featureLabels: Record<string, string> = {
     auth: 'User Authentication',
@@ -310,7 +332,7 @@ const QuoteCalculatorPage: React.FC = () => {
     maintenanceTier,
   ]);
 
-  // Exact chosen quote amount (defaults to final calculated target if not manually overridden)
+  // Exact chosen quote amount
   const effectiveExactQuote = userExactQuotedPrice ?? priceBreakdown.finalPrice;
 
   const currentEstimateObject = useMemo<Estimate>(() => {
@@ -387,7 +409,6 @@ const QuoteCalculatorPage: React.FC = () => {
   };
 
   const handleInvoiceGeneratedSuccess = (invoiceId: string, invoiceNumber: string) => {
-    // Refresh estimates list to show updated invoiced status
     fetchAllEstimates().then(setSavedEstimates);
   };
 
@@ -454,9 +475,9 @@ ${generateShareUrl(est)}`;
   };
 
   const clientProfileLabels: Record<ClientProfile, string> = {
-    startup: `Startup / Solo (${pricingConfig.clientProfileMultiplier.startup}&times;)`,
-    smb: `Small Business (${pricingConfig.clientProfileMultiplier.smb}&times;)`,
-    established: `Enterprise (${pricingConfig.clientProfileMultiplier.established}&times;)`,
+    startup: `Startup / Solo (${pricingConfig.clientProfileMultiplier.startup}×)`,
+    smb: `Small Business (${pricingConfig.clientProfileMultiplier.smb}×)`,
+    established: `Enterprise (${pricingConfig.clientProfileMultiplier.established}×)`,
   };
 
   const timelineLabels: Record<Timeline, string> = {
@@ -473,8 +494,6 @@ ${generateShareUrl(est)}`;
     urgent: '2-3 Weeks (Rush)',
   };
 
-  const hasClient = Boolean(selectedClientId || customClientName.trim());
-
   return (
     <div className="space-y-6">
       {/* Top Header & Navigation Tabs */}
@@ -482,7 +501,7 @@ ${generateShareUrl(est)}`;
         <div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Quote &amp; Scope Calculator</h2>
           <p className="text-slate-400 text-sm mt-0.5">
-            Architectural pricing engine with client scope sharing, exact quote calibration, and one-click invoice generation.
+            Architectural pricing engine with client scope sharing, exact quote calibration, and one-click customer invoicing.
           </p>
         </div>
 
@@ -553,7 +572,7 @@ ${generateShareUrl(est)}`;
             <div>
               <h3 className="text-lg font-bold text-white">Historical Estimates &amp; Quotes</h3>
               <p className="text-xs text-slate-400">
-                Browse, reload, share preliminary scopes, or convert quotes directly into client invoices.
+                Browse, reload, share preliminary scopes, or convert quotes directly into customer invoices.
               </p>
             </div>
             <button
@@ -592,7 +611,7 @@ ${generateShareUrl(est)}`;
                       <span className="text-xs text-slate-400">{formatDate(est.created_at)}</span>
                     </div>
 
-                    <div className="mt-2 text-xs text-slate-300 space-y-1">
+                    <div className="mt-2 text-xs text-slate-300 space-y-1.5">
                       {est.client_name && (
                         <p>
                           <span className="text-slate-500">Client: </span>
@@ -600,19 +619,28 @@ ${generateShareUrl(est)}`;
                         </p>
                       )}
                       <p>
-                        <span className="text-slate-500">Estimate Range: </span>
+                        <span className="text-slate-500">Scope Range: </span>
                         <span className="font-semibold text-slate-300">
                           {formatCurrency(est.estimated_low)} &ndash; {formatCurrency(est.estimated_high)}
                         </span>
                       </p>
-                      {est.quoted_amount && (
-                        <p>
-                          <span className="text-slate-500">Agreed Fixed Quote: </span>
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <span className="text-slate-500">Agreed Exact Quote: </span>
+                        {est.quoted_amount ? (
                           <span className="font-bold text-emerald-400">
                             {formatCurrency(est.quoted_amount)}
                           </span>
-                        </p>
-                      )}
+                        ) : (
+                          <span className="text-amber-400 italic text-[11px]">Not set yet</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setCalibratingEstimate(est)}
+                          className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-semibold ml-1"
+                        >
+                          {est.quoted_amount ? 'Change' : 'Set Exact Amount'}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -623,7 +651,15 @@ ${generateShareUrl(est)}`;
                     >
                       Load in Calculator
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setCalibratingEstimate(est)}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded border border-slate-700 font-semibold"
+                      >
+                        Set Exact Quote
+                      </button>
+
                       {est.invoice_number ? (
                         <a
                           href={`/#/invoice/${est.invoice_id}`}
@@ -633,15 +669,18 @@ ${generateShareUrl(est)}`;
                         >
                           ✓ Invoiced ({est.invoice_number})
                         </a>
-                      ) : est.client_name ? (
+                      ) : (
                         <button
                           type="button"
                           onClick={() => handleOpenConvertModal(est)}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded font-bold shadow-sm"
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded font-bold shadow-sm flex items-center gap-1"
                         >
-                          Invoice Client
+                          <span>Turn into Invoice</span>
+                          {est.quoted_amount && (
+                            <span className="font-normal opacity-90">({formatCurrency(est.quoted_amount)})</span>
+                          )}
                         </button>
-                      ) : null}
+                      )}
 
                       <button
                         onClick={() => handleOpenShareModal(est)}
@@ -675,615 +714,694 @@ ${generateShareUrl(est)}`;
 
       {/* --- CALCULATOR VIEW --- */}
       {activeTab === 'calculator' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-          {/* --- Left Column: Inputs & Scoping --- */}
-          <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 sm:p-7 space-y-7 shadow-lg">
-            {/* 1. Client Attachment & Title */}
-            <div className="bg-slate-900/60 border border-slate-700/80 rounded-xl p-5 space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-cyan-400">
-                  1. Client &amp; Estimate Details
-                </h3>
-                <span className="text-xs text-slate-400">Attach client to enable 1-click invoicing</span>
+        <div className="space-y-6">
+          {/* TOP QUICK QUOTING & INVOICING ACTION BAR */}
+          <div className="bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border-2 border-emerald-500/50 rounded-2xl p-5 shadow-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  Agreed Customer Quote &amp; Invoicing
+                </span>
+                <span className="text-xs text-slate-400">
+                  Calculated Scope: <strong className="text-slate-200">{formatCurrency(priceBreakdown.priceRange.low)} &ndash; {formatCurrency(priceBreakdown.priceRange.high)}</strong>
+                </span>
               </div>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <span className="text-sm font-bold text-white">Exact Quoted Amount to Bill:</span>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-slate-400 text-sm font-bold">£</span>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={effectiveExactQuote}
+                      onChange={(e) => setUserExactQuotedPrice(parseFloat(e.target.value) || 0)}
+                      className="bg-slate-900 border border-emerald-500/60 rounded-xl pl-7 pr-3 py-1.5 text-emerald-400 font-extrabold text-lg w-36 text-right focus:outline-none focus:border-emerald-400 shadow-inner"
+                    />
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.low)}
+                      className={`px-2 py-1 text-[10px] rounded border font-semibold ${
+                        effectiveExactQuote === priceBreakdown.priceRange.low
+                          ? 'bg-emerald-500 text-white border-emerald-400'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                      title="Set to lower bound"
+                    >
+                      Low
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserExactQuotedPrice(priceBreakdown.finalPrice)}
+                      className={`px-2 py-1 text-[10px] rounded border font-semibold ${
+                        effectiveExactQuote === priceBreakdown.finalPrice
+                          ? 'bg-emerald-500 text-white border-emerald-400'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                      title="Set to mid target"
+                    >
+                      Mid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.high)}
+                      className={`px-2 py-1 text-[10px] rounded border font-semibold ${
+                        effectiveExactQuote === priceBreakdown.priceRange.high
+                          ? 'bg-emerald-500 text-white border-emerald-400'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                      title="Set to upper bound"
+                    >
+                      High
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Select Client (Required to Invoice)
-                  </label>
-                  <select
-                    value={selectedClientId}
-                    onChange={(e) => {
-                      setSelectedClientId(e.target.value);
-                      if (e.target.value) {
-                        const c = clients.find((item) => item.id === e.target.value);
-                        if (c) {
-                          setCustomClientName(c.name);
-                          setCustomClientEmail(c.email || '');
-                        }
-                      }
-                    }}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="">-- Prospective / New Client --</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.email ? `(${c.email})` : ''}
-                      </option>
-                    ))}
-                  </select>
+            <button
+              type="button"
+              onClick={() => handleOpenConvertModal()}
+              className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 transform hover:scale-[1.02]"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Turn Quote into Invoice ({formatCurrency(effectiveExactQuote)})</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            {/* --- Left Column: Inputs & Scoping --- */}
+            <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 sm:p-7 space-y-7 shadow-lg">
+              {/* 1. Client Attachment & Title */}
+              <div className="bg-slate-900/60 border border-slate-700/80 rounded-xl p-5 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-cyan-400">
+                    1. Client &amp; Estimate Details
+                  </h3>
+                  <span className="text-xs text-slate-400">Assign customer for invoice and proposal</span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Estimate / Scope Title
-                  </label>
-                  <input
-                    type="text"
-                    value={estimateTitle}
-                    onChange={(e) => setEstimateTitle(e.target.value)}
-                    placeholder="e.g. Acme Web & Mobile App MVP"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              </div>
-
-              {!selectedClientId && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1">
-                      Prospective Client Name
+                      Select Client
+                    </label>
+                    <select
+                      value={selectedClientId}
+                      onChange={(e) => {
+                        setSelectedClientId(e.target.value);
+                        if (e.target.value) {
+                          const c = clients.find((item) => item.id === e.target.value);
+                          if (c) {
+                            setCustomClientName(c.name);
+                            setCustomClientEmail(c.email || '');
+                          }
+                        }
+                      }}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="">-- Choose Client or Enter Name Below --</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.email ? `(${c.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                      Estimate / Scope Title
                     </label>
                     <input
                       type="text"
-                      value={customClientName}
-                      onChange={(e) => setCustomClientName(e.target.value)}
-                      placeholder="e.g. John Doe / Tech Labs Ltd"
+                      value={estimateTitle}
+                      onChange={(e) => setEstimateTitle(e.target.value)}
+                      placeholder="e.g. Acme Web & Mobile App MVP"
                       className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
-                      Client Contact Email
-                    </label>
-                    <input
-                      type="email"
-                      value={customClientEmail}
-                      onChange={(e) => setCustomClientEmail(e.target.value)}
-                      placeholder="e.g. john@example.com"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
-                    />
+                </div>
+
+                {!selectedClientId && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Client / Customer Name
+                      </label>
+                      <input
+                        type="text"
+                        value={customClientName}
+                        onChange={(e) => setCustomClientName(e.target.value)}
+                        placeholder="e.g. John Doe / Tech Labs Ltd"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Client Contact Email
+                      </label>
+                      <input
+                        type="email"
+                        value={customClientEmail}
+                        onChange={(e) => setCustomClientEmail(e.target.value)}
+                        placeholder="e.g. john@example.com"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Project Classification (Website vs Web App vs Mobile vs Combo) */}
+              <div>
+                <div className="flex justify-between items-baseline mb-2">
+                  <h3 className="text-base font-bold text-white">2. Project Classification</h3>
+                  <span className="text-xs text-slate-400">Defines engineering overhead &amp; base</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {(Object.keys(PROJECT_TYPE_METAS) as ProjectType[]).map((type) => {
+                    const cfg = PROJECT_TYPE_METAS[type];
+                    const isSelected = projectType === type;
+                    const setupFee = pricingConfig.baseSetupFee[type] || 200;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setProjectType(type)}
+                        className={`text-left p-4 rounded-xl border transition-all ${
+                          isSelected
+                            ? 'bg-cyan-950/30 border-cyan-500 shadow-md shadow-cyan-950/40 ring-1 ring-cyan-500/50'
+                            : 'bg-slate-900/50 border-slate-700 hover:border-slate-600 hover:bg-slate-800/40'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="font-bold text-white text-sm">{cfg.label}</span>
+                          {isSelected && <span className="w-2 h-2 rounded-full bg-cyan-400" />}
+                        </div>
+                        <span className="inline-block text-[10px] font-semibold text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-full mb-2">
+                          {cfg.badge}
+                        </span>
+                        <p className="text-[11px] text-slate-400 leading-snug">{cfg.description}</p>
+                        <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-300 font-medium flex justify-between">
+                          <span>Base setup:</span>
+                          <span className="text-white font-semibold">{formatCurrency(setupFee)}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Platform Configuration for Mobile or Combo */}
+              {projectType === 'mobileapp' && (
+                <div className="p-4 bg-slate-900/60 border border-slate-700/80 rounded-xl space-y-2">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-semibold text-white">Target Mobile Platform</h4>
+                    <span className="text-xs text-cyan-400">Native iOS &amp; Android</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['ios', 'android', 'both'] as MobilePlatform[]).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setMobilePlatform(p)}
+                        className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-colors ${
+                          mobilePlatform === p
+                            ? 'bg-cyan-500 text-white border-cyan-400'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                        {p === 'ios' ? 'Apple iOS' : p === 'android' ? 'Google Android' : 'Dual (iOS & Android)'}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* 2. Project Classification (Website vs Web App vs Mobile vs Combo) */}
-            <div>
-              <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">2. Project Classification</h3>
-                <span className="text-xs text-slate-400">Defines engineering overhead &amp; base</span>
-              </div>
+              {projectType === 'combo' && (
+                <div className="p-4 bg-slate-900/60 border border-slate-700/80 rounded-xl space-y-2">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-semibold text-white">Cross-Platform Suite Inclusions</h4>
+                    <span className="text-xs text-emerald-400 font-medium">Shared Backend Architecture Included</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['web_ios', 'web_android', 'web_both'] as ComboPlatform[]).map((cp) => (
+                      <button
+                        key={cp}
+                        type="button"
+                        onClick={() => setComboPlatform(cp)}
+                        className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-colors ${
+                          comboPlatform === cp
+                            ? 'bg-cyan-500 text-white border-cyan-400'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                        {cp === 'web_ios'
+                          ? 'Web App + iOS'
+                          : cp === 'web_android'
+                          ? 'Web App + Android'
+                          : 'Web App + iOS & Android'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {(Object.keys(PROJECT_TYPE_METAS) as ProjectType[]).map((type) => {
-                  const cfg = PROJECT_TYPE_METAS[type];
-                  const isSelected = projectType === type;
-                  const setupFee = pricingConfig.baseSetupFee[type] || 200;
-                  return (
+              {/* 4. Client Commercial Profile */}
+              <div>
+                <div className="flex justify-between items-baseline mb-2">
+                  <h3 className="text-base font-bold text-white">3. Client Commercial Profile</h3>
+                  <span className="text-xs text-slate-400">
+                    Credits: {formatCurrency(priceBreakdown.effectiveCostPerPoint)} / pt
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {(['startup', 'smb', 'established'] as ClientProfile[]).map((prof) => (
                     <button
-                      key={type}
+                      key={prof}
                       type="button"
-                      onClick={() => setProjectType(type)}
-                      className={`text-left p-4 rounded-xl border transition-all ${
-                        isSelected
-                          ? 'bg-cyan-950/30 border-cyan-500 shadow-md shadow-cyan-950/40 ring-1 ring-cyan-500/50'
-                          : 'bg-slate-900/50 border-slate-700 hover:border-slate-600 hover:bg-slate-800/40'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="font-bold text-white text-sm">{cfg.label}</span>
-                        {isSelected && <span className="w-2 h-2 rounded-full bg-cyan-400" />}
-                      </div>
-                      <span className="inline-block text-[10px] font-semibold text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-full mb-2">
-                        {cfg.badge}
-                      </span>
-                      <p className="text-[11px] text-slate-400 leading-snug">{cfg.description}</p>
-                      <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-300 font-medium flex justify-between">
-                        <span>Base setup:</span>
-                        <span className="text-white font-semibold">{formatCurrency(setupFee)}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 3. Platform Configuration for Mobile or Combo */}
-            {projectType === 'mobileapp' && (
-              <div className="p-4 bg-slate-900/60 border border-slate-700/80 rounded-xl space-y-2">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-sm font-semibold text-white">Target Mobile Platform</h4>
-                  <span className="text-xs text-cyan-400">Native iOS &amp; Android</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['ios', 'android', 'both'] as MobilePlatform[]).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setMobilePlatform(p)}
-                      className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-colors ${
-                        mobilePlatform === p
-                          ? 'bg-cyan-500 text-white border-cyan-400'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                      }`}
-                    >
-                      {p === 'ios' ? 'Apple iOS' : p === 'android' ? 'Google Android' : 'Dual (iOS & Android)'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {projectType === 'combo' && (
-              <div className="p-4 bg-slate-900/60 border border-slate-700/80 rounded-xl space-y-2">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-sm font-semibold text-white">Cross-Platform Suite Inclusions</h4>
-                  <span className="text-xs text-emerald-400 font-medium">Shared Backend Architecture Included</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['web_ios', 'web_android', 'web_both'] as ComboPlatform[]).map((cp) => (
-                    <button
-                      key={cp}
-                      type="button"
-                      onClick={() => setComboPlatform(cp)}
-                      className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-colors ${
-                        comboPlatform === cp
-                          ? 'bg-cyan-500 text-white border-cyan-400'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                      }`}
-                    >
-                      {cp === 'web_ios'
-                        ? 'Web App + iOS'
-                        : cp === 'web_android'
-                        ? 'Web App + Android'
-                        : 'Web App + iOS & Android'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 4. Client Commercial Profile */}
-            <div>
-              <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">3. Client Commercial Profile</h3>
-                <span className="text-xs text-slate-400">
-                  Credits: {formatCurrency(priceBreakdown.effectiveCostPerPoint)} / pt
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {(['startup', 'smb', 'established'] as ClientProfile[]).map((prof) => (
-                  <button
-                    key={prof}
-                    type="button"
-                    onClick={() => setClientProfile(prof)}
-                    className={`p-3.5 rounded-xl border text-left transition-all ${
-                      clientProfile === prof
-                        ? 'bg-cyan-950/30 border-cyan-500 shadow-sm'
-                        : 'bg-slate-900/40 border-slate-700 hover:bg-slate-800/40'
-                    }`}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-white text-sm capitalize">{prof}</span>
-                      <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded">
-                        &times;{pricingConfig.clientProfileMultiplier[prof]}
-                      </span>
-                    </div>
-                    <span className="text-xs text-slate-400 block">{clientProfileLabels[prof]}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 5. Core Features Checklist */}
-            <div>
-              <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">4. Engineering Features &amp; Architecture</h3>
-                <span className="text-xs text-cyan-400 font-semibold">{priceBreakdown.totalPoints} points selected</span>
-              </div>
-              <p className="text-xs text-slate-400 mb-3">
-                Select the modular features required for the project. Point values are calibrated in Pricing Settings.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FeatureCheckbox
-                  id="auth"
-                  label="User Authentication"
-                  description="Secure login, registration, password recovery, and session handling."
-                  points={pricingConfig.featurePoints.auth || 5}
-                  checked={features.auth}
-                  onChange={() => setFeatures((f) => ({ ...f, auth: !f.auth }))}
-                />
-                <FeatureCheckbox
-                  id="roles"
-                  label="Roles &amp; Permissions"
-                  description="Role-based access controls (e.g. admin, manager, customer)."
-                  points={pricingConfig.featurePoints.roles || 6}
-                  checked={features.roles}
-                  onChange={() => setFeatures((f) => ({ ...f, roles: !f.roles }))}
-                />
-                <FeatureCheckbox
-                  id="profile"
-                  label="User Profiles"
-                  description="User-editable profile data, avatar uploads, and preferences."
-                  points={pricingConfig.featurePoints.profile || 4}
-                  checked={features.profile}
-                  onChange={() => setFeatures((f) => ({ ...f, profile: !f.profile }))}
-                />
-                <FeatureCheckbox
-                  id="cms"
-                  label="Admin / CMS"
-                  description="Content management panel to easily edit copy, articles, or records."
-                  points={pricingConfig.featurePoints.cms || 10}
-                  checked={features.cms}
-                  onChange={() => setFeatures((f) => ({ ...f, cms: !f.cms }))}
-                />
-                <FeatureCheckbox
-                  id="ecommerce"
-                  label="E-commerce &amp; Checkout"
-                  description="Product catalog, shopping cart, and Stripe payment gateway."
-                  points={pricingConfig.featurePoints.ecommerce || 18}
-                  checked={features.ecommerce}
-                  onChange={() => setFeatures((f) => ({ ...f, ecommerce: !f.ecommerce }))}
-                />
-                <FeatureCheckbox
-                  id="api"
-                  label="API Integrations"
-                  description="Connecting with third-party webhooks, REST services, and tools."
-                  points={pricingConfig.featurePoints.api || 8}
-                  checked={features.api}
-                  onChange={() => setFeatures((f) => ({ ...f, api: !f.api }))}
-                />
-                <FeatureCheckbox
-                  id="dashboard"
-                  label="Data Dashboard"
-                  description="Visual metric charts, interactive reports, and data visualization."
-                  points={pricingConfig.featurePoints.dashboard || 14}
-                  checked={features.dashboard}
-                  onChange={() => setFeatures((f) => ({ ...f, dashboard: !f.dashboard }))}
-                />
-                <FeatureCheckbox
-                  id="realtime"
-                  label="Real-time Live Sync"
-                  description="Live state streaming, WebSockets, or collaborative updates."
-                  points={pricingConfig.featurePoints.realtime || 16}
-                  checked={features.realtime}
-                  onChange={() => setFeatures((f) => ({ ...f, realtime: !f.realtime }))}
-                />
-                <FeatureCheckbox
-                  id="search"
-                  label="Advanced Search"
-                  description="Faceted search, multi-field filters, and responsive sorting."
-                  points={pricingConfig.featurePoints.search || 6}
-                  checked={features.search}
-                  onChange={() => setFeatures((f) => ({ ...f, search: !f.search }))}
-                />
-                <FeatureCheckbox
-                  id="seo"
-                  label="SEO &amp; Social Cards"
-                  description="OpenGraph tags, Schema.org JSON-LD, sitemaps, and speed optimization."
-                  points={pricingConfig.featurePoints.seo || 4}
-                  checked={features.seo}
-                  onChange={() => setFeatures((f) => ({ ...f, seo: !f.seo }))}
-                />
-                <FeatureCheckbox
-                  id="multilingual"
-                  label="Multi-language Support"
-                  description="Internationalization (i18n), regional routing, and language selector."
-                  points={pricingConfig.featurePoints.multilingual || 8}
-                  checked={features.multilingual}
-                  onChange={() => setFeatures((f) => ({ ...f, multilingual: !f.multilingual }))}
-                />
-                <FeatureCheckbox
-                  id="notifications"
-                  label="Push &amp; Email Alerts"
-                  description="Automated transactional emails and native mobile push alerts."
-                  points={pricingConfig.featurePoints.notifications || 6}
-                  checked={features.notifications}
-                  onChange={() => setFeatures((f) => ({ ...f, notifications: !f.notifications }))}
-                />
-                <FeatureCheckbox
-                  id="offline"
-                  label="Offline / PWA"
-                  description="Progressive Web App support with service worker offline caching."
-                  points={pricingConfig.featurePoints.offline || 10}
-                  checked={features.offline}
-                  onChange={() => setFeatures((f) => ({ ...f, offline: !f.offline }))}
-                />
-                <FeatureCheckbox
-                  id="animations"
-                  label="Custom UI Motion"
-                  description="Physics-based transitions, micro-interactions, and visual flair."
-                  points={pricingConfig.featurePoints.animations || 5}
-                  checked={features.animations}
-                  onChange={() => setFeatures((f) => ({ ...f, animations: !f.animations }))}
-                />
-              </div>
-            </div>
-
-            {/* 6. Timeline */}
-            <div>
-              <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">5. Project Delivery Timeline</h3>
-                <span className="text-xs text-slate-400">Flexibility reward available</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {(['flexible', 'standard', 'expedited', 'urgent'] as Timeline[]).map((t) => (
-                  <label
-                    key={t}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-colors ${
-                      timeline === t
-                        ? 'bg-cyan-950/30 border-cyan-500 shadow-sm'
-                        : 'bg-slate-900/40 border-slate-700 hover:bg-slate-800/40'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="timeline"
-                      value={t}
-                      checked={timeline === t}
-                      onChange={() => setTimeline(t)}
-                      className="sr-only"
-                    />
-                    <span className="text-white font-bold text-sm block">{timelineLabels[t]}</span>
-                    <span className="text-xs text-slate-400 mt-0.5 block">{timelineDescriptions[t]}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* 7. Ongoing Maintenance */}
-            <div>
-              <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">6. Ongoing Support &amp; Hosting Retainer</h3>
-                <span className="text-xs text-slate-400">Post-launch maintenance</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(Object.keys(pricingConfig.maintenanceTiers) as MaintenanceTier[]).map((tier) => {
-                  const tCfg = pricingConfig.maintenanceTiers[tier];
-                  if (!tCfg) return null;
-                  const isSelected = maintenanceTier === tier;
-                  return (
-                    <label
-                      key={tier}
-                      className={`p-4 rounded-xl border cursor-pointer flex flex-col justify-between transition-colors ${
-                        isSelected
+                      onClick={() => setClientProfile(prof)}
+                      className={`p-3.5 rounded-xl border text-left transition-all ${
+                        clientProfile === prof
                           ? 'bg-cyan-950/30 border-cyan-500 shadow-sm'
                           : 'bg-slate-900/40 border-slate-700 hover:bg-slate-800/40'
                       }`}
                     >
-                      <div>
-                        <input
-                          type="radio"
-                          name="maintenance"
-                          value={tier}
-                          checked={isSelected}
-                          onChange={() => setMaintenanceTier(tier)}
-                          className="sr-only"
-                        />
-                        <span className="text-white font-bold text-sm block">{tCfg.label}</span>
-                        <span className="text-xs text-slate-400 mt-1 block leading-relaxed">{tCfg.desc}</span>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-bold text-white text-sm capitalize">{prof}</span>
+                        <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded">
+                          &times;{pricingConfig.clientProfileMultiplier[prof]}
+                        </span>
                       </div>
-                      <span className="block mt-3 text-cyan-400 font-bold text-sm">
-                        {tCfg.price === 0 ? 'Self-Managed (Free)' : `${formatCurrency(tCfg.price)} / mo`}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 8. Custom Scope Notes */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                Custom Scope Notes (Optional client context)
-              </label>
-              <textarea
-                value={customNotes}
-                onChange={(e) => setCustomNotes(e.target.value)}
-                rows={2}
-                placeholder="e.g. Scope assumes client provides brand assets and copy. Includes 30 days post-launch warranty."
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white text-xs leading-relaxed focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-          </div>
-
-          {/* --- Right Column: Results, Exact Quoting & Actions --- */}
-          <div className="lg:col-span-1 space-y-5">
-            {/* Discount Toggle Card */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
-              <Toggle
-                label={`Apply Discount (${Math.round(pricingConfig.discountPercent * 100)}%)`}
-                checked={applyDiscount}
-                onChange={setApplyDiscount}
-              />
-            </div>
-
-            {/* Price Estimate Card */}
-            <div className="bg-slate-800 border-2 border-slate-700 rounded-xl p-6 shadow-xl sticky top-8 space-y-5">
-              <div className="flex justify-between items-center border-b border-slate-700 pb-3">
-                <h3 className="text-lg font-bold text-white">Price Estimate &amp; Quote</h3>
-                <span className="text-xs text-cyan-400 font-semibold uppercase tracking-wider">
-                  {PROJECT_TYPE_METAS[projectType]?.badge}
-                </span>
-              </div>
-
-              {/* Line items */}
-              <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
-                <div className="flex justify-between">
-                  <span>Base Setup ({PROJECT_TYPE_METAS[projectType]?.label})</span>
-                  <span className="font-medium text-white">{formatCurrency(priceBreakdown.baseSetupFee)}</span>
+                      <span className="text-xs text-slate-400 block">{clientProfileLabels[prof]}</span>
+                    </button>
+                  ))}
                 </div>
-
-                <div className="flex justify-between">
-                  <span>
-                    Features ({priceBreakdown.totalPoints} pts @ {formatCurrency(priceBreakdown.effectiveCostPerPoint)}/pt)
-                  </span>
-                  <span className="font-medium text-white">{formatCurrency(priceBreakdown.featureCost)}</span>
-                </div>
-
-                {projectType === 'website' && (
-                  <div className="text-[11px] text-emerald-400 pl-2">
-                    &bull; Static website credit multiplier applied ({pricingConfig.typeMultiplier.website}&times;)
-                  </div>
-                )}
               </div>
 
-              {/* Multipliers & Subtotal */}
-              <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
-                <div className="flex justify-between font-semibold text-white">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(priceBreakdown.baseSetupFee + priceBreakdown.featureCost)}</span>
+              {/* 5. Core Features Checklist */}
+              <div>
+                <div className="flex justify-between items-baseline mb-2">
+                  <h3 className="text-base font-bold text-white">4. Engineering Features &amp; Architecture</h3>
+                  <span className="text-xs text-cyan-400 font-semibold">{priceBreakdown.totalPoints} points selected</span>
                 </div>
-
-                {priceBreakdown.timelineMultiplier !== 1 && (
-                  <div className="flex justify-between text-slate-400">
-                    <span>Timeline ({timelineLabels[timeline]})</span>
-                    <span>&times;{priceBreakdown.timelineMultiplier}</span>
-                  </div>
-                )}
-
-                {priceBreakdown.platformMultiplier !== 1 && (
-                  <div className="flex justify-between text-slate-400">
-                    <span>
-                      Platform Bundle (
-                      {projectType === 'combo'
-                        ? comboPlatform === 'web_both'
-                          ? 'Web + Dual Mobile'
-                          : 'Web + Single Mobile'
-                        : mobilePlatform === 'both'
-                        ? 'Dual Mobile'
-                        : 'Single Mobile'}
-                      )
-                    </span>
-                    <span>&times;{priceBreakdown.platformMultiplier}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Discount line item */}
-              <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
-                <div className="flex justify-between font-semibold">
-                  <span>Adjusted Subtotal</span>
-                  <span className="text-white">{formatCurrency(priceBreakdown.subtotal)}</span>
-                </div>
-
-                {priceBreakdown.discount > 0 && (
-                  <div className="flex justify-between text-emerald-400 font-semibold">
-                    <span>Discount ({Math.round(pricingConfig.discountPercent * 100)}%)</span>
-                    <span>-{formatCurrency(priceBreakdown.discount)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Estimated Range Envelope */}
-              <div className="text-center bg-slate-900/60 border border-slate-700/80 rounded-xl p-3.5 space-y-1">
-                <p className="text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
-                  Estimated Delivery Envelope
+                <p className="text-xs text-slate-400 mb-3">
+                  Select the modular features required for the project. Point values are calibrated in Pricing Settings.
                 </p>
-                <p className="text-xl font-bold text-slate-300">
-                  {formatCurrency(priceBreakdown.priceRange.low)} &ndash; {formatCurrency(priceBreakdown.priceRange.high)}
-                </p>
-                <p className="text-[10px] text-slate-500">&plusmn;10% contingency window</p>
-              </div>
 
-              {/* EXACT QUOTE CALIBRATION SECTION */}
-              <div className="p-4 bg-cyan-950/20 border border-cyan-800/40 rounded-xl space-y-3">
-                <div className="flex justify-between items-baseline">
-                  <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
-                    Agreed / Quoted Price
-                  </span>
-                  <span className="text-[10px] text-slate-400">Target to quote &amp; invoice</span>
-                </div>
-
-                {/* Quick-pick chips */}
-                <div className="grid grid-cols-3 gap-1.5 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.low)}
-                    className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
-                      effectiveExactQuote === priceBreakdown.priceRange.low
-                        ? 'bg-cyan-500 text-white border-cyan-400'
-                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
-                    }`}
-                  >
-                    Low: {formatCurrency(priceBreakdown.priceRange.low)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUserExactQuotedPrice(priceBreakdown.finalPrice)}
-                    className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
-                      effectiveExactQuote === priceBreakdown.finalPrice
-                        ? 'bg-cyan-500 text-white border-cyan-400'
-                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
-                    }`}
-                  >
-                    Mid: {formatCurrency(priceBreakdown.finalPrice)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.high)}
-                    className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
-                      effectiveExactQuote === priceBreakdown.priceRange.high
-                        ? 'bg-cyan-500 text-white border-cyan-400'
-                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
-                    }`}
-                  >
-                    High: {formatCurrency(priceBreakdown.priceRange.high)}
-                  </button>
-                </div>
-
-                {/* Exact Amount Input */}
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-slate-400 text-sm font-bold">£</span>
-                  <input
-                    type="number"
-                    step="1"
-                    min="1"
-                    value={effectiveExactQuote}
-                    onChange={(e) => setUserExactQuotedPrice(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-3 py-1.5 text-emerald-400 font-extrabold text-lg text-right focus:outline-none focus:border-cyan-500"
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FeatureCheckbox
+                    id="auth"
+                    label="User Authentication"
+                    description="Secure login, registration, password recovery, and session handling."
+                    points={pricingConfig.featurePoints.auth || 5}
+                    checked={features.auth}
+                    onChange={() => setFeatures((f) => ({ ...f, auth: !f.auth }))}
+                  />
+                  <FeatureCheckbox
+                    id="roles"
+                    label="Roles &amp; Permissions"
+                    description="Role-based access controls (e.g. admin, manager, customer)."
+                    points={pricingConfig.featurePoints.roles || 6}
+                    checked={features.roles}
+                    onChange={() => setFeatures((f) => ({ ...f, roles: !f.roles }))}
+                  />
+                  <FeatureCheckbox
+                    id="profile"
+                    label="User Profiles"
+                    description="User-editable profile data, avatar uploads, and preferences."
+                    points={pricingConfig.featurePoints.profile || 4}
+                    checked={features.profile}
+                    onChange={() => setFeatures((f) => ({ ...f, profile: !f.profile }))}
+                  />
+                  <FeatureCheckbox
+                    id="cms"
+                    label="Admin / CMS"
+                    description="Content management panel to easily edit copy, articles, or records."
+                    points={pricingConfig.featurePoints.cms || 10}
+                    checked={features.cms}
+                    onChange={() => setFeatures((f) => ({ ...f, cms: !f.cms }))}
+                  />
+                  <FeatureCheckbox
+                    id="ecommerce"
+                    label="E-commerce &amp; Checkout"
+                    description="Product catalog, shopping cart, and Stripe payment gateway."
+                    points={pricingConfig.featurePoints.ecommerce || 18}
+                    checked={features.ecommerce}
+                    onChange={() => setFeatures((f) => ({ ...f, ecommerce: !f.ecommerce }))}
+                  />
+                  <FeatureCheckbox
+                    id="api"
+                    label="API Integrations"
+                    description="Connecting with third-party webhooks, REST services, and tools."
+                    points={pricingConfig.featurePoints.api || 8}
+                    checked={features.api}
+                    onChange={() => setFeatures((f) => ({ ...f, api: !f.api }))}
+                  />
+                  <FeatureCheckbox
+                    id="dashboard"
+                    label="Data Dashboard"
+                    description="Visual metric charts, interactive reports, and data visualization."
+                    points={pricingConfig.featurePoints.dashboard || 14}
+                    checked={features.dashboard}
+                    onChange={() => setFeatures((f) => ({ ...f, dashboard: !f.dashboard }))}
+                  />
+                  <FeatureCheckbox
+                    id="realtime"
+                    label="Real-time Live Sync"
+                    description="Live state streaming, WebSockets, or collaborative updates."
+                    points={pricingConfig.featurePoints.realtime || 16}
+                    checked={features.realtime}
+                    onChange={() => setFeatures((f) => ({ ...f, realtime: !f.realtime }))}
+                  />
+                  <FeatureCheckbox
+                    id="search"
+                    label="Advanced Search"
+                    description="Faceted search, multi-field filters, and responsive sorting."
+                    points={pricingConfig.featurePoints.search || 6}
+                    checked={features.search}
+                    onChange={() => setFeatures((f) => ({ ...f, search: !f.search }))}
+                  />
+                  <FeatureCheckbox
+                    id="seo"
+                    label="SEO &amp; Social Cards"
+                    description="OpenGraph tags, Schema.org JSON-LD, sitemaps, and speed optimization."
+                    points={pricingConfig.featurePoints.seo || 4}
+                    checked={features.seo}
+                    onChange={() => setFeatures((f) => ({ ...f, seo: !f.seo }))}
+                  />
+                  <FeatureCheckbox
+                    id="multilingual"
+                    label="Multi-language Support"
+                    description="Internationalization (i18n), regional routing, and language selector."
+                    points={pricingConfig.featurePoints.multilingual || 8}
+                    checked={features.multilingual}
+                    onChange={() => setFeatures((f) => ({ ...f, multilingual: !f.multilingual }))}
+                  />
+                  <FeatureCheckbox
+                    id="notifications"
+                    label="Push &amp; Email Alerts"
+                    description="Automated transactional emails and native mobile push alerts."
+                    points={pricingConfig.featurePoints.notifications || 6}
+                    checked={features.notifications}
+                    onChange={() => setFeatures((f) => ({ ...f, notifications: !f.notifications }))}
+                  />
+                  <FeatureCheckbox
+                    id="offline"
+                    label="Offline / PWA"
+                    description="Progressive Web App support with service worker offline caching."
+                    points={pricingConfig.featurePoints.offline || 10}
+                    checked={features.offline}
+                    onChange={() => setFeatures((f) => ({ ...f, offline: !f.offline }))}
+                  />
+                  <FeatureCheckbox
+                    id="animations"
+                    label="Custom UI Motion"
+                    description="Physics-based transitions, micro-interactions, and visual flair."
+                    points={pricingConfig.featurePoints.animations || 5}
+                    checked={features.animations}
+                    onChange={() => setFeatures((f) => ({ ...f, animations: !f.animations }))}
                   />
                 </div>
               </div>
 
-              {/* Maintenance */}
-              {priceBreakdown.monthlyMaintenance > 0 && (
-                <div className="p-3 bg-slate-900/40 border border-slate-700/60 rounded-xl text-xs space-y-1">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Ongoing Retainer:</span>
-                    <span className="font-bold text-cyan-400">
-                      {formatCurrency(priceBreakdown.monthlyMaintenance)} / mo
+              {/* 6. Timeline */}
+              <div>
+                <div className="flex justify-between items-baseline mb-2">
+                  <h3 className="text-base font-bold text-white">5. Project Delivery Timeline</h3>
+                  <span className="text-xs text-slate-400">Flexibility reward available</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {(['flexible', 'standard', 'expedited', 'urgent'] as Timeline[]).map((t) => (
+                    <label
+                      key={t}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-colors ${
+                        timeline === t
+                          ? 'bg-cyan-950/30 border-cyan-500 shadow-sm'
+                          : 'bg-slate-900/40 border-slate-700 hover:bg-slate-800/40'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="timeline"
+                        value={t}
+                        checked={timeline === t}
+                        onChange={() => setTimeline(t)}
+                        className="sr-only"
+                      />
+                      <span className="text-white font-bold text-sm block">{timelineLabels[t]}</span>
+                      <span className="text-xs text-slate-400 mt-0.5 block">{timelineDescriptions[t]}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* 7. Ongoing Maintenance */}
+              <div>
+                <div className="flex justify-between items-baseline mb-2">
+                  <h3 className="text-base font-bold text-white">6. Ongoing Support &amp; Hosting Retainer</h3>
+                  <span className="text-xs text-slate-400">Post-launch maintenance</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(Object.keys(pricingConfig.maintenanceTiers) as MaintenanceTier[]).map((tier) => {
+                    const tCfg = pricingConfig.maintenanceTiers[tier];
+                    if (!tCfg) return null;
+                    const isSelected = maintenanceTier === tier;
+                    return (
+                      <label
+                        key={tier}
+                        className={`p-4 rounded-xl border cursor-pointer flex flex-col justify-between transition-colors ${
+                          isSelected
+                            ? 'bg-cyan-950/30 border-cyan-500 shadow-sm'
+                            : 'bg-slate-900/40 border-slate-700 hover:bg-slate-800/40'
+                        }`}
+                      >
+                        <div>
+                          <input
+                            type="radio"
+                            name="maintenance"
+                            value={tier}
+                            checked={isSelected}
+                            onChange={() => setMaintenanceTier(tier)}
+                            className="sr-only"
+                          />
+                          <span className="text-white font-bold text-sm block">{tCfg.label}</span>
+                          <span className="text-xs text-slate-400 mt-1 block leading-relaxed">{tCfg.desc}</span>
+                        </div>
+                        <span className="block mt-3 text-cyan-400 font-bold text-sm">
+                          {tCfg.price === 0 ? 'Self-Managed (Free)' : `${formatCurrency(tCfg.price)} / mo`}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 8. Custom Scope Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                  Custom Scope Notes (Optional client context)
+                </label>
+                <textarea
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Scope assumes client provides brand assets and copy. Includes 30 days post-launch warranty."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white text-xs leading-relaxed focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            {/* --- Right Column: Results, Exact Quoting & Actions --- */}
+            <div className="lg:col-span-1 space-y-5">
+              {/* Discount Toggle Card */}
+              <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
+                <Toggle
+                  label={`Apply Discount (${Math.round(pricingConfig.discountPercent * 100)}%)`}
+                  checked={applyDiscount}
+                  onChange={setApplyDiscount}
+                />
+              </div>
+
+              {/* Price Estimate Card */}
+              <div className="bg-slate-800 border-2 border-slate-700 rounded-xl p-6 shadow-xl sticky top-8 space-y-5">
+                <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                  <h3 className="text-lg font-bold text-white">Price Estimate &amp; Quote</h3>
+                  <span className="text-xs text-cyan-400 font-semibold uppercase tracking-wider">
+                    {PROJECT_TYPE_METAS[projectType]?.badge}
+                  </span>
+                </div>
+
+                {/* EXACT QUOTE CALIBRATION SECTION */}
+                <div className="p-4 bg-emerald-950/25 border-2 border-emerald-500/40 rounded-xl space-y-3">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                      Agreed Exact Quote Amount
                     </span>
+                    <span className="text-[10px] text-slate-400">Target to invoice</span>
                   </div>
-                  <div className="flex justify-between text-slate-400 text-[11px]">
-                    <span>Billed Annually:</span>
-                    <span>{formatCurrency(priceBreakdown.yearlyMaintenance)} / yr</span>
+
+                  {/* Quick-pick chips */}
+                  <div className="grid grid-cols-3 gap-1.5 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.low)}
+                      className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
+                        effectiveExactQuote === priceBreakdown.priceRange.low
+                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-sm'
+                          : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      Low: {formatCurrency(priceBreakdown.priceRange.low)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserExactQuotedPrice(priceBreakdown.finalPrice)}
+                      className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
+                        effectiveExactQuote === priceBreakdown.finalPrice
+                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-sm'
+                          : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      Mid: {formatCurrency(priceBreakdown.finalPrice)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.high)}
+                      className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
+                        effectiveExactQuote === priceBreakdown.priceRange.high
+                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-sm'
+                          : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      High: {formatCurrency(priceBreakdown.priceRange.high)}
+                    </button>
+                  </div>
+
+                  {/* Exact Amount Input */}
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-slate-400 text-sm font-bold">£</span>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={effectiveExactQuote}
+                      onChange={(e) => setUserExactQuotedPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-emerald-500/50 rounded-lg pl-7 pr-3 py-1.5 text-emerald-400 font-extrabold text-lg text-right focus:outline-none focus:border-emerald-400"
+                    />
                   </div>
                 </div>
-              )}
 
-              {/* ACTION BUTTONS */}
-              <div className="space-y-2.5 pt-1">
-                {/* 1. Turn Quote Into Invoice */}
-                {hasClient ? (
+                {/* Line items */}
+                <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
+                  <div className="flex justify-between">
+                    <span>Base Setup ({PROJECT_TYPE_METAS[projectType]?.label})</span>
+                    <span className="font-medium text-white">{formatCurrency(priceBreakdown.baseSetupFee)}</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span>
+                      Features ({priceBreakdown.totalPoints} pts @ {formatCurrency(priceBreakdown.effectiveCostPerPoint)}/pt)
+                    </span>
+                    <span className="font-medium text-white">{formatCurrency(priceBreakdown.featureCost)}</span>
+                  </div>
+
+                  {projectType === 'website' && (
+                    <div className="text-[11px] text-emerald-400 pl-2">
+                      &bull; Static website credit multiplier applied ({pricingConfig.typeMultiplier.website}&times;)
+                    </div>
+                  )}
+                </div>
+
+                {/* Multipliers & Subtotal */}
+                <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
+                  <div className="flex justify-between font-semibold text-white">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(priceBreakdown.baseSetupFee + priceBreakdown.featureCost)}</span>
+                  </div>
+
+                  {priceBreakdown.timelineMultiplier !== 1 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Timeline ({timelineLabels[timeline]})</span>
+                      <span>&times;{priceBreakdown.timelineMultiplier}</span>
+                    </div>
+                  )}
+
+                  {priceBreakdown.platformMultiplier !== 1 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>
+                        Platform Bundle (
+                        {projectType === 'combo'
+                          ? comboPlatform === 'web_both'
+                            ? 'Web + Dual Mobile'
+                            : 'Web + Single Mobile'
+                          : mobilePlatform === 'both'
+                          ? 'Dual Mobile'
+                          : 'Single Mobile'}
+                        )
+                      </span>
+                      <span>&times;{priceBreakdown.platformMultiplier}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Discount line item */}
+                <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
+                  <div className="flex justify-between font-semibold">
+                    <span>Adjusted Subtotal</span>
+                    <span className="text-white">{formatCurrency(priceBreakdown.subtotal)}</span>
+                  </div>
+
+                  {priceBreakdown.discount > 0 && (
+                    <div className="flex justify-between text-emerald-400 font-semibold">
+                      <span>Discount ({Math.round(pricingConfig.discountPercent * 100)}%)</span>
+                      <span>-{formatCurrency(priceBreakdown.discount)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Estimated Range Envelope */}
+                <div className="text-center bg-slate-900/60 border border-slate-700/80 rounded-xl p-3.5 space-y-1">
+                  <p className="text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
+                    Estimated Delivery Envelope
+                  </p>
+                  <p className="text-xl font-bold text-slate-300">
+                    {formatCurrency(priceBreakdown.priceRange.low)} &ndash; {formatCurrency(priceBreakdown.priceRange.high)}
+                  </p>
+                  <p className="text-[10px] text-slate-500">&plusmn;10% contingency window</p>
+                </div>
+
+                {/* Maintenance */}
+                {priceBreakdown.monthlyMaintenance > 0 && (
+                  <div className="p-3 bg-slate-900/40 border border-slate-700/60 rounded-xl text-xs space-y-1">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Ongoing Retainer:</span>
+                      <span className="font-bold text-cyan-400">
+                        {formatCurrency(priceBreakdown.monthlyMaintenance)} / mo
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-400 text-[11px]">
+                      <span>Billed Annually:</span>
+                      <span>{formatCurrency(priceBreakdown.yearlyMaintenance)} / yr</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ACTION BUTTONS */}
+                <div className="space-y-2.5 pt-1">
+                  {/* 1. Turn Quote Into Invoice (ALWAYS VISIBLE & PROMINENT) */}
                   <button
                     type="button"
                     onClick={() => handleOpenConvertModal()}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-extrabold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transform hover:scale-[1.01]"
+                    className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-extrabold py-3.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transform hover:scale-[1.01]"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -1295,76 +1413,65 @@ ${generateShareUrl(est)}`;
                     </svg>
                     <span>Turn Quote into Invoice ({formatCurrency(effectiveExactQuote)})</span>
                   </button>
-                ) : (
+
+                  {/* 2. Save Estimate Historically */}
                   <button
                     type="button"
-                    onClick={() => {
-                      // Scroll to top client select
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                    onClick={handleSaveCurrentEstimate}
+                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-md shadow-cyan-500/20"
                   >
-                    <span>Attach Client Above to Invoice</span>
-                  </button>
-                )}
-
-                {/* 2. Save Estimate Historically */}
-                <button
-                  type="button"
-                  onClick={handleSaveCurrentEstimate}
-                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-md shadow-cyan-500/20"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-                    />
-                  </svg>
-                  {savingStatus || 'Save Quote Historically'}
-                </button>
-
-                {/* 3. Share & Public View */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenShareModal()}
-                    className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         strokeWidth={2}
-                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                        d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
                       />
                     </svg>
-                    Share Scope
+                    {savingStatus || 'Save Quote Historically'}
                   </button>
 
-                  <a
-                    href={generateShareUrl(currentEstimateObject)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full bg-slate-900 hover:bg-slate-700/80 text-cyan-400 border border-cyan-800/40 font-semibold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                      />
-                    </svg>
-                    Public View
-                  </a>
+                  {/* 3. Share & Public View */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenShareModal()}
+                      className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                        />
+                      </svg>
+                      Share Scope
+                    </button>
+
+                    <a
+                      href={generateShareUrl(currentEstimateObject)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full bg-slate-900 hover:bg-slate-700/80 text-cyan-400 border border-cyan-800/40 font-semibold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                        />
+                      </svg>
+                      Public View
+                    </a>
+                  </div>
                 </div>
-              </div>
 
-              <p className="text-[11px] text-slate-500 text-center leading-tight">
-                Preliminary engineering estimate for planning purposes. Subject to specification sign-off.
-              </p>
+                <p className="text-[11px] text-slate-500 text-center leading-tight">
+                  Preliminary engineering estimate for planning purposes. Subject to specification sign-off.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1478,7 +1585,7 @@ ${generateShareUrl(est)}`;
             </div>
 
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
-              {activeEstimateForShare.client_name && !activeEstimateForShare.invoice_number && (
+              {!activeEstimateForShare.invoice_number && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1508,6 +1615,21 @@ ${generateShareUrl(est)}`;
           estimate={convertModalEstimate}
           onClose={() => setConvertModalEstimate(null)}
           onSuccess={handleInvoiceGeneratedSuccess}
+        />
+      )}
+
+      {/* --- EXACT QUOTE CALIBRATION MODAL --- */}
+      {calibratingEstimate && (
+        <ExactQuoteCalibrationModal
+          estimate={calibratingEstimate}
+          onClose={() => setCalibratingEstimate(null)}
+          onSaved={(updated) => {
+            setSavedEstimates((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+          }}
+          onConvertToInvoice={(updated) => {
+            setCalibratingEstimate(null);
+            handleOpenConvertModal(updated);
+          }}
         />
       )}
     </div>

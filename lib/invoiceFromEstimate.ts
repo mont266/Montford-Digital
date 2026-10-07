@@ -185,7 +185,7 @@ export const createInvoiceFromEstimate = async (
       const updatedEstimate: Estimate = {
         ...params.estimate,
         status: 'invoiced',
-        exact_amount: params.exactAmount,
+        quoted_amount: params.exactAmount,
         invoice_id: newInvoice1.id,
         invoice_number: `${finalInvoiceNumber}-A & -B`,
       };
@@ -237,7 +237,7 @@ export const createInvoiceFromEstimate = async (
       const updatedEstimate: Estimate = {
         ...params.estimate,
         status: 'invoiced',
-        exact_amount: params.exactAmount,
+        quoted_amount: params.exactAmount,
         invoice_id: newInvoice.id,
         invoice_number: finalInvoiceNumber,
       };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Estimate } from '../lib/estimates';
+import { supabase } from '../lib/supabaseClient';
 import {
   fetchNextInvoiceNumber,
   fetchClientProjects,
@@ -45,6 +46,12 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
   // Exact amount state (defaults to previously set quoted_amount, or mid point)
   const [exactAmount, setExactAmount] = useState<number>(estimate.quoted_amount || mid);
 
+  // Client state (loaded from estimate or selectable inside modal)
+  const [availableClients, setAvailableClients] = useState<{ id: string; name: string; email?: string }[]>([]);
+  const [clientId, setClientId] = useState<string>(estimate.client_id || '');
+  const [clientName, setClientName] = useState<string>(estimate.client_name || '');
+  const [clientEmail, setClientEmail] = useState<string>(estimate.client_email || '');
+
   // Project state
   const [existingProjects, setExistingProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('new');
@@ -82,19 +89,45 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
   } | null>(null);
   const [copiedInvoiceLink, setCopiedInvoiceLink] = useState(false);
 
-  // Fetch next invoice number & client projects on mount
+  // Load clients and next invoice number on mount
   useEffect(() => {
     fetchNextInvoiceNumber().then(setInvoiceNumber);
-    if (estimate.client_id) {
-      fetchClientProjects(estimate.client_id).then((projs) => {
+
+    supabase
+      .from('clients')
+      .select('id, name, email')
+      .order('name')
+      .then(({ data }) => {
+        if (data) {
+          setAvailableClients(data);
+          // If we have clientId, preselect
+          if (estimate.client_id) {
+            const found = data.find((c) => c.id === estimate.client_id);
+            if (found) {
+              setClientName(found.name);
+              setClientEmail(found.email || '');
+            }
+          }
+        }
+      });
+  }, [estimate.client_id]);
+
+  // Load projects whenever clientId changes
+  useEffect(() => {
+    if (clientId) {
+      fetchClientProjects(clientId).then((projs) => {
         setExistingProjects(projs);
         if (projs.length > 0) {
-          // Default to new or first project
+          setSelectedProjectId(projs[0].id);
+        } else {
           setSelectedProjectId('new');
         }
       });
+    } else {
+      setExistingProjects([]);
+      setSelectedProjectId('new');
     }
-  }, [estimate.client_id]);
+  }, [clientId]);
 
   // Re-build line items whenever exactAmount, itemMode or estimate changes
   useEffect(() => {
@@ -107,7 +140,6 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
         },
       ]);
     } else {
-      // Build itemized items
       const rawItems: { description: string; quantity: number; weight: number }[] = [];
 
       // Base setup
@@ -134,7 +166,6 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
       let runningSum = 0;
       const calculated = rawItems.map((item, idx) => {
         if (idx === rawItems.length - 1) {
-          // Rounding reconciliation to exact penny
           return {
             description: item.description,
             quantity: item.quantity,
@@ -158,10 +189,28 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     setExactAmount(amount);
   };
 
+  const handleClientSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setClientId(val);
+    if (val && val !== 'custom') {
+      const c = availableClients.find((item) => item.id === val);
+      if (c) {
+        setClientName(c.name);
+        setClientEmail(c.email || '');
+        setNewProjectName(estimate.title || `${c.name} Project`);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!estimate.client_id && !estimate.client_name) {
-      setErrorMsg('This quote must have a client attached to generate an invoice.');
+
+    let finalClientId = clientId;
+    let finalClientName = clientName.trim();
+    let finalClientEmail = clientEmail.trim();
+
+    if (!finalClientName) {
+      setErrorMsg('Please select or specify a customer/client name to invoice.');
       return;
     }
     if (exactAmount <= 0) {
@@ -172,11 +221,31 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     setIsSubmitting(true);
     setErrorMsg(null);
 
+    // If client does not exist in database, create client first
+    if (!finalClientId || finalClientId === 'custom') {
+      try {
+        const { data: newClient, error: clientErr } = await supabase
+          .from('clients')
+          .insert({
+            name: finalClientName,
+            email: finalClientEmail || null,
+          })
+          .select()
+          .single();
+
+        if (!clientErr && newClient) {
+          finalClientId = newClient.id;
+        }
+      } catch (e) {
+        console.warn('Could not auto-create client in database, proceeding with name:', e);
+      }
+    }
+
     const result = await convertEstimateToInvoice({
       estimate,
-      clientId: estimate.client_id || '',
-      clientName: estimate.client_name || 'Client',
-      clientEmail: estimate.client_email,
+      clientId: finalClientId,
+      clientName: finalClientName,
+      clientEmail: finalClientEmail,
       projectId: selectedProjectId,
       newProjectName,
       exactAmount,
@@ -235,14 +304,14 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
               {createdInvoiceResult.secondInvoiceNumber && (
                 <span>&amp; {createdInvoiceResult.secondInvoiceNumber}</span>
               )}{' '}
-              was successfully created for <strong className="text-white">{estimate.client_name}</strong>.
+              was successfully generated for <strong className="text-white">{clientName || estimate.client_name}</strong>.
             </p>
           </div>
 
           <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2 text-left text-xs">
             <div className="flex justify-between text-slate-400">
               <span>Client:</span>
-              <span className="text-white font-medium">{estimate.client_name}</span>
+              <span className="text-white font-medium">{clientName || estimate.client_name}</span>
             </div>
             <div className="flex justify-between text-slate-400">
               <span>Billed Amount:</span>
@@ -292,7 +361,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
               onClick={onClose}
               className="w-full py-2.5 text-xs text-slate-400 hover:text-white transition-colors"
             >
-              Close &amp; Back to Calculator
+              Done &amp; Close
             </button>
           </div>
         </div>
@@ -316,9 +385,9 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               Quote &rarr; Invoice Conversion
             </span>
-            <h3 className="text-xl font-bold text-white mt-1">Convert Quote to Client Invoice</h3>
+            <h3 className="text-xl font-bold text-white mt-1">Convert Quote to Customer Invoice</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Client: <strong className="text-slate-200">{estimate.client_name || 'Unassigned'}</strong> &bull; Scope: {estimate.title}
+              Scope: <strong className="text-slate-200">{estimate.title}</strong> &bull; Range: {formatCurrency(low)} &ndash; {formatCurrency(high)}
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">
@@ -333,14 +402,65 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
             </div>
           )}
 
-          {/* STEP 1: Exact Quoted Amount Selection */}
-          <div className="p-5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-4">
+          {/* STEP 1: Client Selection */}
+          <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+            <label className="text-xs font-bold uppercase tracking-wider text-cyan-400 block">
+              1. Customer / Client to Invoice
+            </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">Select Existing Client</label>
+                <select
+                  value={clientId}
+                  onChange={handleClientSelectChange}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="">-- Choose Client or Enter New Below --</option>
+                  {availableClients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.email ? `(${c.email})` : ''}
+                    </option>
+                  ))}
+                  <option value="custom">+ New / Custom Client</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">Client Name</label>
+                <input
+                  type="text"
+                  required
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  placeholder="e.g. Acme Corp / Jane Smith"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            {(!clientId || clientId === 'custom') && (
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">Client Contact Email</label>
+                <input
+                  type="email"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                  placeholder="e.g. client@example.com"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* STEP 2: Exact Quoted Amount Selection */}
+          <div className="p-5 bg-emerald-950/20 border border-emerald-500/30 rounded-xl space-y-4">
             <div className="flex justify-between items-baseline">
-              <label className="text-xs font-bold uppercase tracking-wider text-cyan-400">
-                1. Pick Exact Quoted Amount to Invoice
+              <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                2. Set Exact Quoted Amount to Bill
               </label>
               <span className="text-xs text-slate-400">
-                Estimate Range: {formatCurrency(low)} &ndash; {formatCurrency(high)}
+                Envelope: {formatCurrency(low)} &ndash; {formatCurrency(high)}
               </span>
             </div>
 
@@ -351,11 +471,11 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
                 onClick={() => handleQuickAmountPick(low)}
                 className={`p-2.5 rounded-lg border text-xs font-semibold transition-all ${
                   exactAmount === low
-                    ? 'bg-cyan-950/60 border-cyan-400 text-white shadow-sm'
-                    : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
+                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-md'
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                <span className="block text-[10px] text-slate-400 uppercase">Lower Bound</span>
+                <span className="block text-[10px] text-slate-300 uppercase">Lower Bound</span>
                 <span className="text-sm font-bold text-white">{formatCurrency(low)}</span>
               </button>
 
@@ -364,11 +484,11 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
                 onClick={() => handleQuickAmountPick(mid)}
                 className={`p-2.5 rounded-lg border text-xs font-semibold transition-all ${
                   exactAmount === mid
-                    ? 'bg-cyan-950/60 border-cyan-400 text-white shadow-sm'
-                    : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
+                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-md'
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                <span className="block text-[10px] text-slate-400 uppercase">Mid Target</span>
+                <span className="block text-[10px] text-slate-300 uppercase">Mid Target</span>
                 <span className="text-sm font-bold text-white">{formatCurrency(mid)}</span>
               </button>
 
@@ -377,11 +497,11 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
                 onClick={() => handleQuickAmountPick(high)}
                 className={`p-2.5 rounded-lg border text-xs font-semibold transition-all ${
                   exactAmount === high
-                    ? 'bg-cyan-950/60 border-cyan-400 text-white shadow-sm'
-                    : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
+                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-md'
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                <span className="block text-[10px] text-slate-400 uppercase">Upper Bound</span>
+                <span className="block text-[10px] text-slate-300 uppercase">Upper Bound</span>
                 <span className="text-sm font-bold text-white">{formatCurrency(high)}</span>
               </button>
             </div>
@@ -389,10 +509,10 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
             {/* Custom Input */}
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">
-                Custom Exact Agreed Amount (£)
+                Exact Invoice Amount (£)
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-2.5 text-slate-400 text-sm font-bold">£</span>
+                <span className="absolute left-3.5 top-2 text-slate-400 text-lg font-bold">£</span>
                 <input
                   type="number"
                   step="1"
@@ -400,26 +520,24 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
                   required
                   value={exactAmount}
                   onChange={(e) => setExactAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-4 py-2.5 text-white text-base font-extrabold focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-emerald-400 text-xl font-extrabold focus:outline-none focus:border-emerald-500"
                 />
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
-                This exact figure will become the total customer billing amount.
+                Choose any exact amount within (or based on) the estimated scope envelope.
               </p>
             </div>
           </div>
 
-          {/* STEP 2: Project Assignment */}
+          {/* STEP 3: Project Assignment */}
           <div className="space-y-3">
             <label className="text-xs font-bold uppercase tracking-wider text-cyan-400 block">
-              2. Target Project in Dashboard
+              3. Dashboard Project Assignment
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Assign to Project
-                </label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Project</label>
                 <select
                   value={selectedProjectId}
                   onChange={(e) => setSelectedProjectId(e.target.value)}
@@ -436,9 +554,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
 
               {selectedProjectId === 'new' && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    New Project Name
-                  </label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">New Project Name</label>
                   <input
                     type="text"
                     required
@@ -451,10 +567,10 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
             </div>
           </div>
 
-          {/* STEP 3: Billing & Invoicing Structure */}
+          {/* STEP 4: Invoicing Structure */}
           <div className="space-y-3">
             <label className="text-xs font-bold uppercase tracking-wider text-cyan-400 block">
-              3. Invoicing Structure
+              4. Invoicing Milestone Structure
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -523,7 +639,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
             </div>
           </div>
 
-          {/* STEP 4: Invoice Dates & Reference */}
+          {/* STEP 5: Invoice Dates & Number */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">Invoice Number</label>
@@ -563,9 +679,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
 
           {billingStructure === 'split_50_50' && (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                Due Date (Part 2 - Completion)
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Due Date (Part 2 - Completion)</label>
               <input
                 type="date"
                 required
@@ -576,11 +690,11 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
             </div>
           )}
 
-          {/* STEP 5: Itemization Style */}
+          {/* STEP 6: Line Items */}
           <div className="space-y-3 pt-1">
             <div className="flex justify-between items-center">
               <label className="text-xs font-bold uppercase tracking-wider text-cyan-400">
-                4. Scope Line Items
+                5. Scope Line Items
               </label>
               <div className="flex items-center gap-2">
                 <button
