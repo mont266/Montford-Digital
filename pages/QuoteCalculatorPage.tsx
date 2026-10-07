@@ -13,103 +13,12 @@ import {
   deleteEstimate,
   encodeEstimateToDataUrl,
 } from '../lib/estimates';
-
-// --- Configuration ---
-const PRICING_CONFIG = {
-  // Base setup fees per project archetype
-  BASE_SETUP_FEE: {
-    website: 150,     // Static marketing / landing page-esque
-    webapp: 280,      // Dynamic cloud web application
-    mobileapp: 380,   // Native mobile app
-    combo: 480,       // Web App + Mobile App suite
-  },
-
-  // Base cost per feature credit point (reworked to £10 for transparent scaling)
-  COST_PER_POINT: 10,
-
-  // Architecture & archetype multipliers
-  PROJECT_TYPE_CONFIG: {
-    website: {
-      label: 'Website',
-      badge: 'Static / Landing Page',
-      description: 'Fast, lightweight marketing sites and conversion landing pages.',
-      typeMultiplier: 0.65, // Significant differentiation: static projects are ~35% lower cost per point
-    },
-    webapp: {
-      label: 'Web App',
-      badge: 'Dynamic / Full-Stack',
-      description: 'Custom database applications, portals, and SaaS dashboards.',
-      typeMultiplier: 1.0,
-    },
-    mobileapp: {
-      label: 'Mobile App',
-      badge: 'iOS / Android Native',
-      description: 'Dedicated smartphone applications for the Apple App Store and Google Play.',
-      typeMultiplier: 1.15,
-    },
-    combo: {
-      label: 'Web App + Mobile App',
-      badge: 'Cross-Platform Suite',
-      description: 'Unified web app plus native mobile apps with shared cloud backend.',
-      typeMultiplier: 1.55, // Bundled architecture savings
-    },
-  },
-
-  // Multiplier for mobile platforms
-  MOBILE_PLATFORM_MULTIPLIER: {
-    ios: 1.0,
-    android: 1.0,
-    both: 1.45,
-  },
-
-  // Multiplier for web + mobile combos
-  COMBO_PLATFORM_MULTIPLIER: {
-    web_ios: 1.0,
-    web_android: 1.0,
-    web_both: 1.25,
-  },
-
-  // Reworked client profile multipliers (startup/solo webapp rate made noticeably more accessible)
-  CLIENT_PROFILE_MULTIPLIER: {
-    startup: 0.75,    // 25% lower credit rate for startups & solo founders (effective £7.50/pt)
-    smb: 1.15,        // Standard commercial business rate
-    established: 1.65, // Enterprise scale rate
-  },
-
-  // Project delivery urgency
-  TIMELINE_MULTIPLIER: {
-    flexible: 0.85,   // 12+ Weeks (15% discount for flexibility)
-    standard: 1.0,    // 8-12 Weeks
-    expedited: 1.25,  // 4-7 Weeks
-    urgent: 1.6,      // 2-3 Weeks (Priority rush)
-  },
-
-  DISCOUNT_PERCENT: 0.20, // 20% discount
-
-  MAINTENANCE_TIERS: {
-    none: { price: 0, label: 'Self-Managed', desc: 'Client handles own hosting, backups, and security.' },
-    basic: { price: 25, label: 'Basic Hosting & Security', desc: 'Managed cloud hosting, SSL, daily backups, and security patches.' },
-    standard: { price: 80, label: 'Standard Support', desc: 'Managed hosting + bug fixes & minor updates (up to 2 hrs/mo).' },
-    premium: { price: 250, label: 'Premium Retainer', desc: 'Priority support SLA + feature additions (up to 8 hrs/mo).' },
-  },
-
-  FEATURE_POINTS: {
-    auth: 5,        // User Authentication
-    roles: 6,       // Roles & Permissions
-    profile: 4,     // User Profiles
-    cms: 10,        // Content Management
-    ecommerce: 18,  // E-commerce/Payments
-    api: 8,         // 3rd Party APIs
-    dashboard: 14,  // Analytics/Dashboard
-    realtime: 16,   // Real-time/WebSockets
-    search: 6,      // Advanced Search
-    seo: 4,         // SEO Optimization
-    multilingual: 8, // Multi-language
-    notifications: 6, // Push/Email Alerts
-    offline: 10,    // Offline/PWA Support
-    animations: 5,  // Custom Animations
-  },
-};
+import {
+  PricingConfig,
+  DEFAULT_PRICING_CONFIG,
+  fetchPricingConfig,
+} from '../lib/pricingConfig';
+import { QuoteSettingsView } from '../components/QuoteSettingsView';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(amount);
@@ -189,9 +98,36 @@ const FeatureCheckbox: React.FC<{
   </label>
 );
 
+const PROJECT_TYPE_METAS = {
+  website: {
+    label: 'Website',
+    badge: 'Static / Landing Page',
+    description: 'Fast, lightweight marketing sites and conversion landing pages.',
+  },
+  webapp: {
+    label: 'Web App',
+    badge: 'Dynamic / Full-Stack',
+    description: 'Custom database applications, portals, and SaaS dashboards.',
+  },
+  mobileapp: {
+    label: 'Mobile App',
+    badge: 'iOS / Android Native',
+    description: 'Dedicated smartphone applications for the Apple App Store and Google Play.',
+  },
+  combo: {
+    label: 'Web App + Mobile App',
+    badge: 'Cross-Platform Suite',
+    description: 'Unified web app plus native mobile apps with shared cloud backend.',
+  },
+};
+
 const QuoteCalculatorPage: React.FC = () => {
   // --- View Mode ---
-  const [activeTab, setActiveTab] = useState<'calculator' | 'history'>('calculator');
+  const [activeTab, setActiveTab] = useState<'calculator' | 'history' | 'settings'>('calculator');
+
+  // --- Dynamic Pricing Configuration State (from DB / Local Storage) ---
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
+  const [isRemoteConfig, setIsRemoteConfig] = useState(false);
 
   // --- Clients State ---
   const [clients, setClients] = useState<ClientOption[]>([]);
@@ -201,7 +137,7 @@ const QuoteCalculatorPage: React.FC = () => {
   const [estimateTitle, setEstimateTitle] = useState<string>('');
   const [customNotes, setCustomNotes] = useState<string>('');
 
-  // --- Calculator Configuration State ---
+  // --- Calculator Scoping State ---
   const [projectType, setProjectType] = useState<ProjectType>('webapp');
   const [clientProfile, setClientProfile] = useState<ClientProfile>('startup');
   const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform>('both');
@@ -237,9 +173,15 @@ const QuoteCalculatorPage: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
 
-  // Load clients and saved estimates
+  // Fetch initial config, clients, and estimates
   useEffect(() => {
     const fetchInitialData = async () => {
+      // 1. Fetch dynamic pricing config from backend or local storage
+      const { config, isRemote } = await fetchPricingConfig();
+      setPricingConfig(config);
+      setIsRemoteConfig(isRemote);
+
+      // 2. Fetch clients
       try {
         const { data: clientsData } = await supabase
           .from('clients')
@@ -252,6 +194,7 @@ const QuoteCalculatorPage: React.FC = () => {
         console.warn('Error fetching clients:', err);
       }
 
+      // 3. Fetch saved estimates
       const estimatesList = await fetchAllEstimates();
       setSavedEstimates(estimatesList);
     };
@@ -261,8 +204,8 @@ const QuoteCalculatorPage: React.FC = () => {
 
   // Set default title based on project archetype if empty
   useEffect(() => {
-    if (!estimateTitle || estimateTitle.includes('Estimate')) {
-      const typeLabel = PRICING_CONFIG.PROJECT_TYPE_CONFIG[projectType].label;
+    if (!estimateTitle || estimateTitle.includes('Estimate') || estimateTitle.includes('Scope')) {
+      const typeLabel = PROJECT_TYPE_METAS[projectType]?.label || 'Project';
       const clientName = selectedClientId
         ? clients.find((c) => c.id === selectedClientId)?.name
         : customClientName;
@@ -287,42 +230,41 @@ const QuoteCalculatorPage: React.FC = () => {
     animations: 'Custom Animations',
   };
 
-  // --- Calculation Logic ---
+  // --- Dynamic Calculation Logic using live PricingConfig ---
   const priceBreakdown = useMemo(() => {
     let totalPoints = 0;
     const selectedFeaturesList = [];
 
     for (const [key, value] of Object.entries(features)) {
       if (value) {
-        const points =
-          PRICING_CONFIG.FEATURE_POINTS[key as keyof typeof PRICING_CONFIG.FEATURE_POINTS] || 0;
+        const points = pricingConfig.featurePoints[key] || 0;
         totalPoints += points;
         selectedFeaturesList.push({ key, label: featureLabels[key] || key, points });
       }
     }
 
-    const typeConfig = PRICING_CONFIG.PROJECT_TYPE_CONFIG[projectType];
-    const baseSetupFee = PRICING_CONFIG.BASE_SETUP_FEE[projectType];
+    const baseSetupFee = pricingConfig.baseSetupFee[projectType] || 200;
+    const typeMultiplier = pricingConfig.typeMultiplier[projectType] || 1.0;
+    const clientProfileMultiplier = pricingConfig.clientProfileMultiplier[clientProfile] || 1.0;
 
-    const clientProfileMultiplier = PRICING_CONFIG.CLIENT_PROFILE_MULTIPLIER[clientProfile];
-    // Effective point cost factors in both archetype complexity (website vs webapp) and client profile (startup discount)
+    // Effective point cost factors in both archetype complexity (website vs webapp) and client profile
     const effectiveCostPerPoint =
-      PRICING_CONFIG.COST_PER_POINT * typeConfig.typeMultiplier * clientProfileMultiplier;
+      pricingConfig.costPerPoint * typeMultiplier * clientProfileMultiplier;
 
     const featureCost = totalPoints * effectiveCostPerPoint;
     const subtotalBeforeMultipliers = baseSetupFee + featureCost;
 
-    const timelineMultiplier = PRICING_CONFIG.TIMELINE_MULTIPLIER[timeline];
+    const timelineMultiplier = pricingConfig.timelineMultiplier[timeline] || 1.0;
 
     let platformMultiplier = 1;
     if (projectType === 'mobileapp') {
-      platformMultiplier = PRICING_CONFIG.MOBILE_PLATFORM_MULTIPLIER[mobilePlatform];
+      platformMultiplier = pricingConfig.mobilePlatformMultiplier[mobilePlatform] || 1.0;
     } else if (projectType === 'combo') {
-      platformMultiplier = PRICING_CONFIG.COMBO_PLATFORM_MULTIPLIER[comboPlatform];
+      platformMultiplier = pricingConfig.comboPlatformMultiplier[comboPlatform] || 1.25;
     }
 
     const subtotal = subtotalBeforeMultipliers * timelineMultiplier * platformMultiplier;
-    const discount = applyDiscount ? subtotal * PRICING_CONFIG.DISCOUNT_PERCENT : 0;
+    const discount = applyDiscount ? subtotal * pricingConfig.discountPercent : 0;
     const finalPrice = subtotal - discount;
 
     const priceRange = {
@@ -330,7 +272,7 @@ const QuoteCalculatorPage: React.FC = () => {
       high: Math.round(finalPrice * 1.1),
     };
 
-    const monthlyMaintenance = PRICING_CONFIG.MAINTENANCE_TIERS[maintenanceTier].price;
+    const monthlyMaintenance = pricingConfig.maintenanceTiers[maintenanceTier]?.price || 0;
     const yearlyMaintenance = monthlyMaintenance * 12;
 
     return {
@@ -339,7 +281,7 @@ const QuoteCalculatorPage: React.FC = () => {
       selectedFeaturesList,
       effectiveCostPerPoint,
       featureCost,
-      typeMultiplier: typeConfig.typeMultiplier,
+      typeMultiplier,
       platformMultiplier,
       clientProfileMultiplier,
       timelineMultiplier,
@@ -351,6 +293,7 @@ const QuoteCalculatorPage: React.FC = () => {
       yearlyMaintenance,
     };
   }, [
+    pricingConfig,
     projectType,
     clientProfile,
     mobilePlatform,
@@ -365,7 +308,7 @@ const QuoteCalculatorPage: React.FC = () => {
     const matchedClient = clients.find((c) => c.id === selectedClientId);
     return {
       id: 'est-' + Date.now(),
-      title: estimateTitle || `${PRICING_CONFIG.PROJECT_TYPE_CONFIG[projectType].label} Scope`,
+      title: estimateTitle || `${PROJECT_TYPE_METAS[projectType]?.label} Scope`,
       client_id: selectedClientId || null,
       client_name: matchedClient?.name || customClientName || '',
       client_email: matchedClient?.email || customClientEmail || '',
@@ -407,7 +350,7 @@ const QuoteCalculatorPage: React.FC = () => {
   const handleSaveCurrentEstimate = async () => {
     setSavingStatus('Saving...');
     try {
-      const saved = await saveEstimate(currentEstimateObject);
+      await saveEstimate(currentEstimateObject);
       const updatedList = await fetchAllEstimates();
       setSavedEstimates(updatedList);
       setSavingStatus('Saved!');
@@ -449,12 +392,12 @@ const QuoteCalculatorPage: React.FC = () => {
     const text = `Montford Digital - Project Estimate & Scope
 Project: ${est.title}
 Client: ${est.client_name || 'Prospective Client'}
-Classification: ${PRICING_CONFIG.PROJECT_TYPE_CONFIG[est.project_type]?.label || est.project_type}
+Classification: ${PROJECT_TYPE_METAS[est.project_type]?.label || est.project_type}
 Estimated Range: ${formatCurrency(est.estimated_low)} - ${formatCurrency(est.estimated_high)}
 Timeline: ${est.timeline}
 Included Features: ${activeFeats || 'Standard baseline scope'}
 Ongoing Upkeep: ${est.monthly_maintenance > 0 ? `${formatCurrency(est.monthly_maintenance)}/mo` : 'Self-managed'}
-${est.discount > 0 ? `Discount Applied: ${formatCurrency(est.discount)}` : ''}
+${est.discount > 0 ? `Discount: -${formatCurrency(est.discount)}` : ''}
 
 View full interactive scope breakdown:
 ${generateShareUrl(est)}`;
@@ -489,9 +432,9 @@ ${generateShareUrl(est)}`;
   };
 
   const clientProfileLabels: Record<ClientProfile, string> = {
-    startup: 'Startup / Solo (30% Off)',
-    smb: 'Small Business',
-    established: 'Enterprise',
+    startup: `Startup / Solo (${pricingConfig.clientProfileMultiplier.startup}&times;)`,
+    smb: `Small Business (${pricingConfig.clientProfileMultiplier.smb}&times;)`,
+    established: `Enterprise (${pricingConfig.clientProfileMultiplier.established}&times;)`,
   };
 
   const timelineLabels: Record<Timeline, string> = {
@@ -519,20 +462,24 @@ ${generateShareUrl(est)}`;
           </p>
         </div>
 
-        {/* Tab Controls */}
+        {/* Tab Controls: Calculator | Saved Estimates | Settings */}
         <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 p-1 rounded-xl">
           <button
             onClick={() => setActiveTab('calculator')}
-            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              activeTab === 'calculator' ? 'bg-cyan-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              activeTab === 'calculator'
+                ? 'bg-cyan-500 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             Calculator
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
-              activeTab === 'history' ? 'bg-cyan-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeTab === 'history'
+                ? 'bg-cyan-500 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
             <span>Saved Estimates</span>
@@ -544,8 +491,36 @@ ${generateShareUrl(est)}`;
               {savedEstimates.length}
             </span>
           </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+              activeTab === 'settings'
+                ? 'bg-cyan-500 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Pricing Settings</span>
+          </button>
         </div>
       </div>
+
+      {/* --- SETTINGS VIEW --- */}
+      {activeTab === 'settings' && (
+        <QuoteSettingsView
+          config={pricingConfig}
+          onConfigChange={(newCfg) => setPricingConfig(newCfg)}
+          isRemote={isRemoteConfig}
+        />
+      )}
 
       {/* --- HISTORY VIEW --- */}
       {activeTab === 'history' && (
@@ -586,7 +561,7 @@ ${generateShareUrl(est)}`;
                     <div className="flex justify-between items-start gap-2">
                       <div>
                         <span className="text-[11px] font-semibold text-cyan-400 uppercase tracking-wider">
-                          {PRICING_CONFIG.PROJECT_TYPE_CONFIG[est.project_type]?.label || est.project_type}
+                          {PROJECT_TYPE_METAS[est.project_type]?.label || est.project_type}
                         </span>
                         <h4 className="text-base font-bold text-white mt-0.5">{est.title}</h4>
                       </div>
@@ -742,9 +717,10 @@ ${generateShareUrl(est)}`;
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {(Object.keys(PRICING_CONFIG.PROJECT_TYPE_CONFIG) as ProjectType[]).map((type) => {
-                  const cfg = PRICING_CONFIG.PROJECT_TYPE_CONFIG[type];
+                {(Object.keys(PROJECT_TYPE_METAS) as ProjectType[]).map((type) => {
+                  const cfg = PROJECT_TYPE_METAS[type];
                   const isSelected = projectType === type;
+                  const setupFee = pricingConfig.baseSetupFee[type] || 200;
                   return (
                     <button
                       key={type}
@@ -766,9 +742,7 @@ ${generateShareUrl(est)}`;
                       <p className="text-[11px] text-slate-400 leading-snug">{cfg.description}</p>
                       <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-300 font-medium flex justify-between">
                         <span>Base setup:</span>
-                        <span className="text-white font-semibold">
-                          {formatCurrency(PRICING_CONFIG.BASE_SETUP_FEE[type])}
-                        </span>
+                        <span className="text-white font-semibold">{formatCurrency(setupFee)}</span>
                       </div>
                     </button>
                   );
@@ -831,7 +805,7 @@ ${generateShareUrl(est)}`;
               </div>
             )}
 
-            {/* 4. Client Stage / Profile Multiplier (Startup rework) */}
+            {/* 4. Client Commercial Profile */}
             <div>
               <div className="flex justify-between items-baseline mb-2">
                 <h3 className="text-base font-bold text-white">3. Client Commercial Profile</h3>
@@ -854,11 +828,9 @@ ${generateShareUrl(est)}`;
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-bold text-white text-sm capitalize">{prof}</span>
-                      {prof === 'startup' && (
-                        <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded">
-                          Startup Rate
-                        </span>
-                      )}
+                      <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded">
+                        &times;{pricingConfig.clientProfileMultiplier[prof]}
+                      </span>
                     </div>
                     <span className="text-xs text-slate-400 block">{clientProfileLabels[prof]}</span>
                   </button>
@@ -873,8 +845,7 @@ ${generateShareUrl(est)}`;
                 <span className="text-xs text-cyan-400 font-semibold">{priceBreakdown.totalPoints} points selected</span>
               </div>
               <p className="text-xs text-slate-400 mb-3">
-                Select the modular features required for the project. For websites, features are engineered with static
-                economy; for web apps and combos, they include full database & state orchestration.
+                Select the modular features required for the project. Point values are calibrated in Pricing Settings.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -882,7 +853,7 @@ ${generateShareUrl(est)}`;
                   id="auth"
                   label="User Authentication"
                   description="Secure login, registration, password recovery, and session handling."
-                  points={PRICING_CONFIG.FEATURE_POINTS.auth}
+                  points={pricingConfig.featurePoints.auth || 5}
                   checked={features.auth}
                   onChange={() => setFeatures((f) => ({ ...f, auth: !f.auth }))}
                 />
@@ -890,7 +861,7 @@ ${generateShareUrl(est)}`;
                   id="roles"
                   label="Roles & Permissions"
                   description="Role-based access controls (e.g. admin, manager, customer)."
-                  points={PRICING_CONFIG.FEATURE_POINTS.roles}
+                  points={pricingConfig.featurePoints.roles || 6}
                   checked={features.roles}
                   onChange={() => setFeatures((f) => ({ ...f, roles: !f.roles }))}
                 />
@@ -898,7 +869,7 @@ ${generateShareUrl(est)}`;
                   id="profile"
                   label="User Profiles"
                   description="User-editable profile data, avatar uploads, and preferences."
-                  points={PRICING_CONFIG.FEATURE_POINTS.profile}
+                  points={pricingConfig.featurePoints.profile || 4}
                   checked={features.profile}
                   onChange={() => setFeatures((f) => ({ ...f, profile: !f.profile }))}
                 />
@@ -906,7 +877,7 @@ ${generateShareUrl(est)}`;
                   id="cms"
                   label="Admin / CMS"
                   description="Content management panel to easily edit copy, articles, or records."
-                  points={PRICING_CONFIG.FEATURE_POINTS.cms}
+                  points={pricingConfig.featurePoints.cms || 10}
                   checked={features.cms}
                   onChange={() => setFeatures((f) => ({ ...f, cms: !f.cms }))}
                 />
@@ -914,7 +885,7 @@ ${generateShareUrl(est)}`;
                   id="ecommerce"
                   label="E-commerce & Checkout"
                   description="Product catalog, shopping cart, and Stripe payment gateway."
-                  points={PRICING_CONFIG.FEATURE_POINTS.ecommerce}
+                  points={pricingConfig.featurePoints.ecommerce || 18}
                   checked={features.ecommerce}
                   onChange={() => setFeatures((f) => ({ ...f, ecommerce: !f.ecommerce }))}
                 />
@@ -922,7 +893,7 @@ ${generateShareUrl(est)}`;
                   id="api"
                   label="API Integrations"
                   description="Connecting with third-party webhooks, REST services, and tools."
-                  points={PRICING_CONFIG.FEATURE_POINTS.api}
+                  points={pricingConfig.featurePoints.api || 8}
                   checked={features.api}
                   onChange={() => setFeatures((f) => ({ ...f, api: !f.api }))}
                 />
@@ -930,7 +901,7 @@ ${generateShareUrl(est)}`;
                   id="dashboard"
                   label="Data Dashboard"
                   description="Visual metric charts, interactive reports, and data visualization."
-                  points={PRICING_CONFIG.FEATURE_POINTS.dashboard}
+                  points={pricingConfig.featurePoints.dashboard || 14}
                   checked={features.dashboard}
                   onChange={() => setFeatures((f) => ({ ...f, dashboard: !f.dashboard }))}
                 />
@@ -938,7 +909,7 @@ ${generateShareUrl(est)}`;
                   id="realtime"
                   label="Real-time Live Sync"
                   description="Live state streaming, WebSockets, or collaborative updates."
-                  points={PRICING_CONFIG.FEATURE_POINTS.realtime}
+                  points={pricingConfig.featurePoints.realtime || 16}
                   checked={features.realtime}
                   onChange={() => setFeatures((f) => ({ ...f, realtime: !f.realtime }))}
                 />
@@ -946,7 +917,7 @@ ${generateShareUrl(est)}`;
                   id="search"
                   label="Advanced Search"
                   description="Faceted search, multi-field filters, and responsive sorting."
-                  points={PRICING_CONFIG.FEATURE_POINTS.search}
+                  points={pricingConfig.featurePoints.search || 6}
                   checked={features.search}
                   onChange={() => setFeatures((f) => ({ ...f, search: !f.search }))}
                 />
@@ -954,7 +925,7 @@ ${generateShareUrl(est)}`;
                   id="seo"
                   label="SEO & Social Cards"
                   description="OpenGraph tags, Schema.org JSON-LD, sitemaps, and speed optimization."
-                  points={PRICING_CONFIG.FEATURE_POINTS.seo}
+                  points={pricingConfig.featurePoints.seo || 4}
                   checked={features.seo}
                   onChange={() => setFeatures((f) => ({ ...f, seo: !f.seo }))}
                 />
@@ -962,7 +933,7 @@ ${generateShareUrl(est)}`;
                   id="multilingual"
                   label="Multi-language Support"
                   description="Internationalization (i18n), regional routing, and language selector."
-                  points={PRICING_CONFIG.FEATURE_POINTS.multilingual}
+                  points={pricingConfig.featurePoints.multilingual || 8}
                   checked={features.multilingual}
                   onChange={() => setFeatures((f) => ({ ...f, multilingual: !f.multilingual }))}
                 />
@@ -970,7 +941,7 @@ ${generateShareUrl(est)}`;
                   id="notifications"
                   label="Push & Email Alerts"
                   description="Automated transactional emails and native mobile push alerts."
-                  points={PRICING_CONFIG.FEATURE_POINTS.notifications}
+                  points={pricingConfig.featurePoints.notifications || 6}
                   checked={features.notifications}
                   onChange={() => setFeatures((f) => ({ ...f, notifications: !f.notifications }))}
                 />
@@ -978,7 +949,7 @@ ${generateShareUrl(est)}`;
                   id="offline"
                   label="Offline / PWA"
                   description="Progressive Web App support with service worker offline caching."
-                  points={PRICING_CONFIG.FEATURE_POINTS.offline}
+                  points={pricingConfig.featurePoints.offline || 10}
                   checked={features.offline}
                   onChange={() => setFeatures((f) => ({ ...f, offline: !f.offline }))}
                 />
@@ -986,7 +957,7 @@ ${generateShareUrl(est)}`;
                   id="animations"
                   label="Custom UI Motion"
                   description="Physics-based transitions, micro-interactions, and visual flair."
-                  points={PRICING_CONFIG.FEATURE_POINTS.animations}
+                  points={pricingConfig.featurePoints.animations || 5}
                   checked={features.animations}
                   onChange={() => setFeatures((f) => ({ ...f, animations: !f.animations }))}
                 />
@@ -1031,8 +1002,9 @@ ${generateShareUrl(est)}`;
                 <span className="text-xs text-slate-400">Post-launch maintenance</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(Object.keys(PRICING_CONFIG.MAINTENANCE_TIERS) as MaintenanceTier[]).map((tier) => {
-                  const tCfg = PRICING_CONFIG.MAINTENANCE_TIERS[tier];
+                {(Object.keys(pricingConfig.maintenanceTiers) as MaintenanceTier[]).map((tier) => {
+                  const tCfg = pricingConfig.maintenanceTiers[tier];
+                  if (!tCfg) return null;
                   const isSelected = maintenanceTier === tier;
                   return (
                     <label
@@ -1084,7 +1056,7 @@ ${generateShareUrl(est)}`;
             {/* Discount Toggle Card */}
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
               <Toggle
-                label="Apply Discount (20%)"
+                label={`Apply Discount (${Math.round(pricingConfig.discountPercent * 100)}%)`}
                 checked={applyDiscount}
                 onChange={setApplyDiscount}
               />
@@ -1095,14 +1067,14 @@ ${generateShareUrl(est)}`;
               <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                 <h3 className="text-lg font-bold text-white">Price Estimate</h3>
                 <span className="text-xs text-cyan-400 font-semibold uppercase tracking-wider">
-                  {PRICING_CONFIG.PROJECT_TYPE_CONFIG[projectType].badge}
+                  {PROJECT_TYPE_METAS[projectType]?.badge}
                 </span>
               </div>
 
               {/* Line items */}
               <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
                 <div className="flex justify-between">
-                  <span>Base Setup ({PRICING_CONFIG.PROJECT_TYPE_CONFIG[projectType].label})</span>
+                  <span>Base Setup ({PROJECT_TYPE_METAS[projectType]?.label})</span>
                   <span className="font-medium text-white">{formatCurrency(priceBreakdown.baseSetupFee)}</span>
                 </div>
 
@@ -1115,13 +1087,7 @@ ${generateShareUrl(est)}`;
 
                 {projectType === 'website' && (
                   <div className="text-[11px] text-emerald-400 pl-2">
-                    &bull; Static website credit discount applied (0.65&times;)
-                  </div>
-                )}
-
-                {clientProfile === 'startup' && (
-                  <div className="text-[11px] text-emerald-400 pl-2">
-                    &bull; Startup & Solo founder credit rate applied (&minus;25%)
+                    &bull; Static website credit multiplier applied ({pricingConfig.typeMultiplier.website}&times;)
                   </div>
                 )}
               </div>
@@ -1158,7 +1124,7 @@ ${generateShareUrl(est)}`;
                 )}
               </div>
 
-              {/* Discount line item (labeled strictly as "Discount", never "mates rates") */}
+              {/* Discount line item (strictly labeled "Discount") */}
               <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
                 <div className="flex justify-between font-semibold">
                   <span>Adjusted Subtotal</span>
@@ -1167,7 +1133,7 @@ ${generateShareUrl(est)}`;
 
                 {priceBreakdown.discount > 0 && (
                   <div className="flex justify-between text-emerald-400 font-semibold">
-                    <span>Discount (20%)</span>
+                    <span>Discount ({Math.round(pricingConfig.discountPercent * 100)}%)</span>
                     <span>-{formatCurrency(priceBreakdown.discount)}</span>
                   </div>
                 )}
