@@ -335,13 +335,34 @@ const EstimatePublicPage: React.FC = () => {
             </div>
             <div className="p-4 sm:p-5">
               <span className="block text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
-                Estimated Investment
+                {estimate.quoted_amount ? 'Agreed Quote' : 'Estimated Investment'}
               </span>
               <span className="block text-sm font-bold text-emerald-400 mt-1 print:text-black">
-                {formatCurrency(estimate.estimated_low)} &ndash; {formatCurrency(estimate.estimated_high)}
+                {estimate.quoted_amount
+                  ? formatCurrency(estimate.quoted_amount)
+                  : `${formatCurrency(estimate.estimated_low)} – ${formatCurrency(estimate.estimated_high)}`}
               </span>
             </div>
           </div>
+
+          {estimate.invoice_id && (
+            <div className="mx-8 sm:mx-10 mt-6 p-3.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-2 text-xs">
+              <div className="flex items-center gap-2 text-emerald-300">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>
+                  Official Invoice <strong>{estimate.invoice_number || 'Generated'}</strong> has been issued for this scope.
+                </span>
+              </div>
+              <a
+                href={`/#/invoice/${estimate.invoice_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-white bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded font-bold transition-colors"
+              >
+                View &amp; Pay Invoice &rarr;
+              </a>
+            </div>
+          )}
 
           {/* Scope & Features Inclusions */}
           <div className="p-8 sm:p-10 space-y-8">
@@ -428,18 +449,36 @@ const EstimatePublicPage: React.FC = () => {
                 <div className="pt-3 border-t border-slate-800 print:border-black flex justify-between items-baseline">
                   <div>
                     <span className="text-base font-bold text-white print:text-black block">
-                      Estimated Project Investment
+                      Estimated Project Scope Envelope
                     </span>
                     <span className="text-xs text-slate-400">
-                      Final cost within standard &plusmn;10% delivery envelope
+                      Baseline contingency range (&plusmn;10%)
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="text-2xl sm:text-3xl font-extrabold text-cyan-400 print:text-black">
+                    <span className="text-xl font-bold text-slate-300 print:text-black">
                       {formatCurrency(estimate.estimated_low)} &ndash; {formatCurrency(estimate.estimated_high)}
                     </span>
                   </div>
                 </div>
+
+                {estimate.quoted_amount && (
+                  <div className="pt-3 border-t border-slate-800 print:border-black flex justify-between items-baseline bg-emerald-950/20 -mx-6 px-6 py-3 rounded-lg border border-emerald-500/30">
+                    <div>
+                      <span className="text-base font-extrabold text-white print:text-black block">
+                        Formal Agreed Fixed Quote
+                      </span>
+                      <span className="text-xs text-emerald-400">
+                        Exact binding quote approved for this project
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-2xl sm:text-3xl font-extrabold text-emerald-400 print:text-black">
+                        {formatCurrency(estimate.quoted_amount)}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Maintenance if configured */}
                 {estimate.maintenance_tier && estimate.maintenance_tier !== 'none' && (

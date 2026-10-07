@@ -33,9 +33,12 @@ export interface Estimate {
   discount: number;
   estimated_low: number;
   estimated_high: number;
+  quoted_amount?: number; // Exact amount Scott decided to quote the customer
+  invoice_id?: string;    // ID of invoice generated from this quote
+  invoice_number?: string; // Number of invoice generated
   monthly_maintenance: number;
   yearly_maintenance: number;
-  status: 'draft' | 'sent' | 'approved' | 'archived';
+  status: 'draft' | 'sent' | 'quoted' | 'invoiced' | 'approved' | 'archived';
   created_at: string;
 }
 
@@ -122,6 +125,9 @@ export const saveEstimate = async (estimate: Estimate): Promise<Estimate> => {
       discount: estimate.discount,
       estimated_low: estimate.estimated_low,
       estimated_high: estimate.estimated_high,
+      quoted_amount: estimate.quoted_amount || null,
+      invoice_id: estimate.invoice_id || null,
+      invoice_number: estimate.invoice_number || null,
       monthly_maintenance: estimate.monthly_maintenance,
       status: estimate.status,
       created_at: estimate.created_at,
@@ -156,6 +162,7 @@ export const encodeEstimateToDataUrl = (estimate: Estimate): string => {
       t: estimate.title,
       cn: estimate.client_name,
       ce: estimate.client_email,
+      cid: estimate.client_id,
       pt: estimate.project_type,
       mp: estimate.mobile_platform,
       cp: estimate.combo_platform,
@@ -169,8 +176,12 @@ export const encodeEstimateToDataUrl = (estimate: Estimate): string => {
       d: estimate.discount,
       l: estimate.estimated_low,
       h: estimate.estimated_high,
+      qa: estimate.quoted_amount,
+      inv_id: estimate.invoice_id,
+      inv_num: estimate.invoice_number,
       mm: estimate.monthly_maintenance,
       ym: estimate.yearly_maintenance,
+      st: estimate.status,
       ca: estimate.created_at,
     };
     const jsonStr = JSON.stringify(minified);
@@ -190,6 +201,7 @@ export const decodeEstimateFromDataUrl = (encoded: string): Estimate | null => {
       title: m.t || 'Project Estimate',
       client_name: m.cn || '',
       client_email: m.ce || '',
+      client_id: m.cid || null,
       project_type: m.pt || 'webapp',
       mobile_platform: m.mp,
       combo_platform: m.cp,
@@ -203,9 +215,12 @@ export const decodeEstimateFromDataUrl = (encoded: string): Estimate | null => {
       discount: m.d || 0,
       estimated_low: m.l || 0,
       estimated_high: m.h || 0,
+      quoted_amount: m.qa,
+      invoice_id: m.inv_id,
+      invoice_number: m.inv_num,
       monthly_maintenance: m.mm || 0,
       yearly_maintenance: m.ym || 0,
-      status: 'sent',
+      status: m.st || 'sent',
       created_at: m.ca || new Date().toISOString(),
     };
   } catch (err) {

@@ -19,6 +19,7 @@ import {
   fetchPricingConfig,
 } from '../lib/pricingConfig';
 import { QuoteSettingsView } from '../components/QuoteSettingsView';
+import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(amount);
@@ -137,6 +138,9 @@ const QuoteCalculatorPage: React.FC = () => {
   const [estimateTitle, setEstimateTitle] = useState<string>('');
   const [customNotes, setCustomNotes] = useState<string>('');
 
+  // --- Exact Quoted Price State ---
+  const [userExactQuotedPrice, setUserExactQuotedPrice] = useState<number | null>(null);
+
   // --- Calculator Scoping State ---
   const [projectType, setProjectType] = useState<ProjectType>('webapp');
   const [clientProfile, setClientProfile] = useState<ClientProfile>('startup');
@@ -167,11 +171,14 @@ const QuoteCalculatorPage: React.FC = () => {
   const [savedEstimates, setSavedEstimates] = useState<Estimate[]>([]);
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
 
-  // --- Share Modal State ---
+  // --- Modal States ---
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [activeEstimateForShare, setActiveEstimateForShare] = useState<Estimate | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+
+  // Convert to Invoice Modal
+  const [convertModalEstimate, setConvertModalEstimate] = useState<Estimate | null>(null);
 
   // Fetch initial config, clients, and estimates
   useEffect(() => {
@@ -247,7 +254,6 @@ const QuoteCalculatorPage: React.FC = () => {
     const typeMultiplier = pricingConfig.typeMultiplier[projectType] || 1.0;
     const clientProfileMultiplier = pricingConfig.clientProfileMultiplier[clientProfile] || 1.0;
 
-    // Effective point cost factors in both archetype complexity (website vs webapp) and client profile
     const effectiveCostPerPoint =
       pricingConfig.costPerPoint * typeMultiplier * clientProfileMultiplier;
 
@@ -304,6 +310,9 @@ const QuoteCalculatorPage: React.FC = () => {
     maintenanceTier,
   ]);
 
+  // Exact chosen quote amount (defaults to final calculated target if not manually overridden)
+  const effectiveExactQuote = userExactQuotedPrice ?? priceBreakdown.finalPrice;
+
   const currentEstimateObject = useMemo<Estimate>(() => {
     const matchedClient = clients.find((c) => c.id === selectedClientId);
     return {
@@ -325,6 +334,7 @@ const QuoteCalculatorPage: React.FC = () => {
       discount: priceBreakdown.discount,
       estimated_low: priceBreakdown.priceRange.low,
       estimated_high: priceBreakdown.priceRange.high,
+      quoted_amount: effectiveExactQuote,
       monthly_maintenance: priceBreakdown.monthlyMaintenance,
       yearly_maintenance: priceBreakdown.yearlyMaintenance,
       status: 'draft',
@@ -345,6 +355,7 @@ const QuoteCalculatorPage: React.FC = () => {
     features,
     customNotes,
     priceBreakdown,
+    effectiveExactQuote,
   ]);
 
   const handleSaveCurrentEstimate = async () => {
@@ -368,6 +379,16 @@ const QuoteCalculatorPage: React.FC = () => {
     setShareModalOpen(true);
     setCopiedLink(false);
     setCopiedText(false);
+  };
+
+  const handleOpenConvertModal = (est?: Estimate) => {
+    const target = est || currentEstimateObject;
+    setConvertModalEstimate(target);
+  };
+
+  const handleInvoiceGeneratedSuccess = (invoiceId: string, invoiceNumber: string) => {
+    // Refresh estimates list to show updated invoiced status
+    fetchAllEstimates().then(setSavedEstimates);
   };
 
   const generateShareUrl = (est: Estimate) => {
@@ -394,7 +415,7 @@ Project: ${est.title}
 Client: ${est.client_name || 'Prospective Client'}
 Classification: ${PROJECT_TYPE_METAS[est.project_type]?.label || est.project_type}
 Estimated Range: ${formatCurrency(est.estimated_low)} - ${formatCurrency(est.estimated_high)}
-Timeline: ${est.timeline}
+${est.quoted_amount ? `Agreed Fixed Quote: ${formatCurrency(est.quoted_amount)}\n` : ''}Timeline: ${est.timeline}
 Included Features: ${activeFeats || 'Standard baseline scope'}
 Ongoing Upkeep: ${est.monthly_maintenance > 0 ? `${formatCurrency(est.monthly_maintenance)}/mo` : 'Self-managed'}
 ${est.discount > 0 ? `Discount: -${formatCurrency(est.discount)}` : ''}
@@ -421,6 +442,7 @@ ${generateShareUrl(est)}`;
     setApplyDiscount(est.discount > 0);
     setFeatures(est.features || {});
     setCustomNotes(est.custom_notes || '');
+    if (est.quoted_amount) setUserExactQuotedPrice(est.quoted_amount);
     setActiveTab('calculator');
   };
 
@@ -451,14 +473,16 @@ ${generateShareUrl(est)}`;
     urgent: '2-3 Weeks (Rush)',
   };
 
+  const hasClient = Boolean(selectedClientId || customClientName.trim());
+
   return (
     <div className="space-y-6">
       {/* Top Header & Navigation Tabs */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700/80 pb-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Quote & Scope Calculator</h2>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Quote &amp; Scope Calculator</h2>
           <p className="text-slate-400 text-sm mt-0.5">
-            Architectural pricing engine with client scope sharing and historic estimate tracking.
+            Architectural pricing engine with client scope sharing, exact quote calibration, and one-click invoice generation.
           </p>
         </div>
 
@@ -527,9 +551,9 @@ ${generateShareUrl(est)}`;
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-6">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="text-lg font-bold text-white">Historical Estimates</h3>
+              <h3 className="text-lg font-bold text-white">Historical Estimates &amp; Quotes</h3>
               <p className="text-xs text-slate-400">
-                Browse, reload, or share preliminary scopes previously created for clients.
+                Browse, reload, share preliminary scopes, or convert quotes directly into client invoices.
               </p>
             </div>
             <button
@@ -576,12 +600,19 @@ ${generateShareUrl(est)}`;
                         </p>
                       )}
                       <p>
-                        <span className="text-slate-500">Estimated Investment: </span>
-                        <span className="font-bold text-emerald-400">
+                        <span className="text-slate-500">Estimate Range: </span>
+                        <span className="font-semibold text-slate-300">
                           {formatCurrency(est.estimated_low)} &ndash; {formatCurrency(est.estimated_high)}
                         </span>
-                        {est.discount > 0 && <span className="text-slate-400 ml-2">(Discount Applied)</span>}
                       </p>
+                      {est.quoted_amount && (
+                        <p>
+                          <span className="text-slate-500">Agreed Fixed Quote: </span>
+                          <span className="font-bold text-emerald-400">
+                            {formatCurrency(est.quoted_amount)}
+                          </span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -593,6 +624,25 @@ ${generateShareUrl(est)}`;
                       Load in Calculator
                     </button>
                     <div className="flex items-center gap-2">
+                      {est.invoice_number ? (
+                        <a
+                          href={`/#/invoice/${est.invoice_id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 px-2.5 py-1 rounded border border-emerald-800/40 font-semibold"
+                        >
+                          ✓ Invoiced ({est.invoice_number})
+                        </a>
+                      ) : est.client_name ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenConvertModal(est)}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded font-bold shadow-sm"
+                        >
+                          Invoice Client
+                        </button>
+                      ) : null}
+
                       <button
                         onClick={() => handleOpenShareModal(est)}
                         className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded border border-slate-700"
@@ -632,15 +682,15 @@ ${generateShareUrl(est)}`;
             <div className="bg-slate-900/60 border border-slate-700/80 rounded-xl p-5 space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-cyan-400">
-                  1. Client & Estimate Details
+                  1. Client &amp; Estimate Details
                 </h3>
-                <span className="text-xs text-slate-400">Optional client assignment</span>
+                <span className="text-xs text-slate-400">Attach client to enable 1-click invoicing</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Select Client (if existing)
+                    Select Client (Required to Invoice)
                   </label>
                   <select
                     value={selectedClientId}
@@ -713,7 +763,7 @@ ${generateShareUrl(est)}`;
             <div>
               <div className="flex justify-between items-baseline mb-2">
                 <h3 className="text-base font-bold text-white">2. Project Classification</h3>
-                <span className="text-xs text-slate-400">Defines engineering overhead & base</span>
+                <span className="text-xs text-slate-400">Defines engineering overhead &amp; base</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -755,7 +805,7 @@ ${generateShareUrl(est)}`;
               <div className="p-4 bg-slate-900/60 border border-slate-700/80 rounded-xl space-y-2">
                 <div className="flex justify-between items-center">
                   <h4 className="text-sm font-semibold text-white">Target Mobile Platform</h4>
-                  <span className="text-xs text-cyan-400">Native iOS & Android</span>
+                  <span className="text-xs text-cyan-400">Native iOS &amp; Android</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {(['ios', 'android', 'both'] as MobilePlatform[]).map((p) => (
@@ -841,7 +891,7 @@ ${generateShareUrl(est)}`;
             {/* 5. Core Features Checklist */}
             <div>
               <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">4. Engineering Features & Architecture</h3>
+                <h3 className="text-base font-bold text-white">4. Engineering Features &amp; Architecture</h3>
                 <span className="text-xs text-cyan-400 font-semibold">{priceBreakdown.totalPoints} points selected</span>
               </div>
               <p className="text-xs text-slate-400 mb-3">
@@ -859,7 +909,7 @@ ${generateShareUrl(est)}`;
                 />
                 <FeatureCheckbox
                   id="roles"
-                  label="Roles & Permissions"
+                  label="Roles &amp; Permissions"
                   description="Role-based access controls (e.g. admin, manager, customer)."
                   points={pricingConfig.featurePoints.roles || 6}
                   checked={features.roles}
@@ -883,7 +933,7 @@ ${generateShareUrl(est)}`;
                 />
                 <FeatureCheckbox
                   id="ecommerce"
-                  label="E-commerce & Checkout"
+                  label="E-commerce &amp; Checkout"
                   description="Product catalog, shopping cart, and Stripe payment gateway."
                   points={pricingConfig.featurePoints.ecommerce || 18}
                   checked={features.ecommerce}
@@ -923,7 +973,7 @@ ${generateShareUrl(est)}`;
                 />
                 <FeatureCheckbox
                   id="seo"
-                  label="SEO & Social Cards"
+                  label="SEO &amp; Social Cards"
                   description="OpenGraph tags, Schema.org JSON-LD, sitemaps, and speed optimization."
                   points={pricingConfig.featurePoints.seo || 4}
                   checked={features.seo}
@@ -939,7 +989,7 @@ ${generateShareUrl(est)}`;
                 />
                 <FeatureCheckbox
                   id="notifications"
-                  label="Push & Email Alerts"
+                  label="Push &amp; Email Alerts"
                   description="Automated transactional emails and native mobile push alerts."
                   points={pricingConfig.featurePoints.notifications || 6}
                   checked={features.notifications}
@@ -998,7 +1048,7 @@ ${generateShareUrl(est)}`;
             {/* 7. Ongoing Maintenance */}
             <div>
               <div className="flex justify-between items-baseline mb-2">
-                <h3 className="text-base font-bold text-white">6. Ongoing Support & Hosting Retainer</h3>
+                <h3 className="text-base font-bold text-white">6. Ongoing Support &amp; Hosting Retainer</h3>
                 <span className="text-xs text-slate-400">Post-launch maintenance</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1051,7 +1101,7 @@ ${generateShareUrl(est)}`;
             </div>
           </div>
 
-          {/* --- Right Column: Results, Breakdown & Actions --- */}
+          {/* --- Right Column: Results, Exact Quoting & Actions --- */}
           <div className="lg:col-span-1 space-y-5">
             {/* Discount Toggle Card */}
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
@@ -1065,7 +1115,7 @@ ${generateShareUrl(est)}`;
             {/* Price Estimate Card */}
             <div className="bg-slate-800 border-2 border-slate-700 rounded-xl p-6 shadow-xl sticky top-8 space-y-5">
               <div className="flex justify-between items-center border-b border-slate-700 pb-3">
-                <h3 className="text-lg font-bold text-white">Price Estimate</h3>
+                <h3 className="text-lg font-bold text-white">Price Estimate &amp; Quote</h3>
                 <span className="text-xs text-cyan-400 font-semibold uppercase tracking-wider">
                   {PROJECT_TYPE_METAS[projectType]?.badge}
                 </span>
@@ -1124,7 +1174,7 @@ ${generateShareUrl(est)}`;
                 )}
               </div>
 
-              {/* Discount line item (strictly labeled "Discount") */}
+              {/* Discount line item */}
               <div className="space-y-2 text-xs text-slate-300 border-b border-slate-700 pb-4">
                 <div className="flex justify-between font-semibold">
                   <span>Adjusted Subtotal</span>
@@ -1139,18 +1189,78 @@ ${generateShareUrl(est)}`;
                 )}
               </div>
 
-              {/* Total Estimated Price Range */}
-              <div className="py-2 text-center bg-slate-900/60 border border-slate-700/80 rounded-xl p-4">
-                <p className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
-                  Estimated Project Investment
+              {/* Estimated Range Envelope */}
+              <div className="text-center bg-slate-900/60 border border-slate-700/80 rounded-xl p-3.5 space-y-1">
+                <p className="text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
+                  Estimated Delivery Envelope
                 </p>
-                <p className="text-2xl sm:text-3xl font-extrabold text-cyan-400 my-1">
+                <p className="text-xl font-bold text-slate-300">
                   {formatCurrency(priceBreakdown.priceRange.low)} &ndash; {formatCurrency(priceBreakdown.priceRange.high)}
                 </p>
-                <p className="text-[11px] text-slate-400">Standard delivery envelope (&plusmn;10%)</p>
+                <p className="text-[10px] text-slate-500">&plusmn;10% contingency window</p>
               </div>
 
-              {/* Ongoing Maintenance */}
+              {/* EXACT QUOTE CALIBRATION SECTION */}
+              <div className="p-4 bg-cyan-950/20 border border-cyan-800/40 rounded-xl space-y-3">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                    Agreed / Quoted Price
+                  </span>
+                  <span className="text-[10px] text-slate-400">Target to quote &amp; invoice</span>
+                </div>
+
+                {/* Quick-pick chips */}
+                <div className="grid grid-cols-3 gap-1.5 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.low)}
+                    className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
+                      effectiveExactQuote === priceBreakdown.priceRange.low
+                        ? 'bg-cyan-500 text-white border-cyan-400'
+                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    Low: {formatCurrency(priceBreakdown.priceRange.low)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserExactQuotedPrice(priceBreakdown.finalPrice)}
+                    className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
+                      effectiveExactQuote === priceBreakdown.finalPrice
+                        ? 'bg-cyan-500 text-white border-cyan-400'
+                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    Mid: {formatCurrency(priceBreakdown.finalPrice)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserExactQuotedPrice(priceBreakdown.priceRange.high)}
+                    className={`py-1 px-1 rounded border text-[11px] font-semibold transition-colors ${
+                      effectiveExactQuote === priceBreakdown.priceRange.high
+                        ? 'bg-cyan-500 text-white border-cyan-400'
+                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    High: {formatCurrency(priceBreakdown.priceRange.high)}
+                  </button>
+                </div>
+
+                {/* Exact Amount Input */}
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-slate-400 text-sm font-bold">£</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={effectiveExactQuote}
+                    onChange={(e) => setUserExactQuotedPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-3 py-1.5 text-emerald-400 font-extrabold text-lg text-right focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              {/* Maintenance */}
               {priceBreakdown.monthlyMaintenance > 0 && (
                 <div className="p-3 bg-slate-900/40 border border-slate-700/60 rounded-xl text-xs space-y-1">
                   <div className="flex justify-between text-slate-300">
@@ -1166,12 +1276,43 @@ ${generateShareUrl(est)}`;
                 </div>
               )}
 
-              {/* Action Buttons: Save & Share */}
-              <div className="space-y-2.5 pt-2">
+              {/* ACTION BUTTONS */}
+              <div className="space-y-2.5 pt-1">
+                {/* 1. Turn Quote Into Invoice */}
+                {hasClient ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenConvertModal()}
+                    className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-extrabold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transform hover:scale-[1.01]"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.5}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    <span>Turn Quote into Invoice ({formatCurrency(effectiveExactQuote)})</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Scroll to top client select
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>Attach Client Above to Invoice</span>
+                  </button>
+                )}
+
+                {/* 2. Save Estimate Historically */}
                 <button
                   type="button"
                   onClick={handleSaveCurrentEstimate}
-                  className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-md shadow-cyan-500/20"
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-md shadow-cyan-500/20"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
@@ -1181,16 +1322,17 @@ ${generateShareUrl(est)}`;
                       d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
                     />
                   </svg>
-                  {savingStatus || 'Save Estimate Historically'}
+                  {savingStatus || 'Save Quote Historically'}
                 </button>
 
+                {/* 3. Share & Public View */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => handleOpenShareModal()}
-                    className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                    className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -1205,9 +1347,9 @@ ${generateShareUrl(est)}`;
                     href={generateShareUrl(currentEstimateObject)}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full bg-slate-900 hover:bg-slate-700/80 text-cyan-400 border border-cyan-800/40 font-semibold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                    className="w-full bg-slate-900 hover:bg-slate-700/80 text-cyan-400 border border-cyan-800/40 font-semibold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -1221,7 +1363,7 @@ ${generateShareUrl(est)}`;
               </div>
 
               <p className="text-[11px] text-slate-500 text-center leading-tight">
-                Preliminary engineering estimate for planning purposes. Subject to detailed specification sign-off.
+                Preliminary engineering estimate for planning purposes. Subject to specification sign-off.
               </p>
             </div>
           </div>
@@ -1241,12 +1383,17 @@ ${generateShareUrl(est)}`;
             <div className="flex justify-between items-start">
               <div>
                 <span className="text-xs uppercase font-bold text-cyan-400 tracking-wider">
-                  Client Proposal & Scope Link
+                  Client Proposal &amp; Scope Link
                 </span>
                 <h3 className="text-xl font-bold text-white mt-0.5">{activeEstimateForShare.title}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Investment: {formatCurrency(activeEstimateForShare.estimated_low)} &ndash;{' '}
                   {formatCurrency(activeEstimateForShare.estimated_high)}
+                  {activeEstimateForShare.quoted_amount && (
+                    <span className="text-emerald-400 font-bold ml-2">
+                      | Fixed Quote: {formatCurrency(activeEstimateForShare.quoted_amount)}
+                    </span>
+                  )}
                 </p>
               </div>
               <button
@@ -1330,17 +1477,38 @@ ${generateShareUrl(est)}`;
               </a>
             </div>
 
-            <div className="pt-2 border-t border-slate-800 flex justify-end">
+            <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
+              {activeEstimateForShare.client_name && !activeEstimateForShare.invoice_number && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShareModalOpen(false);
+                    handleOpenConvertModal(activeEstimateForShare);
+                  }}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 font-bold"
+                >
+                  Turn this Quote into an Invoice &rarr;
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShareModalOpen(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg ml-auto"
               >
                 Close
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* --- CONVERT TO INVOICE MODAL --- */}
+      {convertModalEstimate && (
+        <ConvertToInvoiceModal
+          estimate={convertModalEstimate}
+          onClose={() => setConvertModalEstimate(null)}
+          onSuccess={handleInvoiceGeneratedSuccess}
+        />
       )}
     </div>
   );
