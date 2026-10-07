@@ -14,10 +14,10 @@ const Footer: React.FC = () => {
   };
   
   return (
-    <footer className="bg-slate-900/50 border-t border-slate-800">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col md:flex-row justify-between items-center text-center md:text-left">
-          <div className="mb-4 md:mb-0">
+    <footer className="bg-slate-900/50 border-t border-slate-800 relative overflow-hidden w-full">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl py-8">
+        <div className="flex flex-col md:flex-row justify-between items-center text-center md:text-left gap-4">
+          <div className="mb-2 md:mb-0">
             <a href="#home" onClick={handleSmoothScroll}>
               <Logo className="h-8 w-auto mx-auto md:mx-0" />
             </a>

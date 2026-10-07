@@ -50,12 +50,12 @@ const QuoteForm: React.FC = () => {
   }
 
   return (
-    <section id="contact" className="py-20 sm:py-32 bg-slate-900">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="contact" className="py-16 sm:py-24 md:py-32 bg-slate-900 relative overflow-hidden w-full">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white">Have a project in mind?</h2>
-          <p className="mt-4 text-lg text-slate-400">Let's turn your idea into a reality. Fill out the form below to get started.</p>
-          <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
+          <p className="mt-4 text-base sm:text-lg text-slate-400">Let's turn your idea into a reality. Fill out the form below to get started.</p>
+          <div className="w-20 sm:w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
         </div>
         <form 
           name="quote"

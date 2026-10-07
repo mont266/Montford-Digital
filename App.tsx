@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import InvoicePublicPage from './pages/InvoicePublicPage';
 import ClientPortalPage from './pages/ClientPortalPage';
+import EstimatePublicPage from './pages/EstimatePublicPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const App: React.FC = () => {
@@ -15,6 +16,8 @@ const App: React.FC = () => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/invoice/:id" element={<InvoicePublicPage />} />
       <Route path="/portal/:token" element={<ClientPortalPage />} />
+      <Route path="/estimate" element={<EstimatePublicPage />} />
+      <Route path="/estimate/:id" element={<EstimatePublicPage />} />
       <Route 
         path="/dashboard/*" 
         element={

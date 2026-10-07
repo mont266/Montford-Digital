@@ -71,17 +71,17 @@ const Header: React.FC = () => {
         </div>
       </div>
       {/* Mobile Menu */}
-      <div className={`md:hidden ${isOpen ? 'block' : 'hidden'} absolute top-20 left-0 w-full bg-slate-900/95 backdrop-blur-md`}>
-        <ul className="flex flex-col items-center py-4">
+      <div className={`md:hidden ${isOpen ? 'block' : 'hidden'} absolute top-20 left-0 w-full bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shadow-2xl`}>
+        <ul className="flex flex-col items-center py-6 px-4 space-y-2">
           {navLinks.map((link) => (
-            <li key={link.href} className="py-2">
-              <a href={link.href} onClick={(e) => { handleSmoothScroll(e); setIsOpen(false); }} className="text-xl text-slate-300 hover:text-cyan-400 transition-colors duration-300">
+            <li key={link.href} className="w-full text-center py-2">
+              <a href={link.href} onClick={(e) => { handleSmoothScroll(e); setIsOpen(false); }} className="block text-xl text-slate-300 hover:text-cyan-400 transition-colors duration-300">
                 {link.label}
               </a>
             </li>
           ))}
-          <li className="mt-4">
-            <a href="#contact" onClick={(e) => { handleSmoothScroll(e); setIsOpen(false); }} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-full transition-all duration-300 transform hover:scale-105">
+          <li className="pt-2 w-full max-w-xs">
+            <a href="#contact" onClick={(e) => { handleSmoothScroll(e); setIsOpen(false); }} className="block text-center w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/25">
               Get a Quote
             </a>
           </li>

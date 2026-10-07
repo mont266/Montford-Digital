@@ -9,14 +9,14 @@ interface ServiceCardProps {
 }
 
 const ServiceCard: React.FC<ServiceCardProps> = ({ icon, title, description }) => (
-  <div className="bg-slate-800/60 backdrop-blur-sm p-6 rounded-lg shadow-lg transform hover:-translate-y-2 transition-all duration-300 border border-slate-700 hover:border-cyan-500/50 hover:shadow-2xl hover:shadow-cyan-500/10">
-    <div className="flex items-start gap-6">
-        <div className="text-cyan-400 bg-slate-900/50 w-16 h-16 rounded-lg flex items-center justify-center flex-shrink-0 shadow-inner shadow-cyan-900/20">
-            {icon}
+  <div className="bg-slate-800/60 backdrop-blur-sm p-5 sm:p-6 rounded-lg shadow-lg transform hover:-translate-y-2 transition-all duration-300 border border-slate-700 hover:border-cyan-500/50 hover:shadow-2xl hover:shadow-cyan-500/10">
+    <div className="flex items-start gap-4 sm:gap-6">
+        <div className="text-cyan-400 bg-slate-900/50 w-12 h-12 sm:w-16 sm:h-16 rounded-lg flex items-center justify-center flex-shrink-0 shadow-inner shadow-cyan-900/20">
+            {React.cloneElement(icon, { className: 'h-6 w-6 sm:h-10 sm:w-10' })}
         </div>
-        <div>
-            <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-            <p className="text-slate-400 leading-relaxed">{description}</p>
+        <div className="min-w-0">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-2">{title}</h3>
+            <p className="text-slate-400 text-sm sm:text-base leading-relaxed">{description}</p>
         </div>
     </div>
   </div>
@@ -42,14 +42,14 @@ const Services: React.FC = () => {
   ];
 
   return (
-    <section id="services" className="py-20 sm:py-32 bg-slate-900">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
+    <section id="services" className="py-16 sm:py-24 md:py-32 bg-slate-900 relative overflow-hidden w-full">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+        <div className="text-center mb-12 sm:mb-16">
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white">Our Expertise</h2>
-          <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto">We specialise in building unique digital systems. Here is how we can help you.</p>
-           <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
+          <p className="mt-4 text-base sm:text-lg text-slate-400 max-w-2xl mx-auto">We specialise in building unique digital systems. Here is how we can help you.</p>
+           <div className="w-20 sm:w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
           {services.map((service, index) => (
             <ServiceCard key={index} {...service} />
           ))}

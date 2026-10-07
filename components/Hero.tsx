@@ -163,30 +163,30 @@ const Hero: React.FC = () => {
   };
   
   return (
-    <section id="home" className="relative flex items-center justify-center h-screen bg-slate-900 overflow-hidden">
+    <section id="home" className="relative flex items-center justify-center min-h-[100svh] py-20 sm:py-0 bg-slate-900 overflow-hidden w-full">
       <AnimatedHeroBackground mouseX={mousePos.x} mouseY={mousePos.y} />
       
       <div className="relative z-10 text-center px-4 w-full max-w-5xl mx-auto">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-white leading-tight mb-4">
+        <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-white leading-tight mb-4">
           Crafting Exceptional
           <br />
           <ScrambleText />
         </h1>
-        <p className="max-w-2xl mx-auto text-lg md:text-xl text-slate-300 mb-8 mt-6">
+        <p className="max-w-2xl mx-auto text-base sm:text-lg md:text-xl text-slate-300 mb-8 mt-4 sm:mt-6">
           We build beautiful, functional, and high-performing websites, web apps, and mobile applications that drive results and elevate your brand.
         </p>
-        <div className="flex justify-center space-x-4">
-          <a href="#portfolio" onClick={handleSmoothScroll} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 max-w-xs sm:max-w-none mx-auto">
+          <a href="#portfolio" onClick={handleSmoothScroll} className="w-full sm:w-auto text-center bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-6 sm:px-8 rounded-full text-base sm:text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-cyan-500/20">
             View Our Work
           </a>
-          <a href="#about" onClick={handleSmoothScroll} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-slate-700/20">
+          <a href="#about" onClick={handleSmoothScroll} className="w-full sm:w-auto text-center bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-6 sm:px-8 rounded-full text-base sm:text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-slate-700/20">
             Learn More
           </a>
         </div>
       </div>
-       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20">
+       <div className="absolute bottom-4 sm:bottom-10 left-1/2 -translate-x-1/2 z-20">
             <a href="#about" onClick={handleSmoothScroll} aria-label="Scroll down">
-                <svg className="w-8 h-8 text-cyan-400 animate-bounce" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 animate-bounce" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
                     <path d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
                 </svg>
             </a>

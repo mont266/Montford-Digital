@@ -37,6 +37,7 @@ interface Expense {
   status: ExpenseStatus;
   entity_id: string;
   expense_attachments: { count: number }[];
+  monthly_breakdown?: Record<string, number>;
 }
 
 interface TaxCentrePageProps {

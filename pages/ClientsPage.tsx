@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 export interface Client {
@@ -154,8 +155,9 @@ const ClientsPage: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                    <td data-label="Actions" className="px-4 py-3 text-right space-x-3">
-                      <div className="flex justify-end space-x-3">
+                    <td data-label="Actions" className="px-4 py-3 text-right space-x-2">
+                      <div className="flex justify-end space-x-2">
+                        <Link to="/dashboard/calculator" className="text-emerald-400 hover:text-emerald-300 text-sm transition-colors border border-emerald-700/50 bg-emerald-900/20 px-2 py-1 rounded">Quote</Link>
                         <button onClick={() => handleOpenModal(client)} className="text-cyan-400 hover:text-cyan-300 text-sm transition-colors border border-cyan-700/50 bg-cyan-900/20 px-2 py-1 rounded">Edit</button>
                         <button onClick={() => handleDelete(client.id)} className="text-red-400 hover:text-red-300 text-sm transition-colors border border-red-700/50 bg-red-900/20 px-2 py-1 rounded">Delete</button>
                       </div>

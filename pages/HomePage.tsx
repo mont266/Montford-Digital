@@ -9,9 +9,9 @@ import Footer from '../components/Footer';
 
 const HomePage: React.FC = () => {
   return (
-    <div className="bg-slate-900 text-slate-300 font-sans leading-relaxed">
+    <div className="bg-slate-900 text-slate-300 font-sans leading-relaxed min-h-screen w-full overflow-x-hidden relative">
       <Header />
-      <main>
+      <main className="w-full overflow-x-hidden">
         <Hero />
         <About />
         <Services />

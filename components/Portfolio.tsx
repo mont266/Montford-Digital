@@ -102,19 +102,19 @@ const Portfolio: React.FC = () => {
 
   return (
     <>
-      <section id="portfolio" className="py-20 sm:py-32 bg-slate-900/50">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
+      <section id="portfolio" className="py-16 sm:py-24 md:py-32 bg-slate-900/50 relative overflow-hidden w-full">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+          <div className="text-center mb-10 sm:mb-12">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white">Our Work</h2>
-            <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto">We take pride in our work. Here are some of our recent projects.</p>
-            <div className="w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
+            <p className="mt-4 text-base sm:text-lg text-slate-400 max-w-2xl mx-auto">We take pride in our work. Here are some of our recent projects.</p>
+            <div className="w-20 sm:w-24 h-1 bg-cyan-400 mt-4 mx-auto"></div>
           </div>
           {loading ? (
             <div className="flex justify-center items-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
               {projects.map((project, index) => (
                 <PortfolioItem 
                   key={project.id || index} 
