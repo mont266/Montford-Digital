@@ -15,6 +15,7 @@ export interface Client {
   portal_token: string;
   created_at: string;
   password?: string | null;
+  password_set_at?: string | null;
   stripe_customer_id?: string | null;
 }
 
@@ -30,7 +31,10 @@ const formatDate = (dateStr: string) => {
 };
 
 const hasClientLoggedIn = (client: Client): boolean => {
-  return Boolean(client.password && client.password.trim().length > 0);
+  return Boolean(
+    (client.password_set_at && client.password_set_at.trim().length > 0) ||
+    (client.password && client.password.trim().length > 0)
+  );
 };
 
 const ClientsPage: React.FC = () => {
@@ -67,7 +71,7 @@ const ClientsPage: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('clients')
-        .select('id, name, email, portal_token, created_at, password, stripe_customer_id')
+        .select('*')
         .order('name');
       if (error) throw error;
       setClients(data as Client[]);
@@ -153,16 +157,20 @@ const ClientsPage: React.FC = () => {
     }
     setIsResettingPassword(true);
     try {
+      const updatePayload: Record<string, any> = { password: null };
+      if (client.password_set_at !== undefined) {
+        updatePayload.password_set_at = null;
+      }
       const { error } = await supabase
         .from('clients')
-        .update({ password: null })
+        .update(updatePayload)
         .eq('id', client.id);
       if (error) throw error;
 
       alert(`Password has been reset for ${client.name}. When they open their portal link, they will be invited to set a new password.`);
       await fetchClientsAndEstimates();
       if (editingClient && editingClient.id === client.id) {
-        setEditingClient({ ...editingClient, password: null });
+        setEditingClient({ ...editingClient, password: null, password_set_at: null });
       }
     } catch (err: any) {
       console.error('Error resetting password:', err);

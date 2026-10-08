@@ -241,7 +241,7 @@ router.post('/portal-invite', async (req: Request, res: Response) => {
     const supabase = getSupabaseAdmin();
     const { data: client, error } = await supabase
       .from('clients')
-      .select('id, name, email, portal_token, password')
+      .select('*')
       .eq('id', clientId)
       .single();
 
@@ -250,7 +250,10 @@ router.post('/portal-invite', async (req: Request, res: Response) => {
     }
 
     // STRICT CHECK: Portal invite may ONLY be triggered for clients who have not yet set a password / signed up
-    const hasPassword = Boolean(client.password && client.password.trim() !== '');
+    const hasPassword = Boolean(
+      (client.password_set_at && String(client.password_set_at).trim() !== '') ||
+      (client.password && client.password.trim() !== '')
+    );
     if (hasPassword) {
       return res.status(400).json({
         success: false,

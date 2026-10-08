@@ -13,6 +13,7 @@ interface Client {
   email: string;
   portal_token: string;
   password?: string;
+  password_set_at?: string | null;
 }
 
 interface Project {
@@ -170,7 +171,7 @@ const ClientPortalPage: React.FC = () => {
         // 1. Fetch Client by Token
         const { data: clientData, error: clientError } = await supabase
           .from('clients')
-          .select('id, name, email, portal_token, password')
+          .select('*')
           .eq('portal_token', token)
           .single();
 
@@ -431,7 +432,15 @@ const ClientPortalPage: React.FC = () => {
 
       setIsAuthenticated(true);
       // Update local client state to reflect password is set
-      setClient({ ...client, password: 'set' });
+      const nowIso = new Date().toISOString();
+      if ('password_set_at' in client) {
+        try {
+          await supabase.from('clients').update({ password_set_at: nowIso }).eq('id', client.id);
+        } catch {
+          // silent fallback
+        }
+      }
+      setClient({ ...client, password: 'set', password_set_at: nowIso });
     } catch (err: any) {
       setAuthError(err.message);
     } finally {
@@ -507,7 +516,11 @@ const ClientPortalPage: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    const isFirstTime = !client.password && !forceLoginView;
+    const hasConfiguredPassword = Boolean(
+      (client.password_set_at && client.password_set_at.trim().length > 0) ||
+      (client.password && client.password.trim().length > 0)
+    );
+    const isFirstTime = !hasConfiguredPassword && !forceLoginView;
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center text-white p-4">
         <div className="bg-slate-800 p-8 rounded-lg border border-slate-700 max-w-md w-full">

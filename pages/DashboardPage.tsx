@@ -728,7 +728,7 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span>{clientNameDisplay}</span>
                                             {client && (
-                                                client.password ? (
+                                                Boolean((client as any).password_set_at || client.password) ? (
                                                     <span 
                                                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                                                         title="Client has logged in and configured portal password"
@@ -2797,7 +2797,7 @@ const DashboardPage: React.FC = () => {
             // FIX: Select client_name from projects to match the updated Invoice type.
             let invoicesQuery = supabase.from('invoices').select('*, projects(name, client_name), invoice_items(*)').order('issue_date', { ascending: false });
             let expensesQuery = supabase.from('expenses').select('*, expense_attachments(count)').order('start_date', { ascending: false });
-            let clientsQuery = supabase.from('clients').select('id, name, email, portal_token, created_at, password').order('name');
+            let clientsQuery = supabase.from('clients').select('*').order('name');
 
             // Apply filters if specific entity selected
             if (selectedEntityId !== 'all') {
