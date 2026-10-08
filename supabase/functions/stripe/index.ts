@@ -196,7 +196,7 @@ export default async function serve(req: Request) {
                 if (fetchError) console.error('Error fetching project:', fetchError);
 
                 if (project) {
-                  const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+                  const invoiceNumber = invoice.number || `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
                   console.log(`Creating invoice ${invoiceNumber} for project ${projectId}`);
                   
                   const { data: newInvoice, error: invError } = await supabase.from('invoices').insert({

@@ -30,15 +30,13 @@ export const generateNextInvoiceNumber = async (): Promise<string> => {
   try {
     const { data } = await supabase
       .from('invoices')
-      .select('invoice_number')
-      .order('created_at', { ascending: false })
-      .limit(20);
+      .select('invoice_number');
 
     if (data && data.length > 0) {
       let maxNum = 0;
       for (const row of data) {
-        // Match numbers like MD-005 or MD-005-A or INV-123
-        const match = row.invoice_number?.match(/(?:MD|INV)-(\d+)/i);
+        // Only match custom Montford Digital invoice numbers like MD-001 or MD-001-A
+        const match = row.invoice_number?.match(/^MD-(\d+)/i);
         if (match) {
           const num = parseInt(match[1], 10);
           if (!isNaN(num) && num > maxNum) {

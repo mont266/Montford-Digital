@@ -393,12 +393,37 @@ const DashboardOverview: React.FC<{ invoices: Invoice[]; expenses: Expense[]; pa
         .filter(inv => inv.status === 'paid')
         .reduce((sum, inv) => sum + (invoiceTaxMap.get(inv.id) || 0), 0);
     
-    const totalStripeFees = filteredExpenses.filter(e => 
+    // Calculate Stripe processing fees (2.5% + 20p) for all Stripe-processed transactions in the period
+    const transactionStripeFees = filteredInvoices
+        .filter(inv => inv.status === 'paid')
+        .reduce((sum, inv) => {
+            const isStripeTx = Boolean(
+                inv.stripe_payment_intent_id ||
+                inv.invoice_number?.startsWith('INV-') ||
+                inv.invoice_items?.some(item => 
+                    (item.description || '').toLowerCase().includes('subscription') || 
+                    (item.description || '').toLowerCase().includes('recurring') ||
+                    (item.description || '').toLowerCase().includes('stripe')
+                )
+            );
+            if (isStripeTx) {
+                const calculatedFee = (inv.amount * 0.025) + 0.20;
+                return sum + calculatedFee;
+            }
+            return sum;
+        }, 0);
+
+    const expenseStripeFees = filteredExpenses.filter(e => 
         e.name === 'Stripe Processing Fee' || 
         (e.description || '').toLowerCase().includes('stripe')
     ).reduce((acc, e) => acc + e.amount_gbp, 0);
 
-    const netProfit = totalRevenue - totalExpensesInPeriod - totalTaxPaid;
+    // If Stripe fees have been recorded as manual expenses in the expenses table, use those; otherwise dynamically calculate from the transactions
+    const totalStripeFees = expenseStripeFees > 0 ? expenseStripeFees : transactionStripeFees;
+
+    // Deduct Stripe fees from net profit if they haven't already been entered as explicit expense rows
+    const unrecordedStripeFeeExpense = expenseStripeFees === 0 ? transactionStripeFees : 0;
+    const netProfit = totalRevenue - totalExpensesInPeriod - unrecordedStripeFeeExpense - totalTaxPaid;
     
     const oneTimePayments = filteredExpenses.filter(e => e.type === 'manual').reduce((sum, e) => sum + e.amount_gbp, 0);
     const monthlySubscriptions = expenses
@@ -1697,22 +1722,24 @@ const InvoiceForm: React.FC<{ projects: Project[]; clients: any[]; onClose: () =
 
     useEffect(() => {
         const generateNextInvoiceNumber = async () => {
-            const { data, error } = await supabase
+            const { data } = await supabase
                 .from('invoices')
-                .select('invoice_number')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .single();
+                .select('invoice_number');
             
-            let nextNumber = 'MD-001';
-            if (data && data.invoice_number) {
-                const parts = data.invoice_number.split('-');
-                const lastNum = parseInt(parts[1], 10);
-                if (!isNaN(lastNum)) {
-                    const newNum = (lastNum + 1).toString().padStart(3, '0');
-                    nextNumber = `MD-${newNum}`;
+            let maxNum = 0;
+            if (data && data.length > 0) {
+                for (const row of data) {
+                    if (!row.invoice_number) continue;
+                    const match = row.invoice_number.match(/^MD-(\d+)/i);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (!isNaN(num) && num > maxNum) {
+                            maxNum = num;
+                        }
+                    }
                 }
             }
+            const nextNumber = `MD-${String(maxNum + 1).padStart(3, '0')}`;
             setFormData(prev => ({ ...prev, invoice_number: nextNumber }));
         };
         generateNextInvoiceNumber();

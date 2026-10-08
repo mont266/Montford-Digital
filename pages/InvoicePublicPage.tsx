@@ -319,7 +319,7 @@ const InvoicePublicPage: React.FC = () => {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <a
-              href={`mailto:hello@montforddigital.com?subject=Invoice%20Query%20(Ref:%20${encodeURIComponent(id || 'N/A')})`}
+              href={`mailto:scott@montforddigital.com?subject=Invoice%20Query%20(Ref:%20${encodeURIComponent(id || 'N/A')})`}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-lg transition-colors shadow-lg shadow-cyan-950/20"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

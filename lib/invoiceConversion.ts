@@ -32,26 +32,28 @@ export const fetchNextInvoiceNumber = async (): Promise<string> => {
   try {
     const { data } = await supabase
       .from('invoices')
-      .select('invoice_number')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .select('invoice_number');
 
-    if (data && data.invoice_number) {
-      const parts = data.invoice_number.split('-');
-      // Check if format is MD-001 or INV-001
-      if (parts.length >= 2) {
-        const prefix = parts[0];
-        const numPart = parseInt(parts[1], 10);
-        if (!isNaN(numPart)) {
-          return `${prefix}-${(numPart + 1).toString().padStart(3, '0')}`;
+    if (data && data.length > 0) {
+      let maxNum = 0;
+      for (const row of data) {
+        if (!row.invoice_number) continue;
+        const match = row.invoice_number.match(/^MD-(\d+)/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
         }
+      }
+      if (maxNum > 0) {
+        return `MD-${String(maxNum + 1).padStart(3, '0')}`;
       }
     }
   } catch (err) {
     console.warn('Could not determine next invoice number from database, using sequence fallback:', err);
   }
-  return `MD-${Math.floor(100 + Math.random() * 900)}`;
+  return 'MD-001';
 };
 
 export const fetchClientProjects = async (clientId: string) => {
