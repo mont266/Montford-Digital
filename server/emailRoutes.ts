@@ -158,7 +158,7 @@ router.get('/preview', (req: Request, res: Response) => {
 /** POST /api/emails/test - Send a sample test email to verify Resend setup */
 router.post('/test', async (req: Request, res: Response) => {
   try {
-    const { type = 'invoice-ready', recipientEmail = 'scottmontford@gmail.com' } = req.body;
+    const { type = 'invoice-ready', recipientEmail = 'scott@montforddigital.com' } = req.body;
     const origin = getAppOrigin(req);
 
     let rendered: { subject: string; html: string; text: string };
@@ -209,6 +209,7 @@ router.post('/test', async (req: Request, res: Response) => {
     const { data: sendResult, error: sendError } = await resend.emails.send({
       from: getFromEmail(),
       to: [recipientEmail],
+      replyTo: 'scott@montforddigital.com',
       subject: `[Test] ${rendered.subject}`,
       html: rendered.html,
       text: rendered.text,
@@ -294,6 +295,7 @@ router.post('/portal-invite', async (req: Request, res: Response) => {
     const { data: sendResult, error: sendError } = await resend.emails.send({
       from: getFromEmail(),
       to: [recipientEmail],
+      replyTo: 'scott@montforddigital.com',
       subject,
       html,
       text,
@@ -383,6 +385,7 @@ router.post('/invoice-ready', async (req: Request, res: Response) => {
     const { data: sendResult, error: sendError } = await resend.emails.send({
       from: getFromEmail(),
       to: [recipientEmail],
+      replyTo: 'scott@montforddigital.com',
       subject,
       html,
       text,
@@ -471,6 +474,7 @@ router.post('/invoice-paid', async (req: Request, res: Response) => {
     const { data: sendResult, error: sendError } = await resend.emails.send({
       from: getFromEmail(),
       to: [recipientEmail],
+      replyTo: 'scott@montforddigital.com',
       subject,
       html,
       text,

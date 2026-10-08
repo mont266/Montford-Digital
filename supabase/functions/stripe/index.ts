@@ -109,6 +109,7 @@ export default async function serve(req: Request) {
           body: JSON.stringify({
             from: fromEmail,
             to: [recipientEmail],
+            reply_to: 'scott@montforddigital.com',
             subject,
             html,
             text: `Hi ${clientName},\n\nThank you! We have received your payment of ${formattedAmount} for invoice #${inv.invoice_number}.\n\nYou can view and download your official receipt at:\n${receiptUrl}\n\nBest regards,\nMontford Digital`,

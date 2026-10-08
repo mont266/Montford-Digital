@@ -271,7 +271,7 @@ function wrapHtmlTemplate({
           </div>
           <p style="margin: 0 0 6px;">Montford Digital &bull; Scott Montford</p>
           <p style="margin: 0 0 6px;">
-            Need help? Reply directly to this email or reach out at <a href="mailto:scottmontford@gmail.com" style="color: #06b6d4; text-decoration: none;">scottmontford@gmail.com</a>
+            Need help? Reply directly to this email or reach out at <a href="mailto:scott@montforddigital.com" style="color: #06b6d4; text-decoration: none;">scott@montforddigital.com</a>
           </p>
           <p style="margin: 0; font-size: 11px; color: #475569;">
             &copy; ${new Date().getFullYear()} Montford Digital. All rights reserved.

@@ -253,7 +253,7 @@ const EstimatePublicPage: React.FC = () => {
               Print / Save PDF
             </button>
             <a
-              href="mailto:scottmontford@gmail.com?subject=Project Estimate Discussion"
+              href="mailto:scott@montforddigital.com?subject=Project Estimate Discussion"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
             >
               Contact Montford Digital &rarr;
@@ -285,7 +285,7 @@ const EstimatePublicPage: React.FC = () => {
                 <p className="text-base font-bold text-white print:text-black">
                   Montford Digital
                 </p>
-                <p className="text-xs text-slate-400">scottmontford@gmail.com</p>
+                <p className="text-xs text-slate-400">scott@montforddigital.com</p>
                 <p className="text-xs text-slate-500 mt-2">
                   Date: {formatDate(estimate.created_at)}
                 </p>
@@ -509,7 +509,7 @@ const EstimatePublicPage: React.FC = () => {
               </p>
               <div className="flex-shrink-0 print:hidden">
                 <a
-                  href={`mailto:scottmontford@gmail.com?subject=Accept Estimate: ${encodeURIComponent(
+                  href={`mailto:scott@montforddigital.com?subject=Accept Estimate: ${encodeURIComponent(
                     estimate.title
                   )}`}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg shadow-cyan-500/20 transition-all transform hover:scale-[1.02]"
