@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { getSampleEmailTemplate, EmailTemplateType } from '../lib/emailTemplates';
 import { getAppBaseUrl } from '../lib/urlHelper';
+import { sendTestEmail } from '../lib/emailService';
 
 interface EmailTestingModalProps {
   isOpen: boolean;
@@ -38,18 +39,12 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
     setResultMessage(null);
 
     try {
-      const res = await fetch('/api/emails/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, recipientEmail }),
-      });
-
-      const data = await res.json();
+      const data = await sendTestEmail(type, recipientEmail);
       if (data.success) {
         if (data.simulated) {
           setResultMessage({
             type: 'info',
-            text: `Simulated test send for "${type}". To send real emails, ensure RESEND_API_KEY is configured.`,
+            text: `Simulated test send for "${type}". To send real emails, ensure RESEND_API_KEY is configured in your Netlify or environment settings.`,
           });
         } else {
           setResultMessage({
@@ -58,10 +53,18 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
           });
         }
       } else {
-        setResultMessage({
-          type: 'error',
-          text: `Resend error: ${data.error || 'Failed to send test email.'}`,
-        });
+        const errorText = data.error || 'Failed to send test email.';
+        if (errorText.includes('HTML page') || errorText.includes('not currently responding') || errorText.includes('Unable to connect')) {
+          setResultMessage({
+            type: 'error',
+            text: `Live API endpoint not reachable: The live site requires the Netlify Functions bundle to process backend emails. Please ensure Netlify Functions are deployed (netlify.toml and netlify/functions/api.ts) and your RESEND_API_KEY is set in your Netlify dashboard environment variables. In the meantime, you can preview the full HTML templates using "Quick View" or "Full Tab" above.`,
+          });
+        } else {
+          setResultMessage({
+            type: 'error',
+            text: `Resend error: ${errorText}`,
+          });
+        }
       }
     } catch (err: any) {
       setResultMessage({
