@@ -13,6 +13,8 @@ import { InvoiceFromQuoteModal } from '../components/InvoiceFromQuoteModal';
 import { Estimate, fetchAllEstimates } from '../lib/estimates';
 import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationModal';
 import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
+import { EmailTestingModal } from '../components/EmailTestingModal';
+import { sendInvoiceReadyEmail, sendInvoicePaidEmail } from '../lib/emailService';
 
 // --- Types ---
 interface TradingIdentity {
@@ -77,7 +79,7 @@ interface Expense {
   description: string;
   amount: number; // Original amount
   currency?: string; // Original currency
-  amount_gbp: number; // Standardized amount in GBP
+  amount_gbp: number; // Standardised amount in GBP
   category: string;
   start_date: string;
   // Fix: Allow null for end_date and billing_cycle to match form submission logic.
@@ -825,10 +827,78 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
         }
     };
 
+    const [emailToast, setEmailToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+    const [showEmailTestingModal, setShowEmailTestingModal] = useState(false);
+
+    const showEmailToast = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+        setEmailToast({ message, type });
+        setTimeout(() => setEmailToast(null), 5000);
+    };
+
     const handleUpdateStatus = async (id: string, status: Invoice['status']) => {
         const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
-        if (error) console.error("Error updating status:", error);
-        else refreshData();
+        if (error) {
+            console.error("Error updating status:", error);
+            showEmailToast(`Error updating status: ${error.message}`, 'error');
+        } else {
+            refreshData();
+            // AUTO-SEND invoice emails
+            if (status === 'sent') {
+                sendInvoiceReadyEmail(id).then((res) => {
+                    if (res.success) {
+                        if (res.simulated) {
+                            showEmailToast(`Invoice marked Sent. (Resend simulated: add RESEND_API_KEY to .env to deliver real emails)`, 'info');
+                        } else {
+                            showEmailToast(`✓ Invoice marked Sent & email dispatched to ${res.recipient}!`, 'success');
+                        }
+                    } else {
+                        showEmailToast(`Invoice status marked Sent. (Email note: ${res.error})`, 'info');
+                    }
+                }).catch((err) => {
+                    console.error("Failed to send invoice ready email:", err);
+                });
+            } else if (status === 'paid') {
+                sendInvoicePaidEmail(id).then((res) => {
+                    if (res.success) {
+                        if (res.simulated) {
+                            showEmailToast(`Invoice marked Paid. (Resend simulated: add RESEND_API_KEY to .env to deliver real emails)`, 'info');
+                        } else {
+                            showEmailToast(`✓ Invoice marked Paid & receipt dispatched to ${res.recipient}!`, 'success');
+                        }
+                    } else {
+                        showEmailToast(`Invoice status marked Paid. (Email note: ${res.error})`, 'info');
+                    }
+                }).catch((err) => {
+                    console.error("Failed to send invoice paid email:", err);
+                });
+            }
+        }
+    };
+
+    const handleManualSendReadyEmail = async (invoiceId: string) => {
+        const res = await sendInvoiceReadyEmail(invoiceId);
+        if (res.success) {
+            if (res.simulated) {
+                showEmailToast(`Invoice email simulated for ${res.recipient}. Add RESEND_API_KEY to .env for live sending.`, 'info');
+            } else {
+                showEmailToast(`✓ Invoice email sent to ${res.recipient}!`, 'success');
+            }
+        } else {
+            showEmailToast(`Failed to send invoice email: ${res.error}`, 'error');
+        }
+    };
+
+    const handleManualSendPaidEmail = async (invoiceId: string) => {
+        const res = await sendInvoicePaidEmail(invoiceId);
+        if (res.success) {
+            if (res.simulated) {
+                showEmailToast(`Paid receipt simulated for ${res.recipient}. Add RESEND_API_KEY to .env for live sending.`, 'info');
+            } else {
+                showEmailToast(`✓ Paid receipt email sent to ${res.recipient}!`, 'success');
+            }
+        } else {
+            showEmailToast(`Failed to send receipt email: ${res.error}`, 'error');
+        }
     };
 
     const handleDelete = async (id: string, groupId?: string | null) => {
@@ -927,12 +997,36 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
                             </button>
                             {openDropdownId === invoice.id && (
-                                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20">
+                                <div className="origin-top-right absolute right-0 mt-2 w-52 rounded-md shadow-lg bg-slate-900 ring-1 ring-black ring-opacity-5 z-20 border border-slate-750">
                                     <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View</Link>
-                                        {invoice.status === 'draft' && <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Sent</button>}
-                                        {invoice.status !== 'paid' && <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white" role="menuitem">Mark Paid</button>}
-                                        <div className="border-t border-slate-700 my-1"></div>
+                                        <Link to={`/invoice/${invoice.id}`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View Invoice</Link>
+                                        <Link to={`/invoice/${invoice.id}?receipt=true`} target="_blank" rel="noopener noreferrer" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full text-left" role="menuitem">View Receipt</Link>
+                                        
+                                        <div className="border-t border-slate-700/80 my-1"></div>
+                                        {invoice.status === 'draft' && (
+                                            <button onClick={() => { handleUpdateStatus(invoice.id, 'sent'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white flex items-center justify-between" role="menuitem">
+                                                <span>Mark Sent</span>
+                                                <span className="text-[10px] text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">Auto-email</span>
+                                            </button>
+                                        )}
+                                        {invoice.status !== 'paid' && (
+                                            <button onClick={() => { handleUpdateStatus(invoice.id, 'paid'); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white flex items-center justify-between" role="menuitem">
+                                                <span>Mark Paid</span>
+                                                <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40">Auto-receipt</span>
+                                            </button>
+                                        )}
+
+                                        <div className="border-t border-slate-700/80 my-1"></div>
+                                        <button onClick={() => { handleManualSendReadyEmail(invoice.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-xs text-cyan-400 hover:bg-slate-800 hover:text-cyan-300" role="menuitem">
+                                            ✉ Resend "Invoice Ready" Email
+                                        </button>
+                                        {invoice.status === 'paid' && (
+                                            <button onClick={() => { handleManualSendPaidEmail(invoice.id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-xs text-emerald-400 hover:bg-slate-800 hover:text-emerald-300" role="menuitem">
+                                                ✉ Resend "Paid Receipt" Email
+                                            </button>
+                                        )}
+
+                                        <div className="border-t border-slate-700/80 my-1"></div>
                                         <button onClick={() => { handleDelete(invoice.id, invoice.split_group_id); setOpenDropdownId(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-800 hover:text-red-300" role="menuitem">Delete</button>
                                     </div>
                                 </div>
@@ -946,6 +1040,23 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
 
     return (
         <div>
+            {/* Email notification toast */}
+            {emailToast && (
+                <div className={`mb-4 p-3 rounded-lg flex items-center justify-between text-xs font-medium border shadow-lg transition-all animate-fade-in ${
+                    emailToast.type === 'success'
+                        ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+                        : emailToast.type === 'error'
+                        ? 'bg-red-950/80 border-red-500/50 text-red-200'
+                        : 'bg-cyan-950/80 border-cyan-500/50 text-cyan-200'
+                }`}>
+                    <div className="flex items-center gap-2">
+                        <span className="text-base">{emailToast.type === 'success' ? '✓' : emailToast.type === 'error' ? '⚠' : 'ℹ'}</span>
+                        <span>{emailToast.message}</span>
+                    </div>
+                    <button onClick={() => setEmailToast(null)} className="ml-3 text-slate-400 hover:text-white text-xs">✕</button>
+                </div>
+            )}
+
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white">Invoices</h2>
                 <div className="flex space-x-3">
@@ -959,6 +1070,18 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
                     </button>
                     <button onClick={refreshData} title="Refresh Invoices" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setShowEmailTestingModal(true)}
+                        title="Preview & test transactional emails"
+                        className="bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-cyan-500/50 text-slate-200 hover:text-white font-medium py-2 px-3 rounded-md transition-colors flex items-center space-x-1.5 shadow-sm text-sm"
+                    >
+                        <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <span className="hidden sm:inline">Email Templates & Test</span>
+                        <span className="sm:hidden">Emails</span>
                     </button>
                     <button onClick={() => setShowInvoiceFromQuoteModal(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3.5 rounded-md transition-colors flex items-center space-x-1.5 shadow-sm">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
@@ -1056,6 +1179,7 @@ const InvoicesPage: React.FC<{ invoices: Invoice[]; projects: Project[]; clients
             {showInvoiceModal && <InvoiceForm projects={projects} clients={clients} onClose={() => setShowInvoiceModal(false)} refreshData={refreshData} onAddNewProject={() => { setShowInvoiceModal(false); setShowProjectModal(true); }} selectedEntityId={selectedEntityId} />}
             {showInvoiceFromQuoteModal && <InvoiceFromQuoteModal onClose={() => setShowInvoiceFromQuoteModal(false)} onInvoiceCreated={refreshData} />}
             {showProjectModal && <ProjectForm clients={clients} onClose={() => setShowProjectModal(false)} refreshData={refreshData} selectedEntityId={selectedEntityId} />}
+            {showEmailTestingModal && <EmailTestingModal isOpen={showEmailTestingModal} onClose={() => setShowEmailTestingModal(false)} />}
         </div>
     );
 };

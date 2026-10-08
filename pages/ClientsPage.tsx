@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabaseClient';
 import { Estimate, fetchAllEstimates } from '../lib/estimates';
 import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationModal';
 import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
+import { EmailTestingModal } from '../components/EmailTestingModal';
+import { sendPortalInviteEmail } from '../lib/emailService';
 
 export interface Client {
   id: string;
@@ -45,6 +47,14 @@ const ClientsPage: React.FC = () => {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState({ name: '', email: '' });
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
+  const [showEmailTestingModal, setShowEmailTestingModal] = useState(false);
+  const [toastNotification, setToastNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setToastNotification({ message, type });
+    setTimeout(() => setToastNotification(null), 5000);
+  };
 
   // Client Quotes modal states
   const [quotesModalClient, setQuotesModalClient] = useState<Client | null>(null);
@@ -177,6 +187,36 @@ const ClientsPage: React.FC = () => {
     copyToClipboard(inviteMessage, 'Client portal invitation copied to clipboard!');
   };
 
+  const handleSendPortalInviteEmail = async (client: Client) => {
+    // STRICT REQUIREMENT: Only available for clients who have NOT yet signed up for portal
+    if (hasClientLoggedIn(client)) {
+      showToast(`${client.name} has already configured a password and signed up for their portal.`, 'info');
+      return;
+    }
+    if (!client.email || !client.email.includes('@')) {
+      showToast(`Cannot send email: Please set a valid email address for "${client.name}" first.`, 'error');
+      return;
+    }
+
+    setSendingInviteId(client.id);
+    try {
+      const res = await sendPortalInviteEmail(client.id, client.email);
+      if (res.success) {
+        if (res.simulated) {
+          showToast(`Portal invite simulated for ${client.email}. Add RESEND_API_KEY to .env to deliver live emails.`, 'info');
+        } else {
+          showToast(`✓ "Your Client Portal is Ready" email sent to ${client.email}!`, 'success');
+        }
+      } else {
+        showToast(`Failed to send portal email: ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error sending invite email: ${err.message}`, 'error');
+    } finally {
+      setSendingInviteId(null);
+    }
+  };
+
   // Metrics
   const totalCount = clients.length;
   const loggedInCount = clients.filter(hasClientLoggedIn).length;
@@ -205,6 +245,25 @@ const ClientsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Toast notification */}
+      {toastNotification && (
+        <div
+          className={`p-3 rounded-lg flex items-center justify-between text-xs font-medium border shadow-lg transition-all animate-fade-in ${
+            toastNotification.type === 'success'
+              ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+              : toastNotification.type === 'error'
+              ? 'bg-red-950/80 border-red-500/50 text-red-200'
+              : 'bg-cyan-950/80 border-cyan-500/50 text-cyan-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">{toastNotification.type === 'success' ? '✓' : toastNotification.type === 'error' ? '⚠' : 'ℹ'}</span>
+            <span>{toastNotification.message}</span>
+          </div>
+          <button onClick={() => setToastNotification(null)} className="ml-3 text-slate-400 hover:text-white text-xs">✕</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -213,7 +272,17 @@ const ClientsPage: React.FC = () => {
             Manage your client profiles, customer portal access, attached quotes, and 1-click invoice conversions.
           </p>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowEmailTestingModal(true)}
+            title="Preview & test transactional emails"
+            className="bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700/80 font-medium py-2 px-3 rounded transition-colors text-xs sm:text-sm flex items-center gap-1.5 shadow-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span>Email Templates</span>
+          </button>
           <button
             onClick={() => fetchClientsAndEstimates()}
             title="Refresh Clients"
@@ -497,7 +566,7 @@ const ClientsPage: React.FC = () => {
                             type="text"
                             readOnly
                             value={portalLink}
-                            className="bg-slate-900 border border-slate-700 text-slate-400 text-xs rounded px-2 py-1 w-36 truncate flex-1 md:flex-none font-mono"
+                            className="bg-slate-900 border border-slate-700 text-slate-400 text-xs rounded px-2 py-1 w-32 truncate flex-1 md:flex-none font-mono"
                           />
                           <button
                             onClick={() => copyToClipboard(portalLink)}
@@ -506,12 +575,42 @@ const ClientsPage: React.FC = () => {
                           >
                             Copy
                           </button>
+
+                          {/* Email Invite Button: ONLY available for clients who haven't already signed up */}
+                          {!loggedIn ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSendPortalInviteEmail(client)}
+                              disabled={sendingInviteId === client.id}
+                              title={client.email ? `Send "Your portal is ready" email to ${client.email}` : 'Add client email to send invite'}
+                              className="text-white hover:text-cyan-100 bg-cyan-600 hover:bg-cyan-500 text-xs shrink-0 px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                            >
+                              {sendingInviteId === client.id ? (
+                                <span>Sending...</span>
+                              ) : (
+                                <>
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                  </svg>
+                                  <span>Send Invite Email</span>
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <span
+                              className="text-slate-500 text-xs px-2 py-1 rounded bg-slate-900/60 border border-slate-800 flex items-center gap-1 cursor-default shrink-0"
+                              title="Client already registered with a password and logged in"
+                            >
+                              <span className="text-emerald-400">✓</span> Portal Active
+                            </span>
+                          )}
+
                           <button
                             onClick={() => copyPortalInvite(client)}
                             title="Copy pre-written portal invitation text"
                             className="text-slate-300 hover:text-white hover:bg-slate-750 text-xs shrink-0 bg-slate-800 border border-slate-750 px-2 py-1 rounded font-medium transition-colors flex items-center gap-1"
                           >
-                            <span>Invite</span>
+                            <span>Text</span>
                           </button>
                         </div>
 
@@ -648,7 +747,7 @@ const ClientsPage: React.FC = () => {
                     const low = est.estimated_low || 0;
                     const high = est.estimated_high || 0;
                     const mid = Math.round((low + high) / 2);
-                    const rangeText = `£${low.toLocaleString()} – £${high.toLocaleString()}`;
+                    const rangeText = `£${low.toLocaleString()} - £${high.toLocaleString()}`;
 
                     return (
                       <div
@@ -879,29 +978,54 @@ const ClientsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => copyPortalInvite(editingClient)}
-                      className="text-xs text-slate-300 hover:text-white underline font-medium"
-                    >
-                      Copy invite message
-                    </button>
-
-                    {hasClientLoggedIn(editingClient) ? (
+                  <div className="pt-2 border-t border-slate-800 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <button
                         type="button"
-                        disabled={isResettingPassword}
-                        onClick={() => handleResetPassword(editingClient)}
-                        className="px-3 py-1 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 border border-amber-700/50 rounded text-xs font-medium transition-colors"
-                        title="Clear the client's password so they can set a fresh password on next login"
+                        onClick={() => copyPortalInvite(editingClient)}
+                        className="text-xs text-slate-300 hover:text-white underline font-medium"
                       >
-                        {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                        Copy invite text message
+                      </button>
+
+                      {hasClientLoggedIn(editingClient) ? (
+                        <button
+                          type="button"
+                          disabled={isResettingPassword}
+                          onClick={() => handleResetPassword(editingClient)}
+                          className="px-3 py-1 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 border border-amber-700/50 rounded text-xs font-medium transition-colors"
+                          title="Clear the client's password so they can set a fresh password on next login"
+                        >
+                          {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-500 italic">
+                          Client will set password on first visit
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Send "Your Client Portal is Ready" email button: ONLY for clients not yet signed up */}
+                    {!hasClientLoggedIn(editingClient) ? (
+                      <button
+                        type="button"
+                        disabled={sendingInviteId === editingClient.id}
+                        onClick={() => handleSendPortalInviteEmail(editingClient)}
+                        className="w-full mt-2 py-2 px-3 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm disabled:opacity-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <span>
+                          {sendingInviteId === editingClient.id
+                            ? 'Sending Invitation...'
+                            : `Send "Your Client Portal is Ready" Email to ${editingClient.email || editingClient.name}`}
+                        </span>
                       </button>
                     ) : (
-                      <span className="text-[11px] text-slate-500 italic">
-                        Client will set password on first visit
-                      </span>
+                      <div className="mt-2 bg-emerald-950/30 border border-emerald-500/20 rounded-lg p-2 text-center text-xs text-emerald-300">
+                        ✓ Client has already signed up and configured their portal password.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -925,6 +1049,11 @@ const ClientsPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Email Testing Modal */}
+      {showEmailTestingModal && (
+        <EmailTestingModal isOpen={showEmailTestingModal} onClose={() => setShowEmailTestingModal(false)} />
       )}
     </div>
   );

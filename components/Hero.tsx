@@ -11,7 +11,7 @@ const ScrambleText: React.FC = () => {
   ];
   const [text, setText] = useState(phrases[0]);
   const [phraseIndex, setPhraseIndex] = useState(0);
-  const chars = "!<>-_\\/[]{}—=+*^?#________";
+  const chars = "!<>-_\\/[]{}~=+*^?#________";
 
   useEffect(() => {
     let frameId: number;
@@ -140,7 +140,7 @@ const Hero: React.FC = () => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    // Initialize center position to avoid jump on load
+    // Initialise centre position to avoid jump on load
     setMousePos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
     const handleMouseMove = (e: MouseEvent) => {

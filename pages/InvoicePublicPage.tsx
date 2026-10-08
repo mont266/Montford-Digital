@@ -7,6 +7,7 @@ import Logo from '../components/Logo';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { CheckoutForm } from '../src/components/CheckoutForm';
+import { sendInvoicePaidEmail } from '../lib/emailService';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
@@ -84,9 +85,11 @@ const InvoicePublicPage: React.FC = () => {
         // Handle successful payment redirect
         if (searchParams.get('success') === 'true') {
           await supabase.from('invoices').update({ status: 'paid' }).eq('id', id);
-          setSuccessMessage('Payment successful! Thank you.');
-        } else if (searchParams.get('canceled') === 'true') {
-          setError('Payment process was canceled.');
+          sendInvoicePaidEmail(id).catch(console.error);
+          setSuccessMessage('Payment successful! A confirmation receipt has been sent to your email.');
+          setIsReceiptView(true);
+        } else if (searchParams.get('canceled') === 'true' || searchParams.get('cancelled') === 'true') {
+          setError('Payment process was cancelled.');
         }
 
         const { data, error: dbError } = await supabase
@@ -100,6 +103,9 @@ const InvoicePublicPage: React.FC = () => {
             setInvoice(data as Invoice);
             setBillingName(data.projects?.client_name || '');
             setBillingEmail(data.projects?.clients?.email || '');
+            if (searchParams.get('receipt') === 'true' || searchParams.get('success') === 'true') {
+                setIsReceiptView(true);
+            }
             if (data.split_group_id) {
                 const { data: siblingData } = await supabase
                     .from('invoices')

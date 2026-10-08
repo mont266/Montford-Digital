@@ -6,6 +6,7 @@ import {
   fetchClientProjects,
   convertEstimateToInvoice,
 } from '../lib/invoiceConversion';
+import { sendInvoiceReadyEmail } from '../lib/emailService';
 
 interface ConvertToInvoiceModalProps {
   estimate: Estimate;
@@ -26,7 +27,7 @@ const FEATURE_NAMES: Record<string, string> = {
   dashboard: 'Analytics & Reporting Dashboard',
   realtime: 'Real-time Live Sync & Data Stream',
   search: 'Advanced Faceted Search & Filters',
-  seo: 'SEO Optimization & Metadata Schema',
+  seo: 'SEO Optimisation & Metadata Schema',
   multilingual: 'Multi-language (i18n) Support',
   notifications: 'Push & Transactional Email Alerts',
   offline: 'Offline Progressive Web App (PWA)',
@@ -261,6 +262,12 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     setIsSubmitting(false);
 
     if (result.success && result.invoiceId && result.invoiceNumber) {
+      if (invoiceStatus === 'sent') {
+        sendInvoiceReadyEmail(result.invoiceId).catch(console.error);
+        if (result.secondInvoiceId) {
+          sendInvoiceReadyEmail(result.secondInvoiceId).catch(console.error);
+        }
+      }
       setCreatedInvoiceResult({
         invoiceId: result.invoiceId,
         invoiceNumber: result.invoiceNumber,
@@ -706,7 +713,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
                       : 'bg-slate-800 text-slate-400 border-slate-700'
                   }`}
                 >
-                  Itemized Scope
+                  Itemised Scope
                 </button>
                 <button
                   type="button"

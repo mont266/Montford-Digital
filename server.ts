@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import emailRoutes from './server/emailRoutes';
 
 dotenv.config();
 
@@ -10,6 +11,10 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors());
+app.use(express.json());
+
+// API proxy routes for transactional emails & background tasks
+app.use('/api/emails', emailRoutes);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

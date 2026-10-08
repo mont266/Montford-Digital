@@ -48,6 +48,78 @@ export default async function serve(req: Request) {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY') || '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Helper: Send paid receipt email via Resend when Stripe payment succeeds
+    const sendPaidReceiptEmail = async (invoiceId: string) => {
+      try {
+        const resendKey = Deno.env.get('RESEND_API_KEY');
+        if (!resendKey) {
+          console.log('[Stripe Webhook] RESEND_API_KEY not configured in Deno env, skipping receipt email.');
+          return;
+        }
+
+        const { data: inv } = await supabase
+          .from('invoices')
+          .select('*, projects (*, clients (*)), invoice_items (*)')
+          .eq('id', invoiceId)
+          .single();
+
+        if (!inv) return;
+
+        const recipientEmail = inv.projects?.clients?.email || inv.projects?.client_email;
+        if (!recipientEmail || !recipientEmail.includes('@')) return;
+
+        const clientName = inv.projects?.clients?.name || inv.projects?.client_name || 'Client';
+        const appUrl = (Deno.env.get('APP_URL') || 'https://montforddigital.com').replace(/\/+$/, '');
+        const receiptUrl = `${appUrl}/#/invoice/${inv.id}?receipt=true`;
+        const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'Montford Digital <onboarding@resend.dev>';
+
+        const formattedAmount = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(Number(inv.amount) || 0);
+        const subject = `Payment Received: Invoice #${inv.invoice_number} Receipt (${formattedAmount}) - Montford Digital`;
+
+        const html = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f17; color: #e2e8f0; padding: 32px 24px; max-width: 600px; margin: 0 auto; border-radius: 12px; border: 1px solid #1e2e48;">
+            <div style="border-bottom: 1px solid #23395c; padding-bottom: 20px; margin-bottom: 24px;">
+              <span style="color: #ffffff; font-size: 20px; font-weight: 800; letter-spacing: 0.1em;">MONTFORD<span style="color: #06b6d4;">.</span>DIGITAL</span>
+              <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; margin-top: 4px;">Web Engineering &amp; Client Solutions</div>
+            </div>
+            <div style="background-color: #132334; border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+              <span style="background-color: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700;">✓ PAID IN FULL</span>
+              <h2 style="color: #ffffff; margin: 12px 0 6px; font-size: 20px;">Payment Confirmed</h2>
+              <div style="font-size: 28px; font-weight: 800; color: #10b981;">${formattedAmount}</div>
+              <div style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Invoice #${inv.invoice_number} &bull; ${inv.projects?.name || 'Digital Services'}</div>
+            </div>
+            <p style="margin: 0 0 16px;">Hi ${clientName},</p>
+            <p style="margin: 0 0 24px; line-height: 1.6; color: #cbd5e1;">Thank you! Your payment for invoice #${inv.invoice_number} has been received and confirmed by Stripe.</p>
+            <div style="text-align: center; margin: 28px 0;">
+              <a href="${receiptUrl}" style="background-color: #10b981; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 15px; display: inline-block;">
+                View Paid Invoice &amp; Receipt &rarr;
+              </a>
+            </div>
+            <p style="font-size: 12px; color: #64748b; text-align: center; margin: 0 0 24px;">Receipt URL: ${receiptUrl}</p>
+            <p style="font-size: 12px; color: #64748b; border-top: 1px solid #1a2a44; padding-top: 18px; margin: 0; text-align: center;">Montford Digital &bull; Scott Montford</p>
+          </div>
+        `;
+
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: [recipientEmail],
+            subject,
+            html,
+            text: `Hi ${clientName},\n\nThank you! We have received your payment of ${formattedAmount} for invoice #${inv.invoice_number}.\n\nYou can view and download your official receipt at:\n${receiptUrl}\n\nBest regards,\nMontford Digital`,
+          }),
+        });
+        console.log(`[Stripe Webhook] Sent paid receipt email for #${inv.invoice_number} to ${recipientEmail}`);
+      } catch (err) {
+        console.error('[Stripe Webhook] Failed to send receipt email via Resend:', err);
+      }
+    };
+
     // Webhook handler
     if (action === 'webhook' && req.method === 'POST') {
       const signature = req.headers.get('stripe-signature');
@@ -81,6 +153,7 @@ export default async function serve(req: Request) {
                 .update({ status: 'paid' })
                 .eq('id', paymentIntent.metadata.invoiceId);
               if (error) console.error('Error updating invoice status:', error);
+              else await sendPaidReceiptEmail(paymentIntent.metadata.invoiceId);
             }
             
             // If it's a subscription payment intent, it might have projectId
@@ -212,6 +285,7 @@ export default async function serve(req: Request) {
                 .from('invoices')
                 .update({ status: 'paid' })
                 .eq('id', session.metadata.invoiceId);
+              await sendPaidReceiptEmail(session.metadata.invoiceId);
             } else if (session.mode === 'subscription' && session.metadata?.projectId) {
               await supabase
                 .from('projects')

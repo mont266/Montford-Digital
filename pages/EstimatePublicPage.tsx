@@ -34,7 +34,7 @@ const FEATURE_DESCRIPTIONS: Record<string, { label: string; desc: string }> = {
   },
   profile: {
     label: 'User Profiles & Settings',
-    desc: 'Customizable user profile data, avatars, preferences, and account controls.',
+    desc: 'Customisable user profile data, avatars, preferences, and account controls.',
   },
   cms: {
     label: 'Content Management (CMS)',
@@ -50,7 +50,7 @@ const FEATURE_DESCRIPTIONS: Record<string, { label: string; desc: string }> = {
   },
   dashboard: {
     label: 'Analytics & Reporting Dashboard',
-    desc: 'Interactive data visualizations, metrics charts, and operational reports.',
+    desc: 'Interactive data visualisations, metrics charts, and operational reports.',
   },
   realtime: {
     label: 'Real-time Sync & Live Data',
@@ -61,12 +61,12 @@ const FEATURE_DESCRIPTIONS: Record<string, { label: string; desc: string }> = {
     desc: 'Instant querying with faceted filtering, multi-criteria sorting, and fuzzy search.',
   },
   seo: {
-    label: 'Technical SEO & Performance Optimization',
+    label: 'Technical SEO & Performance Optimisation',
     desc: 'OpenGraph metadata, schema markup, sitemaps, and search engine speed tuning.',
   },
   multilingual: {
     label: 'Multi-Language Support',
-    desc: 'Localized interface strings, language toggle, and regional formatting.',
+    desc: 'Localised interface strings, language toggle, and regional formatting.',
   },
   notifications: {
     label: 'Push & Automated Email Alerts',
@@ -340,7 +340,7 @@ const EstimatePublicPage: React.FC = () => {
               <span className="block text-sm font-bold text-emerald-400 mt-1 print:text-black">
                 {estimate.quoted_amount
                   ? formatCurrency(estimate.quoted_amount)
-                  : `${formatCurrency(estimate.estimated_low)} – ${formatCurrency(estimate.estimated_high)}`}
+                  : `${formatCurrency(estimate.estimated_low)} - ${formatCurrency(estimate.estimated_high)}`}
               </span>
             </div>
           </div>

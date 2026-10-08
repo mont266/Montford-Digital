@@ -252,7 +252,7 @@ const QuoteCalculatorPage: React.FC = () => {
     dashboard: 'Data Dashboard',
     realtime: 'Real-time Data',
     search: 'Advanced Search',
-    seo: 'SEO Optimization',
+    seo: 'SEO Optimisation',
     multilingual: 'Multi-language',
     notifications: 'Push/Email Alerts',
     offline: 'Offline/PWA',
@@ -1053,7 +1053,7 @@ ${generateShareUrl(est)}`;
                   <FeatureCheckbox
                     id="ecommerce"
                     label="E-commerce &amp; Checkout"
-                    description="Product catalog, shopping cart, and Stripe payment gateway."
+                    description="Product catalogue, shopping cart, and Stripe payment gateway."
                     points={pricingConfig.featurePoints.ecommerce || 18}
                     checked={features.ecommerce}
                     onChange={() => setFeatures((f) => ({ ...f, ecommerce: !f.ecommerce }))}
@@ -1069,7 +1069,7 @@ ${generateShareUrl(est)}`;
                   <FeatureCheckbox
                     id="dashboard"
                     label="Data Dashboard"
-                    description="Visual metric charts, interactive reports, and data visualization."
+                    description="Visual metric charts, interactive reports, and data visualisation."
                     points={pricingConfig.featurePoints.dashboard || 14}
                     checked={features.dashboard}
                     onChange={() => setFeatures((f) => ({ ...f, dashboard: !f.dashboard }))}
@@ -1093,7 +1093,7 @@ ${generateShareUrl(est)}`;
                   <FeatureCheckbox
                     id="seo"
                     label="SEO &amp; Social Cards"
-                    description="OpenGraph tags, Schema.org JSON-LD, sitemaps, and speed optimization."
+                    description="OpenGraph tags, Schema.org JSON-LD, sitemaps, and speed optimisation."
                     points={pricingConfig.featurePoints.seo || 4}
                     checked={features.seo}
                     onChange={() => setFeatures((f) => ({ ...f, seo: !f.seo }))}
@@ -1101,7 +1101,7 @@ ${generateShareUrl(est)}`;
                   <FeatureCheckbox
                     id="multilingual"
                     label="Multi-language Support"
-                    description="Internationalization (i18n), regional routing, and language selector."
+                    description="Internationalisation (i18n), regional routing, and language selector."
                     points={pricingConfig.featurePoints.multilingual || 8}
                     checked={features.multilingual}
                     onChange={() => setFeatures((f) => ({ ...f, multilingual: !f.multilingual }))}

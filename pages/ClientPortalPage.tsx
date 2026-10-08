@@ -340,8 +340,8 @@ const ClientPortalPage: React.FC = () => {
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
       setSuccessMessage('Subscription successful! Thank you.');
-    } else if (searchParams.get('canceled') === 'true') {
-      setError('Subscription process was canceled.');
+    } else if (searchParams.get('canceled') === 'true' || searchParams.get('cancelled') === 'true') {
+      setError('Subscription process was cancelled.');
     }
     fetchPortalData();
   }, [fetchPortalData, searchParams]);
@@ -367,7 +367,7 @@ const ClientPortalPage: React.FC = () => {
 
       if (!isAdmin && !isThisClient) {
         await supabase.auth.signOut();
-        throw new Error('Not authorized for this portal');
+        throw new Error('Not authorised for this portal');
       }
 
       setIsAuthenticated(true);
@@ -699,7 +699,7 @@ const ClientPortalPage: React.FC = () => {
       if (data?.success) {
         // Update local state
         setProjects(projects.map(p => p.id === project.id ? { ...p, stripe_subscription_status: 'canceled' } : p));
-        setSuccessMessage('Subscription canceled successfully.');
+        setSuccessMessage('Subscription cancelled successfully.');
         
         // Update database
         await supabase
@@ -1279,13 +1279,13 @@ const ClientPortalPage: React.FC = () => {
                                       disabled={isCanceling === project.id}
                                       className="mt-2 w-full py-2 bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400 border border-slate-600 hover:border-red-900/50 text-xs font-bold uppercase tracking-wider rounded transition-colors disabled:opacity-50"
                                     >
-                                      {isCanceling === project.id ? 'Canceling...' : 'Cancel'}
+                                      {isCanceling === project.id ? 'Cancelling...' : 'Cancel'}
                                     </button>
                                   </div>
                                 </div>
                               ) : project.stripe_subscription_status === 'canceled' ? (
                                 <div className="mt-2 flex flex-col gap-3">
-                                  <span className="text-amber-500 text-[10px] uppercase tracking-wider font-bold">Canceled</span>
+                                  <span className="text-amber-500 text-[10px] uppercase tracking-wider font-bold">Cancelled</span>
                                   <button
                                     onClick={() => handleSubscribeInitiate(project)}
                                     disabled={isProcessingPayment}
