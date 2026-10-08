@@ -722,7 +722,30 @@ const ProjectsPage: React.FC<{ projects: Project[]; clients: any[]; refreshData:
                             return (
                                 <tr key={project.id}>
                                     <td data-label="Project Name" className="px-6 py-4 whitespace-nowrap text-sm text-white">{project.name}</td>
-                                    <td data-label="Client Name" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">{clientNameDisplay}</td>
+                                    <td data-label="Client Name" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span>{clientNameDisplay}</span>
+                                            {client && (
+                                                client.password ? (
+                                                    <span 
+                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                                        title="Client has logged in and configured portal password"
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                        Portal Active
+                                                    </span>
+                                                ) : (
+                                                    <span 
+                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                                                        title="Client has not logged into portal yet (no password set)"
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
+                                                        Not Logged In
+                                                    </span>
+                                                )
+                                            )}
+                                        </div>
+                                    </td>
                                     <td data-label="Recurring Fee" className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                                         {project.recurring_fee ? `${formatCurrency(project.recurring_fee)}/mo` : '-'}
                                     </td>
@@ -2650,7 +2673,7 @@ const DashboardPage: React.FC = () => {
             // FIX: Select client_name from projects to match the updated Invoice type.
             let invoicesQuery = supabase.from('invoices').select('*, projects(name, client_name), invoice_items(*)').order('issue_date', { ascending: false });
             let expensesQuery = supabase.from('expenses').select('*, expense_attachments(count)').order('start_date', { ascending: false });
-            let clientsQuery = supabase.from('clients').select('id, name, email, portal_token, created_at').order('name');
+            let clientsQuery = supabase.from('clients').select('id, name, email, portal_token, created_at, password').order('name');
 
             // Apply filters if specific entity selected
             if (selectedEntityId !== 'all') {

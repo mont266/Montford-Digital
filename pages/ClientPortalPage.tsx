@@ -170,7 +170,7 @@ const ClientPortalPage: React.FC = () => {
         // 1. Fetch Client by Token
         const { data: clientData, error: clientError } = await supabase
           .from('clients')
-          .select('id, name, email, portal_token')
+          .select('id, name, email, portal_token, password')
           .eq('portal_token', token)
           .single();
 
