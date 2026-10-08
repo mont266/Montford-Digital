@@ -1,7 +1,7 @@
 
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import Logo from '../components/Logo';
 import { loadStripe } from '@stripe/stripe-js';
@@ -68,6 +68,7 @@ const InvoicePublicPage: React.FC = () => {
   const [siblingInvoice, setSiblingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
   const [isReceiptView, setIsReceiptView] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -76,97 +77,126 @@ const InvoicePublicPage: React.FC = () => {
   const [billingEmail, setBillingEmail] = useState('');
   const [isCollectingDetails, setIsCollectingDetails] = useState(false);
 
-  useEffect(() => {
-    const fetchInvoice = async () => {
-      if (!id) {
-        setError("Invalid invoice ID.");
-        setLoading(false);
-        return;
+  const fetchInvoice = useCallback(async () => {
+    if (!id) {
+      setIsNotFound(true);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setIsNotFound(false);
+
+    try {
+      // Handle successful payment redirect
+      if (searchParams.get('success') === 'true') {
+        await supabase.from('invoices').update({ status: 'paid' }).eq('id', id);
+        sendInvoicePaidEmail(id).catch(console.error);
+        setSuccessMessage('Payment successful! A confirmation receipt has been sent to your email.');
+        setIsReceiptView(true);
+      } else if (searchParams.get('canceled') === 'true' || searchParams.get('cancelled') === 'true') {
+        setError('Payment process was cancelled.');
       }
 
-      try {
-        // Handle successful payment redirect
-        if (searchParams.get('success') === 'true') {
-          await supabase.from('invoices').update({ status: 'paid' }).eq('id', id);
-          sendInvoicePaidEmail(id).catch(console.error);
-          setSuccessMessage('Payment successful! A confirmation receipt has been sent to your email.');
-          setIsReceiptView(true);
-        } else if (searchParams.get('canceled') === 'true' || searchParams.get('cancelled') === 'true') {
-          setError('Payment process was cancelled.');
+      const { data, error: dbError } = await supabase
+        .from('invoices')
+        .select(`*, projects ( name, client_name, client_id, clients ( id, name, email ) ), invoice_items ( * )`)
+        .eq('id', id)
+        .single();
+
+      if (dbError) {
+        if (
+          dbError.code === 'PGRST116' ||
+          dbError.message?.toLowerCase().includes('json object requested') ||
+          dbError.message?.toLowerCase().includes('0 rows') ||
+          dbError.details?.toLowerCase().includes('0 rows')
+        ) {
+          setIsNotFound(true);
+          setInvoice(null);
+          return;
         }
+        throw dbError;
+      }
 
-        const { data, error: dbError } = await supabase
-          .from('invoices')
-          .select(`*, projects ( name, client_name, client_id, clients ( id, name, email ) ), invoice_items ( * )`)
-          .eq('id', id)
-          .single();
+      if (data) {
+          let candidateNames = [
+            data.projects?.client_name?.trim(),
+            data.projects?.clients?.name?.trim(),
+          ].filter((n): n is string => Boolean(n && n.length > 0));
 
-        if (dbError) throw dbError;
-        if (data) {
-            let candidateNames = [
-              data.projects?.client_name?.trim(),
-              data.projects?.clients?.name?.trim(),
-            ].filter((n): n is string => Boolean(n && n.length > 0));
+          let candidateEmails = [
+            data.projects?.clients?.email?.trim(),
+            (data.projects as any)?.client_email?.trim(),
+          ].filter((e): e is string => Boolean(e && e.length > 0));
 
-            let candidateEmails = [
-              data.projects?.clients?.email?.trim(),
-              (data.projects as any)?.client_email?.trim(),
-            ].filter((e): e is string => Boolean(e && e.length > 0));
-
-            // If neither client_name nor clients was loaded via join, try direct lookup by client_id
-            if (candidateNames.length === 0 && data.projects?.client_id) {
-              try {
-                const { data: directClient } = await supabase
-                  .from('clients')
-                  .select('id, name, email')
-                  .eq('id', data.projects.client_id)
-                  .single();
-                if (directClient?.name) {
-                  candidateNames.push(directClient.name.trim());
-                  if (directClient.email) candidateEmails.push(directClient.email.trim());
-                }
-              } catch (e) {
-                console.warn('Direct client lookup notice:', e);
+          // If neither client_name nor clients was loaded via join, try direct lookup by client_id
+          if (candidateNames.length === 0 && data.projects?.client_id) {
+            try {
+              const { data: directClient } = await supabase
+                .from('clients')
+                .select('id, name, email')
+                .eq('id', data.projects.client_id)
+                .single();
+              if (directClient?.name) {
+                candidateNames.push(directClient.name.trim());
+                if (directClient.email) candidateEmails.push(directClient.email.trim());
               }
+            } catch (e) {
+              console.warn('Direct client lookup notice:', e);
             }
+          }
 
-            // Pick the most complete full name (e.g. "Blue Whippet Heating" over "Blue")
-            const resolvedClientName = candidateNames.sort((a, b) => b.length - a.length)[0] || '';
-            const resolvedClientEmail = candidateEmails[0] || '';
+          // Pick the most complete full name (e.g. "Blue Whippet Heating" over "Blue")
+          const resolvedClientName = candidateNames.sort((a, b) => b.length - a.length)[0] || '';
+          const resolvedClientEmail = candidateEmails[0] || '';
 
-            setInvoice(data as Invoice);
-            setBillingName(resolvedClientName);
-            setBillingEmail(resolvedClientEmail);
-            if (searchParams.get('receipt') === 'true' || searchParams.get('success') === 'true') {
-                setIsReceiptView(true);
-            }
-            if (data.split_group_id) {
-                const { data: siblingData } = await supabase
-                    .from('invoices')
-                    .select('*')
-                    .eq('split_group_id', data.split_group_id)
-                    .neq('id', data.id)
-                    .single();
-                if (siblingData) {
-                    setSiblingInvoice(siblingData as Invoice);
-                }
-            }
-        } else {
-            setError("Invoice not found.");
-        }
-
-      } catch (err: any) {
-        if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
-            setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
-        } else {
-            setError(err.message || 'An error occurred while fetching the invoice.');
-        }
-      } finally {
-        setLoading(false);
+          setInvoice(data as Invoice);
+          setBillingName(resolvedClientName);
+          setBillingEmail(resolvedClientEmail);
+          setIsNotFound(false);
+          if (searchParams.get('receipt') === 'true' || searchParams.get('success') === 'true') {
+              setIsReceiptView(true);
+          }
+          if (data.split_group_id) {
+              const { data: siblingData } = await supabase
+                  .from('invoices')
+                  .select('*')
+                  .eq('split_group_id', data.split_group_id)
+                  .neq('id', data.id)
+                  .single();
+              if (siblingData) {
+                  setSiblingInvoice(siblingData as Invoice);
+              }
+          }
+      } else {
+          setIsNotFound(true);
+          setInvoice(null);
       }
-    };
+
+    } catch (err: any) {
+      if (
+        err?.code === 'PGRST116' ||
+        err?.message?.toLowerCase().includes('json object requested') ||
+        err?.message?.toLowerCase().includes('0 rows') ||
+        err?.message?.toLowerCase().includes('not found')
+      ) {
+        setIsNotFound(true);
+        setInvoice(null);
+      } else if (err.message === 'NetworkError when attempting to fetch resource.' || err.message === 'Failed to fetch') {
+        setError("Unable to connect to the database. Please check your internet connection, ensure your Supabase project is active (not paused), and disable any adblockers that might be blocking the connection.");
+      } else {
+        setError(err.message || 'An error occurred while fetching the invoice.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [id, searchParams]);
+
+  useEffect(() => {
     fetchInvoice();
-  }, [id]);
+  }, [fetchInvoice]);
   
   const [clientSecret, setClientSecret] = useState<string | null>(null);
 
@@ -230,8 +260,130 @@ const InvoicePublicPage: React.FC = () => {
     const isOverdue = new Date(dueDate) < new Date() && status !== 'paid';
     if (status === 'paid') return 'bg-green-500/20 text-green-300 border-green-500/30';
     if (isOverdue) return 'bg-red-500/20 text-red-300 border-red-500/30';
-    if (status === 'sent') return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+    if (status === 'sent') return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
     return 'bg-slate-700 text-slate-300 border-slate-600';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-300 flex flex-col justify-center items-center p-4">
+        <Logo className="h-9 w-auto mb-8 animate-pulse" />
+        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-slate-400 text-sm font-medium">Loading invoice details...</p>
+      </div>
+    );
+  }
+
+  if (isNotFound || (!invoice && !error)) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-300 flex flex-col justify-center items-center p-4 sm:p-8 font-sans">
+        <div className="w-full max-w-lg bg-slate-800/95 backdrop-blur rounded-2xl shadow-2xl border border-slate-700 p-6 sm:p-10 text-center">
+          <div className="mb-6 flex justify-center">
+            <Logo className="h-8 sm:h-9 w-auto" />
+          </div>
+
+          <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-6 shadow-inner">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v.01" />
+            </svg>
+          </div>
+
+          <h1 className="text-2xl font-bold text-white tracking-tight mb-2">Invoice Not Found</h1>
+          <p className="text-slate-400 text-sm leading-relaxed mb-6">
+            This invoice is no longer available. It may have been updated, settled, or removed by our accounts team.
+          </p>
+
+          {id && (
+            <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-700/60 mb-6 flex items-center justify-center gap-2 text-xs">
+              <span className="text-slate-500 uppercase tracking-wider font-semibold text-[10px]">Reference:</span>
+              <span className="text-slate-300 font-mono select-all truncate max-w-[280px]">{id}</span>
+            </div>
+          )}
+
+          <div className="bg-slate-900/40 rounded-xl p-4 border border-slate-800 text-left text-xs text-slate-400 space-y-2.5 mb-8">
+            <p className="font-semibold text-slate-300 uppercase tracking-wider text-[10px] mb-1">What you can do:</p>
+            <div className="flex items-start gap-2">
+              <span className="text-cyan-400 font-bold">•</span>
+              <span>Check your email inbox for a more recently issued invoice link.</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-cyan-400 font-bold">•</span>
+              <span>If you are a registered client, log into your Client Portal to view all current and past invoices.</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-cyan-400 font-bold">•</span>
+              <span>If you believe this is an error, contact our accounts team and we'll gladly look into it.</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a
+              href={`mailto:hello@montforddigital.com?subject=Invoice%20Query%20(Ref:%20${encodeURIComponent(id || 'N/A')})`}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-lg transition-colors shadow-lg shadow-cyan-950/20"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Contact Support
+            </a>
+            <Link
+              to="/"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium text-sm rounded-lg transition-colors border border-slate-600"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              Return Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !invoice) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-300 flex flex-col justify-center items-center p-4 sm:p-8 font-sans">
+        <div className="w-full max-w-lg bg-slate-800/95 backdrop-blur rounded-2xl shadow-2xl border border-slate-700 p-6 sm:p-10 text-center">
+          <div className="mb-6 flex justify-center">
+            <Logo className="h-8 sm:h-9 w-auto" />
+          </div>
+
+          <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-6">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+
+          <h1 className="text-2xl font-bold text-white tracking-tight mb-2">Unable to Load Invoice</h1>
+          <p className="text-slate-400 text-sm leading-relaxed mb-6">
+            {error}
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={() => fetchInvoice()}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm rounded-lg transition-colors shadow-lg shadow-cyan-950/20"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Try Again
+            </button>
+            <Link
+              to="/"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium text-sm rounded-lg transition-colors border border-slate-600"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              Return Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const stripeFee = invoice ? (invoice.amount * 0.025) + 0.20 : 0;
@@ -255,7 +407,6 @@ const InvoicePublicPage: React.FC = () => {
           </header>
 
           <main className="p-8">
-              {loading && <p className="text-center">Loading invoice...</p>}
               {error && <p className="text-center text-red-400 mb-4">{error}</p>}
               {successMessage && (
                 <div className="bg-green-500/20 border border-green-500/30 text-green-300 p-4 rounded-lg flex justify-between items-center mb-6">
@@ -371,7 +522,7 @@ const InvoicePublicPage: React.FC = () => {
                           <div className="flex items-center mb-4 sm:mb-0 print-hide">
                              <span className="text-slate-400 mr-2">Status:</span>
                              <span className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusChip(invoice.status, invoice.due_date)}`}>
-                                  {new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'Overdue' : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                                  {new Date(invoice.due_date) < new Date() && invoice.status !== 'paid' ? 'Overdue' : (invoice.status === 'sent' ? 'Outstanding' : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1))}
                              </span>
                           </div>
                           

@@ -963,7 +963,7 @@ const ClientPortalPage: React.FC = () => {
                           invoice.status === 'overdue' ? 'bg-red-900/30 text-red-400 border-red-800/50' :
                           'bg-yellow-900/30 text-yellow-400 border-yellow-800/50'
                         }`}>
-                          {invoice.status}
+                          {invoice.status === 'sent' ? 'Outstanding' : invoice.status}
                         </span>
                       </div>
                       
@@ -1022,7 +1022,7 @@ const ClientPortalPage: React.FC = () => {
                               invoice.status === 'overdue' ? 'bg-red-900/30 text-red-400 border-red-800/50' :
                               'bg-yellow-900/30 text-yellow-400 border-yellow-800/50'
                             }`}>
-                              {invoice.status}
+                              {invoice.status === 'sent' ? 'Outstanding' : invoice.status}
                             </span>
                           </td>
                           <td className="py-4 text-right">
