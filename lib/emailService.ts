@@ -1,4 +1,5 @@
 // Client-side transactional email service helper for Resend
+import { getAppBaseUrl } from './urlHelper';
 
 export interface EmailSendResult {
   success: boolean;
@@ -40,7 +41,7 @@ export async function sendPortalInviteEmail(
       body: JSON.stringify({
         clientId,
         email,
-        origin: window.location.origin,
+        origin: getAppBaseUrl(),
       }),
     });
 
@@ -66,7 +67,7 @@ export async function sendInvoiceReadyEmail(invoiceId: string): Promise<EmailSen
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invoiceId,
-        origin: window.location.origin,
+        origin: getAppBaseUrl(),
       }),
     });
 
@@ -92,7 +93,7 @@ export async function sendInvoicePaidEmail(invoiceId: string): Promise<EmailSend
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invoiceId,
-        origin: window.location.origin,
+        origin: getAppBaseUrl(),
       }),
     });
 

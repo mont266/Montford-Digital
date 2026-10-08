@@ -19,16 +19,68 @@ const getSupabaseAdmin = () => {
   return createClient(supabaseUrl, supabaseKey);
 };
 
+const isDevelopmentHost = (host: string): boolean => {
+  if (!host) return true;
+  const h = host.toLowerCase();
+  return (
+    h.includes('localhost') ||
+    h.includes('127.0.0.1') ||
+    h.includes('.run.app') ||
+    h.includes('ais-dev-') ||
+    h.endsWith('.cloudworkstations.dev') ||
+    h.endsWith('.googleusercontent.com') ||
+    h.includes('webcontainer') ||
+    h.includes('github.dev')
+  );
+};
+
 const getAppOrigin = (req: Request): string => {
-  if (process.env.APP_URL) {
-    return process.env.APP_URL.replace(/\/+$/, '');
+  // Check explicit environment variables, ignoring AI Studio dev URLs
+  const candidateUrls = [
+    process.env.PRODUCTION_APP_URL,
+    process.env.PUBLIC_APP_URL,
+    process.env.VITE_APP_URL,
+    process.env.APP_URL,
+  ];
+
+  for (const raw of candidateUrls) {
+    const val = raw?.trim();
+    if (val) {
+      try {
+        const parsed = new URL(val);
+        if (!isDevelopmentHost(parsed.hostname)) {
+          return val.replace(/\/+$/, '');
+        }
+      } catch {
+        if (!isDevelopmentHost(val)) {
+          return val.replace(/\/+$/, '');
+        }
+      }
+    }
   }
+
+  // Check if client passed an explicit origin that is a live production domain
   if (req.body?.origin && typeof req.body.origin === 'string') {
-    return req.body.origin.replace(/\/+$/, '');
+    const rawOrigin = req.body.origin.trim().replace(/\/+$/, '');
+    try {
+      const parsed = new URL(rawOrigin);
+      if (!isDevelopmentHost(parsed.hostname)) {
+        return rawOrigin;
+      }
+    } catch {
+      // ignore invalid URL string
+    }
   }
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
-  const host = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'localhost:3000';
-  return `${proto}://${host}`;
+
+  // Check request host header if running on live production server
+  const host = ((req.headers['x-forwarded-host'] as string) || req.get('host') || '').toLowerCase();
+  if (!isDevelopmentHost(host)) {
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+    return `${proto}://${host}`.replace(/\/+$/, '');
+  }
+
+  // Canonical live webapp URL
+  return 'https://montforddigital.com';
 };
 
 const getFromEmail = (): string => {

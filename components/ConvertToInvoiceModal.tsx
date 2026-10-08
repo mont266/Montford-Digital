@@ -7,6 +7,7 @@ import {
   convertEstimateToInvoice,
 } from '../lib/invoiceConversion';
 import { sendInvoiceReadyEmail } from '../lib/emailService';
+import { getAppBaseUrl } from '../lib/urlHelper';
 
 interface ConvertToInvoiceModalProps {
   estimate: Estimate;
@@ -280,7 +281,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
   };
 
   const copyInvoiceUrl = (id: string) => {
-    const url = `${window.location.origin}/#/invoice/${id}`;
+    const url = `${getAppBaseUrl()}/#/invoice/${id}`;
     navigator.clipboard.writeText(url);
     setCopiedInvoiceLink(true);
     setTimeout(() => setCopiedInvoiceLink(false), 2000);
@@ -288,7 +289,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
 
   // SUCCESS SCREEN
   if (createdInvoiceResult) {
-    const invoiceUrl = `${window.location.origin}/#/invoice/${createdInvoiceResult.invoiceId}`;
+    const invoiceUrl = `${getAppBaseUrl()}/#/invoice/${createdInvoiceResult.invoiceId}`;
     return (
       <div
         className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex justify-center items-center p-4"

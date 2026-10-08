@@ -6,6 +6,7 @@ import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationM
 import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
 import { EmailTestingModal } from '../components/EmailTestingModal';
 import { sendPortalInviteEmail } from '../lib/emailService';
+import { getAppBaseUrl } from '../lib/urlHelper';
 
 export interface Client {
   id: string;
@@ -177,7 +178,7 @@ const ClientsPage: React.FC = () => {
   };
 
   const copyPortalInvite = (client: Client) => {
-    const portalLink = `${window.location.origin}/#/portal/${client.portal_token}`;
+    const portalLink = `${getAppBaseUrl()}/#/portal/${client.portal_token}`;
     const loggedIn = hasClientLoggedIn(client);
     const inviteMessage = `Hi ${client.name},\n\nYou can access your client portal here:\n${portalLink}\n\n${
       loggedIn
@@ -469,7 +470,7 @@ const ClientsPage: React.FC = () => {
               filteredClients.map((client) => {
                 const clientQuotes = getClientEstimates(client);
                 const hasQuotes = clientQuotes.length > 0;
-                const portalLink = `${window.location.origin}/#/portal/${client.portal_token}`;
+                const portalLink = `${getAppBaseUrl()}/#/portal/${client.portal_token}`;
                 const loggedIn = hasClientLoggedIn(client);
 
                 return (
@@ -960,14 +961,14 @@ const ClientsPage: React.FC = () => {
                       <input
                         type="text"
                         readOnly
-                        value={`${window.location.origin}/#/portal/${editingClient.portal_token}`}
+                        value={`${getAppBaseUrl()}/#/portal/${editingClient.portal_token}`}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono truncate"
                       />
                       <button
                         type="button"
                         onClick={() =>
                           copyToClipboard(
-                            `${window.location.origin}/#/portal/${editingClient.portal_token}`,
+                            `${getAppBaseUrl()}/#/portal/${editingClient.portal_token}`,
                             'Portal URL copied!'
                           )
                         }

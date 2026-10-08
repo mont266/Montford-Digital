@@ -22,6 +22,7 @@ import {
 import { QuoteSettingsView } from '../components/QuoteSettingsView';
 import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
 import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationModal';
+import { getAppBaseUrl } from '../lib/urlHelper';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(amount);
@@ -413,7 +414,7 @@ const QuoteCalculatorPage: React.FC = () => {
   };
 
   const generateShareUrl = (est: Estimate) => {
-    const baseUrl = `${window.location.origin}/#/estimate`;
+    const baseUrl = `${getAppBaseUrl()}/#/estimate`;
     const encoded = encodeEstimateToDataUrl(est);
     return `${baseUrl}?id=${est.id}&data=${encoded}`;
   };

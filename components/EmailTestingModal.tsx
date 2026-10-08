@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getSampleEmailTemplate, EmailTemplateType } from '../lib/emailTemplates';
+import { getAppBaseUrl } from '../lib/urlHelper';
 
 interface EmailTestingModalProps {
   isOpen: boolean;
@@ -9,8 +11,22 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
   const [recipientEmail, setRecipientEmail] = useState('scott@montforddigital.com');
   const [sendingType, setSendingType] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [quickPreviewType, setQuickPreviewType] = useState<EmailTemplateType | null>(null);
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop');
+  const [copiedHtml, setCopiedHtml] = useState(false);
 
   if (!isOpen) return null;
+
+  const quickPreviewTemplate = quickPreviewType
+    ? getSampleEmailTemplate(quickPreviewType, getAppBaseUrl())
+    : null;
+
+  const handleCopyPreviewHtml = () => {
+    if (!quickPreviewTemplate) return;
+    navigator.clipboard.writeText(quickPreviewTemplate.html);
+    setCopiedHtml(true);
+    setTimeout(() => setCopiedHtml(false), 2000);
+  };
 
   const handleSendTest = async (type: 'portal-invite' | 'invoice-ready' | 'invoice-paid') => {
     if (!recipientEmail || !recipientEmail.includes('@')) {
@@ -63,21 +79,21 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
       name: 'Invoice Ready to Pay',
       trigger: 'Auto-sends when invoice is marked "Sent"',
       description: 'Clean branded email with invoice number, amount, due date, line items breakdown, bank transfer details, and a direct "View & Pay Invoice Online" button.',
-      previewUrl: '/api/emails/preview?type=invoice-ready',
+      previewUrl: '/#/email-preview?type=invoice-ready',
     },
     {
       id: 'invoice-paid' as const,
       name: 'Invoice Paid (Receipt)',
       trigger: 'Auto-sends when invoice is paid via Stripe or marked "Paid"',
       description: 'Official confirmation receipt with "PAID IN FULL" status badge, amount paid, payment date, itemised items, and a direct link to the live digital receipt.',
-      previewUrl: '/api/emails/preview?type=invoice-paid',
+      previewUrl: '/#/email-preview?type=invoice-paid',
     },
     {
       id: 'portal-invite' as const,
       name: 'Client Portal Setup Invitation',
       trigger: 'Manual 1-click button on Clients dashboard (only for clients who haven\'t yet set a password)',
       description: 'Features the Montford "M" branding and highlights key portal capabilities: manage invoices, upload project files, check project progress, review proposals & more, with an "Activate Portal & Set Password" button.',
-      previewUrl: '/api/emails/preview?type=portal-invite',
+      previewUrl: '/#/email-preview?type=portal-invite',
     },
   ];
 
@@ -163,13 +179,23 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setQuickPreviewType(tpl.id)}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 hover:text-white rounded-lg transition-colors flex items-center gap-1"
+                    title="Quick preview in modal"
+                  >
+                    <span>👁 Quick View</span>
+                  </button>
+
                   <a
                     href={tpl.previewUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 hover:text-white rounded-lg transition-colors flex items-center gap-1"
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors flex items-center gap-1"
+                    title="Open dedicated preview page in new tab"
                   >
-                    <span>👁 Preview HTML</span>
+                    <span>↗ Full Tab</span>
                   </a>
 
                   <button
@@ -212,12 +238,111 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors"
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold rounded-lg transition-colors"
           >
             Close
           </button>
         </div>
       </div>
+
+      {/* In-Modal Quick Preview Overlay */}
+      {quickPreviewTemplate && (
+        <div className="fixed inset-0 z-60 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-750 rounded-2xl w-full max-w-4xl h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/70">
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center p-1 shadow-sm">
+                  <svg width="16" height="16" viewBox="0 0 32 32" fill="none">
+                    <path fill="#ffffff" d="M0 32 L0 0 L12 0 L16 8 L20 0 L32 0 L32 32 L22 32 L16 20 L10 32 Z" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    {quickPreviewTemplate.name}
+                  </h4>
+                  <span className="text-[11px] text-slate-400">
+                    Live HTML preview &bull; CTR links resolve to live web application
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Viewport switch */}
+                <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewViewport('desktop')}
+                    className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                      previewViewport === 'desktop'
+                        ? 'bg-slate-800 text-cyan-400 font-semibold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Desktop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewViewport('mobile')}
+                    className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                      previewViewport === 'mobile'
+                        ? 'bg-slate-800 text-cyan-400 font-semibold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Mobile
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCopyPreviewHtml}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors flex items-center gap-1"
+                >
+                  {copiedHtml ? (
+                    <span className="text-emerald-400">✓ Copied!</span>
+                  ) : (
+                    <span>📋 Copy HTML</span>
+                  )}
+                </button>
+
+                <a
+                  href={`/#/email-preview?type=${quickPreviewType}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
+                >
+                  <span>↗ Full Tab</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setQuickPreviewType(null)}
+                  className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-lg transition-colors ml-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Email Iframe Content */}
+            <div className="flex-1 bg-slate-950 p-4 overflow-y-auto flex justify-center">
+              <div
+                className={`w-full transition-all duration-300 h-full flex flex-col items-center ${
+                  previewViewport === 'mobile' ? 'max-w-[400px]' : 'max-w-[650px]'
+                }`}
+              >
+                <iframe
+                  title="Quick Email Preview"
+                  srcDoc={quickPreviewTemplate.html}
+                  className="w-full h-full border border-slate-800 rounded-xl bg-[#0b0f17] shadow-xl"
+                  sandbox="allow-same-origin allow-popups"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
