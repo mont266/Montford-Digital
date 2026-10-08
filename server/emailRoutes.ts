@@ -338,10 +338,13 @@ router.post('/invoice-ready', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Invoice not found.' });
     }
 
-    const clientName =
-      invoice.projects?.clients?.name ||
-      invoice.projects?.client_name ||
-      'Valued Client';
+    const candidateNames = [
+      invoice.projects?.client_name?.trim(),
+      invoice.projects?.clients?.name?.trim(),
+    ].filter((n): n is string => Boolean(n && n.length > 0));
+
+    // Prefer the most complete, full client name (e.g. "Blue Whippet Heating" over "Blue")
+    const clientName = candidateNames.sort((a, b) => b.length - a.length)[0] || 'Valued Client';
 
     const recipientEmail =
       overrideEmail ||
@@ -428,10 +431,13 @@ router.post('/invoice-paid', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Invoice not found.' });
     }
 
-    const clientName =
-      invoice.projects?.clients?.name ||
-      invoice.projects?.client_name ||
-      'Valued Client';
+    const candidateNames = [
+      invoice.projects?.client_name?.trim(),
+      invoice.projects?.clients?.name?.trim(),
+    ].filter((n): n is string => Boolean(n && n.length > 0));
+
+    // Prefer the most complete, full client name (e.g. "Blue Whippet Heating" over "Blue")
+    const clientName = candidateNames.sort((a, b) => b.length - a.length)[0] || 'Valued Client';
 
     const recipientEmail =
       overrideEmail ||

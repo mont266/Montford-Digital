@@ -100,6 +100,18 @@ export const createInvoiceFromEstimate = async (
         success: false,
         error: 'A project is required to create an invoice. Please select an existing project or enter a new project name.',
       };
+    } else {
+      try {
+        const updatePayload: Record<string, any> = {};
+        if (params.clientName) updatePayload.client_name = params.clientName.trim();
+        if (params.clientEmail) updatePayload.client_email = params.clientEmail.trim();
+        if (isValidUuid(params.clientId)) updatePayload.client_id = params.clientId;
+        if (Object.keys(updatePayload).length > 0) {
+          await supabase.from('projects').update(updatePayload).eq('id', targetProjectId);
+        }
+      } catch (e) {
+        console.warn('Notice updating existing project client info:', e);
+      }
     }
 
     // 2. Determine invoice number

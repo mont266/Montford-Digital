@@ -114,14 +114,15 @@ export const convertEstimateToInvoice = async (
     if (projectId === 'new' || !projectId) {
       const projectNameToCreate =
         newProjectName?.trim() || estimate.title || `${clientName} Project`;
+      const validClientId = (clientId && clientId !== 'custom' && clientId.trim() !== '') ? clientId.trim() : null;
 
       const { data: newProj, error: projError } = await supabase
         .from('projects')
         .insert({
           name: projectNameToCreate,
-          client_id: clientId || null,
-          client_name: clientName,
-          client_email: clientEmail || '',
+          client_id: validClientId,
+          client_name: clientName.trim(),
+          client_email: clientEmail?.trim() || '',
           entity_id: entityId,
           status: 'In development',
         })
@@ -134,6 +135,25 @@ export const convertEstimateToInvoice = async (
         );
       }
       finalProjectId = newProj.id;
+    } else {
+      // If existing project, ensure client_name and client_id are updated
+      try {
+        const updatePayload: Record<string, any> = {};
+        if (clientName && clientName.trim() !== '') {
+          updatePayload.client_name = clientName.trim();
+        }
+        if (clientEmail && clientEmail.trim() !== '') {
+          updatePayload.client_email = clientEmail.trim();
+        }
+        if (clientId && clientId !== 'custom' && clientId.trim() !== '') {
+          updatePayload.client_id = clientId.trim();
+        }
+        if (Object.keys(updatePayload).length > 0) {
+          await supabase.from('projects').update(updatePayload).eq('id', finalProjectId);
+        }
+      } catch (e) {
+        console.warn('Could not update client info on existing project:', e);
+      }
     }
 
     // 2. Insert Invoice(s)
@@ -179,20 +199,48 @@ export const convertEstimateToInvoice = async (
         .single();
       if (err2 || !inv2) throw new Error('Failed to create part 2 invoice: ' + err2?.message);
 
-      // Line items divided across both
-      const itemsPart1 = lineItems.map((item) => ({
-        invoice_id: inv1.id,
-        description: `${item.description} (Part 1 - 50% Deposit)`,
-        quantity: item.quantity,
-        unit_price: Math.round((item.unit_price / 2) * 100) / 100,
-      }));
+      // Line items divided across both (guaranteeing total exactly equals splitAmount)
+      let runningSum1 = 0;
+      const itemsPart1 = lineItems.map((item, idx) => {
+        if (idx === lineItems.length - 1) {
+          const finalPrice = Math.round(Math.max(0, splitAmount - runningSum1) * 100) / 100;
+          return {
+            invoice_id: inv1.id,
+            description: `${item.description} (Part 1 - 50% Deposit)`,
+            quantity: item.quantity,
+            unit_price: finalPrice,
+          };
+        }
+        const halfPrice = Math.round((item.unit_price / 2) * 100) / 100;
+        runningSum1 += halfPrice;
+        return {
+          invoice_id: inv1.id,
+          description: `${item.description} (Part 1 - 50% Deposit)`,
+          quantity: item.quantity,
+          unit_price: halfPrice,
+        };
+      });
 
-      const itemsPart2 = lineItems.map((item) => ({
-        invoice_id: inv2.id,
-        description: `${item.description} (Part 2 - 50% Completion)`,
-        quantity: item.quantity,
-        unit_price: Math.round((item.unit_price / 2) * 100) / 100,
-      }));
+      let runningSum2 = 0;
+      const itemsPart2 = lineItems.map((item, idx) => {
+        if (idx === lineItems.length - 1) {
+          const finalPrice = Math.round(Math.max(0, splitAmount - runningSum2) * 100) / 100;
+          return {
+            invoice_id: inv2.id,
+            description: `${item.description} (Part 2 - 50% Completion)`,
+            quantity: item.quantity,
+            unit_price: finalPrice,
+          };
+        }
+        const halfPrice = Math.round((item.unit_price / 2) * 100) / 100;
+        runningSum2 += halfPrice;
+        return {
+          invoice_id: inv2.id,
+          description: `${item.description} (Part 2 - 50% Completion)`,
+          quantity: item.quantity,
+          unit_price: halfPrice,
+        };
+      });
 
       await supabase.from('invoice_items').insert(itemsPart1);
       await supabase.from('invoice_items').insert(itemsPart2);
@@ -241,18 +289,43 @@ export const convertEstimateToInvoice = async (
         throw new Error('Failed to create invoice: ' + invError?.message);
       }
 
-      // Format items
-      const itemsToInsert = lineItems.map((item) => {
-        const price =
-          billingStructure === 'deposit_50'
-            ? Math.round((item.unit_price / 2) * 100) / 100
-            : item.unit_price;
-        const descSuffix = billingStructure === 'deposit_50' ? ' (50% Upfront Deposit)' : '';
+      // Format items with exact total preservation
+      let runningSum = 0;
+      const itemsToInsert = lineItems.map((item, idx) => {
+        if (billingStructure === 'deposit_50') {
+          if (idx === lineItems.length - 1) {
+            const finalPrice = Math.round(Math.max(0, invoiceAmount - runningSum) * 100) / 100;
+            return {
+              invoice_id: newInvoice.id,
+              description: `${item.description} (50% Upfront Deposit)`,
+              quantity: item.quantity,
+              unit_price: finalPrice,
+            };
+          }
+          const price = Math.round((item.unit_price / 2) * 100) / 100;
+          runningSum += price;
+          return {
+            invoice_id: newInvoice.id,
+            description: `${item.description} (50% Upfront Deposit)`,
+            quantity: item.quantity,
+            unit_price: price,
+          };
+        }
+        if (idx === lineItems.length - 1) {
+          const finalPrice = Math.round(Math.max(0, invoiceAmount - runningSum) * 100) / 100;
+          return {
+            invoice_id: newInvoice.id,
+            description: item.description,
+            quantity: item.quantity,
+            unit_price: finalPrice,
+          };
+        }
+        runningSum += item.unit_price;
         return {
           invoice_id: newInvoice.id,
-          description: `${item.description}${descSuffix}`,
+          description: item.description,
           quantity: item.quantity,
-          unit_price: price,
+          unit_price: item.unit_price,
         };
       });
 

@@ -8,6 +8,12 @@ import {
 } from '../lib/invoiceConversion';
 import { sendInvoiceReadyEmail } from '../lib/emailService';
 import { getAppBaseUrl } from '../lib/urlHelper';
+import {
+  getLocalPricingConfig,
+  fetchPricingConfig,
+  PricingConfig,
+  DEFAULT_PRICING_CONFIG,
+} from '../lib/pricingConfig';
 
 interface ConvertToInvoiceModalProps {
   estimate: Estimate;
@@ -77,6 +83,9 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
   });
   const [invoiceStatus, setInvoiceStatus] = useState<'draft' | 'sent'>('sent');
 
+  // Pricing config state (defaults to local, updates with remote settings)
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(() => getLocalPricingConfig());
+
   // Line items state
   const [itemMode, setItemMode] = useState<'itemized' | 'single'>('itemized');
   const [items, setItems] = useState<{ description: string; quantity: number; unit_price: number }[]>([]);
@@ -90,6 +99,15 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     secondInvoiceNumber?: string;
   } | null>(null);
   const [copiedInvoiceLink, setCopiedInvoiceLink] = useState(false);
+
+  // Load live pricing config on mount
+  useEffect(() => {
+    fetchPricingConfig().then((res) => {
+      if (res?.config) {
+        setPricingConfig(res.config);
+      }
+    }).catch(console.warn);
+  }, []);
 
   // Load clients and next invoice number on mount
   useEffect(() => {
@@ -106,17 +124,40 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
           if (estimate.client_id) {
             const found = data.find((c) => c.id === estimate.client_id);
             if (found) {
-              setClientName(found.name);
-              setClientEmail(found.email || '');
+              setClientId(found.id);
+              const bestName = estimate.client_name && estimate.client_name.trim().length > found.name.trim().length
+                ? estimate.client_name.trim()
+                : found.name.trim();
+              setClientName(bestName);
+              setClientEmail(found.email || estimate.client_email || '');
+            }
+          } else if (estimate.client_name) {
+            const estName = estimate.client_name.trim().toLowerCase();
+            const found =
+              data.find((c) => c.name.trim().toLowerCase() === estName) ||
+              data.find((c) => {
+                const cn = c.name.trim().toLowerCase();
+                return estName.includes(cn) || cn.includes(estName);
+              });
+            if (found) {
+              setClientId(found.id);
+              const bestName = estimate.client_name.trim().length >= found.name.trim().length
+                ? estimate.client_name.trim()
+                : found.name.trim();
+              setClientName(bestName);
+              setClientEmail(found.email || estimate.client_email || '');
+            } else {
+              setClientName(estimate.client_name.trim());
+              setClientEmail(estimate.client_email || '');
             }
           }
         }
       });
-  }, [estimate.client_id]);
+  }, [estimate.client_id, estimate.client_name]);
 
   // Load projects whenever clientId changes
   useEffect(() => {
-    if (clientId) {
+    if (clientId && clientId !== 'custom') {
       fetchClientProjects(clientId).then((projs) => {
         setExistingProjects(projs);
         if (projs.length > 0) {
@@ -131,7 +172,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     }
   }, [clientId]);
 
-  // Re-build line items whenever exactAmount, itemMode or estimate changes
+  // Re-build line items whenever exactAmount, itemMode, estimate, or pricingConfig changes
   useEffect(() => {
     if (itemMode === 'single') {
       setItems([
@@ -142,39 +183,67 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
         },
       ]);
     } else {
+      const projectType = estimate.project_type || 'webapp';
+      const baseSetupFee =
+        pricingConfig.baseSetupFee[projectType] ||
+        DEFAULT_PRICING_CONFIG.baseSetupFee[projectType] ||
+        350;
+      const typeMultiplier =
+        pricingConfig.typeMultiplier[projectType] ||
+        DEFAULT_PRICING_CONFIG.typeMultiplier[projectType] ||
+        1.0;
+      const clientProfile = estimate.client_profile || 'startup';
+      const clientProfileMultiplier =
+        pricingConfig.clientProfileMultiplier[clientProfile] ||
+        DEFAULT_PRICING_CONFIG.clientProfileMultiplier[clientProfile] ||
+        1.0;
+      const costPerPoint =
+        pricingConfig.costPerPoint ||
+        DEFAULT_PRICING_CONFIG.costPerPoint ||
+        14;
+
+      const effectiveCostPerPoint = costPerPoint * typeMultiplier * clientProfileMultiplier;
+
       const rawItems: { description: string; quantity: number; weight: number }[] = [];
 
-      // Base setup
+      // 1. Base setup architecture weighted by configured base setup fee
       rawItems.push({
-        description: `Base Architecture & Engineering Setup (${estimate.project_type.toUpperCase()})`,
+        description: `Base Architecture & Engineering Setup (${projectType.toUpperCase()})`,
         quantity: 1,
-        weight: 15,
+        weight: Math.max(25, baseSetupFee),
       });
 
-      // Active features
+      // 2. Active features weighted according to their configured points in the weighted pricing system
       Object.entries(estimate.features || {}).forEach(([key, active]) => {
         if (active) {
+          const featurePoints =
+            pricingConfig.featurePoints[key] ??
+            DEFAULT_PRICING_CONFIG.featurePoints[key] ??
+            6;
+          // Weighted value reflects points multiplied by effective point rate
+          const featureWeight = Math.max(1, featurePoints * effectiveCostPerPoint);
           rawItems.push({
             description: FEATURE_NAMES[key] || key,
             quantity: 1,
-            weight: 10,
+            weight: featureWeight,
           });
         }
       });
 
       const totalWeight = rawItems.reduce((acc, curr) => acc + curr.weight, 0);
 
-      // Distribute exactAmount proportionally
+      // Distribute exactAmount proportionally according to points weighting
       let runningSum = 0;
       const calculated = rawItems.map((item, idx) => {
         if (idx === rawItems.length - 1) {
+          const finalPrice = Math.round(Math.max(0, exactAmount - runningSum) * 100) / 100;
           return {
             description: item.description,
             quantity: item.quantity,
-            unit_price: Math.max(0, exactAmount - runningSum),
+            unit_price: finalPrice,
           };
         }
-        const price = Math.round((exactAmount * (item.weight / totalWeight)) * 100) / 100;
+        const price = Math.round((exactAmount * (item.weight / (totalWeight || 1))) * 100) / 100;
         runningSum += price;
         return {
           description: item.description,
@@ -185,7 +254,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
 
       setItems(calculated);
     }
-  }, [exactAmount, itemMode, estimate]);
+  }, [exactAmount, itemMode, estimate, pricingConfig]);
 
   const handleQuickAmountPick = (amount: number) => {
     setExactAmount(amount);
@@ -223,23 +292,50 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     setIsSubmitting(true);
     setErrorMsg(null);
 
-    // If client does not exist in database, create client first
+    // If client does not exist in database, or custom was selected, create or find client first
     if (!finalClientId || finalClientId === 'custom') {
       try {
-        const { data: newClient, error: clientErr } = await supabase
+        const { data: existingClient } = await supabase
           .from('clients')
-          .insert({
-            name: finalClientName,
-            email: finalClientEmail || null,
-          })
-          .select()
-          .single();
+          .select('id, name')
+          .ilike('name', finalClientName)
+          .limit(1)
+          .maybeSingle();
 
-        if (!clientErr && newClient) {
-          finalClientId = newClient.id;
+        if (existingClient?.id) {
+          finalClientId = existingClient.id;
+        } else {
+          const { data: newClient, error: clientErr } = await supabase
+            .from('clients')
+            .insert({
+              name: finalClientName,
+              email: finalClientEmail || null,
+            })
+            .select()
+            .single();
+
+          if (!clientErr && newClient) {
+            finalClientId = newClient.id;
+          }
         }
       } catch (e) {
         console.warn('Could not auto-create client in database, proceeding with name:', e);
+      }
+    } else {
+      // If client exists, make sure the name in clients table is updated if user typed a fuller/more complete name
+      try {
+        const found = availableClients.find((c) => c.id === finalClientId);
+        if (found && finalClientName.length > found.name.length) {
+          await supabase
+            .from('clients')
+            .update({
+              name: finalClientName,
+              ...(finalClientEmail ? { email: finalClientEmail } : {}),
+            })
+            .eq('id', finalClientId);
+        }
+      } catch (e) {
+        console.warn('Could not update client name on existing client record:', e);
       }
     }
 

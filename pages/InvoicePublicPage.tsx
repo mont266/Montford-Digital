@@ -29,9 +29,12 @@ interface Invoice {
   status: 'draft' | 'sent' | 'paid' | 'overdue';
   projects: {
     name: string;
-    client_name: string;
+    client_name?: string | null;
+    client_id?: string | null;
     clients?: {
-      email: string;
+      id?: string;
+      name?: string;
+      email?: string;
     } | null;
   } | null;
   invoice_items: InvoiceItem[];
@@ -94,15 +97,46 @@ const InvoicePublicPage: React.FC = () => {
 
         const { data, error: dbError } = await supabase
           .from('invoices')
-          .select(`*, projects ( name, client_name, clients ( email ) ), invoice_items ( * )`)
+          .select(`*, projects ( name, client_name, client_id, clients ( id, name, email ) ), invoice_items ( * )`)
           .eq('id', id)
           .single();
 
         if (dbError) throw dbError;
         if (data) {
+            let candidateNames = [
+              data.projects?.client_name?.trim(),
+              data.projects?.clients?.name?.trim(),
+            ].filter((n): n is string => Boolean(n && n.length > 0));
+
+            let candidateEmails = [
+              data.projects?.clients?.email?.trim(),
+              (data.projects as any)?.client_email?.trim(),
+            ].filter((e): e is string => Boolean(e && e.length > 0));
+
+            // If neither client_name nor clients was loaded via join, try direct lookup by client_id
+            if (candidateNames.length === 0 && data.projects?.client_id) {
+              try {
+                const { data: directClient } = await supabase
+                  .from('clients')
+                  .select('id, name, email')
+                  .eq('id', data.projects.client_id)
+                  .single();
+                if (directClient?.name) {
+                  candidateNames.push(directClient.name.trim());
+                  if (directClient.email) candidateEmails.push(directClient.email.trim());
+                }
+              } catch (e) {
+                console.warn('Direct client lookup notice:', e);
+              }
+            }
+
+            // Pick the most complete full name (e.g. "Blue Whippet Heating" over "Blue")
+            const resolvedClientName = candidateNames.sort((a, b) => b.length - a.length)[0] || '';
+            const resolvedClientEmail = candidateEmails[0] || '';
+
             setInvoice(data as Invoice);
-            setBillingName(data.projects?.client_name || '');
-            setBillingEmail(data.projects?.clients?.email || '');
+            setBillingName(resolvedClientName);
+            setBillingEmail(resolvedClientEmail);
             if (searchParams.get('receipt') === 'true' || searchParams.get('success') === 'true') {
                 setIsReceiptView(true);
             }
@@ -242,7 +276,9 @@ const InvoicePublicPage: React.FC = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                           <div>
                               <p className="text-sm text-slate-400 mb-1">Billed To</p>
-                              <p className="font-semibold text-white">{invoice.projects?.client_name || 'N/A'}</p>
+                              <p className="font-semibold text-white">
+                                {billingName || invoice.projects?.client_name?.trim() || invoice.projects?.clients?.name?.trim() || 'Valued Client'}
+                              </p>
                           </div>
                            <div>
                               <p className="text-sm text-slate-400 mb-1">Invoice Number</p>

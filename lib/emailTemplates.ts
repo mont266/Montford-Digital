@@ -291,9 +291,9 @@ export function renderPortalInviteEmail(params: PortalInviteParams): {
   text: string;
 } {
   const { clientName, portalUrl } = params;
-  const firstName = clientName.split(' ')[0] || clientName;
+  const displayName = clientName?.trim() || 'Valued Client';
   const subject = `Your Montford Digital Client Portal is Ready`;
-  const preheader = `Hi ${firstName}, manage your invoices, upload project files, check project progress & more in your dedicated Montford Digital portal.`;
+  const preheader = `Hi ${displayName}, manage your invoices, upload project files, check project progress & more in your dedicated Montford Digital portal.`;
 
   const contentHtml = `
     <div style="margin-bottom: 20px;">
@@ -305,7 +305,7 @@ export function renderPortalInviteEmail(params: PortalInviteParams): {
     </h1>
 
     <p style="margin: 0 0 16px; font-size: 15px;">
-      Hi ${firstName},
+      Hi ${displayName},
     </p>
 
     <p style="margin: 0 0 18px; font-size: 15px; color: #cbd5e1;">
@@ -432,7 +432,7 @@ export function renderPortalInviteEmail(params: PortalInviteParams): {
     </p>
   `;
 
-  const text = `Hi ${firstName},
+  const text = `Hi ${displayName},
 
 Your dedicated Montford Digital client portal is ready!
 
@@ -477,7 +477,7 @@ export function renderInvoiceReadyEmail(params: InvoiceReadyParams): {
     lineItems = [],
   } = params;
 
-  const firstName = clientName.split(' ')[0] || clientName;
+  const displayName = clientName?.trim() || 'Valued Client';
   const formattedAmount = formatCurrency(amount);
   const formattedDueDate = formatDate(dueDate);
   const formattedIssueDate = formatDate(issueDate);
@@ -530,7 +530,7 @@ export function renderInvoiceReadyEmail(params: InvoiceReadyParams): {
     </h1>
 
     <p style="margin: 0 0 16px;">
-      Hi ${firstName},
+      Hi ${displayName},
     </p>
 
     <p style="margin: 0 0 20px;">
@@ -596,7 +596,7 @@ export function renderInvoiceReadyEmail(params: InvoiceReadyParams): {
     </p>
   `;
 
-  const text = `Hi ${firstName},
+  const text = `Hi ${displayName},
 
 Your invoice #${invoiceNumber} for ${projectName || 'your project'} is ready for payment.
 
@@ -641,7 +641,7 @@ export function renderInvoicePaidEmail(params: InvoicePaidParams): {
     lineItems = [],
   } = params;
 
-  const firstName = clientName.split(' ')[0] || clientName;
+  const displayName = clientName?.trim() || 'Valued Client';
   const formattedAmount = formatCurrency(amount);
   const formattedPaidDate = formatDate(paidDate || new Date().toISOString());
 
@@ -681,7 +681,7 @@ export function renderInvoicePaidEmail(params: InvoicePaidParams): {
     </h1>
 
     <p style="margin: 0 0 16px;">
-      Hi ${firstName},
+      Hi ${displayName},
     </p>
 
     <p style="margin: 0 0 20px;">
@@ -742,7 +742,7 @@ export function renderInvoicePaidEmail(params: InvoicePaidParams): {
     </p>
   `;
 
-  const text = `Hi ${firstName},
+  const text = `Hi ${displayName},
 
 Thank you! We've received your payment in full for invoice #${invoiceNumber} (${projectName || 'your project'}).
 
