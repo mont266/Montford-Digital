@@ -17,6 +17,7 @@ export interface Client {
   password?: string | null;
   password_set_at?: string | null;
   stripe_customer_id?: string | null;
+  contact_name?: string | null;
   address_line1?: string | null;
   address_line2?: string | null;
   city?: string | null;
@@ -102,6 +103,7 @@ const ClientsPage: React.FC = () => {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState({
     name: '',
+    contact_name: '',
     email: '',
     address_line1: '',
     address_line2: '',
@@ -181,6 +183,7 @@ const ClientsPage: React.FC = () => {
       setEditingClient(client);
       setFormData({
         name: client.name || '',
+        contact_name: client.contact_name || '',
         email: client.email || '',
         address_line1: client.address_line1 || '',
         address_line2: client.address_line2 || '',
@@ -193,6 +196,7 @@ const ClientsPage: React.FC = () => {
       setEditingClient(null);
       setFormData({
         name: '',
+        contact_name: '',
         email: '',
         address_line1: '',
         address_line2: '',
@@ -210,6 +214,7 @@ const ClientsPage: React.FC = () => {
     setEditingClient(null);
     setFormData({
       name: '',
+      contact_name: '',
       email: '',
       address_line1: '',
       address_line2: '',
@@ -225,6 +230,7 @@ const ClientsPage: React.FC = () => {
     try {
       const payload: Record<string, any> = {
         name: formData.name.trim(),
+        contact_name: formData.contact_name.trim() || null,
         email: formData.email.trim(),
         address_line1: formData.address_line1.trim() || null,
         address_line2: formData.address_line2.trim() || null,
@@ -241,18 +247,31 @@ const ClientsPage: React.FC = () => {
           .eq('id', editingClient.id);
 
         if (updateRes.error && updateRes.error.code === '42703') {
-          // Columns not yet added to Supabase
-          console.warn('Address columns do not exist in clients table yet. Falling back to basic fields.');
-          const fallbackRes = await supabase
+          // If contact_name or address columns are missing, try retry without contact_name first
+          const retryPayload = { ...payload };
+          delete retryPayload.contact_name;
+          const retryRes = await supabase
             .from('clients')
-            .update({ name: payload.name, email: payload.email })
+            .update(retryPayload)
             .eq('id', editingClient.id);
-          if (fallbackRes.error) throw fallbackRes.error;
-          showToast('Saved name & email. Note: Address columns must be added to Supabase SQL first!', 'info');
+
+          if (retryRes.error && retryRes.error.code === '42703') {
+            // Address columns also missing
+            const fallbackRes = await supabase
+              .from('clients')
+              .update({ name: payload.name, email: payload.email })
+              .eq('id', editingClient.id);
+            if (fallbackRes.error) throw fallbackRes.error;
+            showToast('Saved name & email. (Run the SQL statement to enable contact & address columns!)', 'info');
+          } else if (retryRes.error) {
+            throw retryRes.error;
+          } else {
+            showToast('Client profile updated. (Run SQL to enable contact_name column!)', 'info');
+          }
         } else if (updateRes.error) {
           throw updateRes.error;
         } else {
-          showToast('Client profile & address updated successfully.', 'success');
+          showToast('Client profile & billing details updated successfully.', 'success');
         }
       } else {
         let insertRes = await supabase
@@ -260,12 +279,23 @@ const ClientsPage: React.FC = () => {
           .insert([payload]);
 
         if (insertRes.error && insertRes.error.code === '42703') {
-          console.warn('Address columns do not exist in clients table yet. Falling back to basic fields.');
-          const fallbackRes = await supabase
+          const retryPayload = { ...payload };
+          delete retryPayload.contact_name;
+          const retryRes = await supabase
             .from('clients')
-            .insert([{ name: payload.name, email: payload.email }]);
-          if (fallbackRes.error) throw fallbackRes.error;
-          showToast('Client created. Note: Address columns must be added to Supabase SQL first!', 'info');
+            .insert([retryPayload]);
+
+          if (retryRes.error && retryRes.error.code === '42703') {
+            const fallbackRes = await supabase
+              .from('clients')
+              .insert([{ name: payload.name, email: payload.email }]);
+            if (fallbackRes.error) throw fallbackRes.error;
+            showToast('Client created. (Run SQL to enable contact & address columns!)', 'info');
+          } else if (retryRes.error) {
+            throw retryRes.error;
+          } else {
+            showToast('New client created. (Run SQL to enable contact_name column!)', 'info');
+          }
         } else if (insertRes.error) {
           throw insertRes.error;
         } else {
@@ -650,6 +680,13 @@ const ClientsPage: React.FC = () => {
                           )}
                         </div>
 
+                        {client.contact_name && (
+                          <div className="text-xs text-slate-300 font-medium flex items-center gap-1 truncate">
+                            <span className="text-slate-500 text-[11px]">Attn:</span>
+                            <span className="text-white font-semibold">{client.contact_name}</span>
+                          </div>
+                        )}
+
                         {/* Email & Creation info */}
                         <div className="flex items-center gap-1.5 text-xs text-slate-400">
                           {client.email ? (
@@ -912,6 +949,16 @@ const ClientsPage: React.FC = () => {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-white font-medium text-sm">{client.name}</span>
+
+                            {client.contact_name && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-cyan-300 border border-slate-700/80"
+                                title={`Primary Contact / CEO: ${client.contact_name}`}
+                              >
+                                <span className="text-slate-400 font-normal">Attn:</span>
+                                <span>{client.contact_name}</span>
+                              </span>
+                            )}
 
                             {loggedIn ? (
                               <span
@@ -1352,15 +1399,34 @@ const ClientsPage: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-slate-300 mb-1">Company / Client Name</label>
+                <label className="block text-xs sm:text-sm font-medium text-slate-300 mb-1">Company / Trading Name</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Acme Studio Ltd"
+                  placeholder="e.g. Blue Whippet Heating"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2.5 sm:py-2 text-white focus:outline-none focus:border-cyan-500 text-sm"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-slate-300">
+                    CEO / Primary Contact Name <span className="text-slate-500 font-normal text-xs">(Optional)</span>
+                  </label>
+                  <span className="text-[10px] text-cyan-400 font-medium">Printed on invoice line 1</span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. Michael Hawkins"
+                  value={formData.contact_name}
+                  onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2.5 sm:py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  When set, the invoice displays <strong>{formData.contact_name || 'Contact Name'}</strong> on line 1, <strong>{formData.name || 'Company Name'}</strong> on line 2, followed by the address lines.
+                </p>
               </div>
 
               <div>

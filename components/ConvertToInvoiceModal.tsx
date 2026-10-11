@@ -59,6 +59,7 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
     {
       id: string;
       name: string;
+      contact_name?: string | null;
       email?: string;
       address_line1?: string | null;
       address_line2?: string | null;
@@ -583,22 +584,37 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
               const hasAddr = addrParts.length > 0 || Boolean(selectedClient.address?.trim());
 
               return (
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    </svg>
-                    <span>Invoice Address:</span>
-                  </span>
-                  {hasAddr ? (
-                    <span className="text-emerald-300 font-mono text-[11px] truncate max-w-[280px]" title={addrParts.join(', ') || selectedClient.address || ''}>
-                      {addrParts.join(', ') || selectedClient.address}
-                    </span>
-                  ) : (
-                    <span className="text-slate-500 italic text-[11px]">
-                      No address on file (can be added in Clients directory)
-                    </span>
+                <div className="pt-2 border-t border-slate-800/80 space-y-1.5 text-xs">
+                  {selectedClient.contact_name && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <span>CEO / Contact:</span>
+                      </span>
+                      <span className="text-white font-medium">
+                        {selectedClient.contact_name}
+                      </span>
+                    </div>
                   )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      </svg>
+                      <span>Invoice Address:</span>
+                    </span>
+                    {hasAddr ? (
+                      <span className="text-emerald-300 font-mono text-[11px] truncate max-w-[280px]" title={addrParts.join(', ') || selectedClient.address || ''}>
+                        {addrParts.join(', ') || selectedClient.address}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 italic text-[11px]">
+                        No address on file (can be added in Clients directory)
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })()}

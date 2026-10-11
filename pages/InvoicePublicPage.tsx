@@ -34,6 +34,7 @@ interface Invoice {
     clients?: {
       id?: string;
       name?: string;
+      contact_name?: string | null;
       email?: string;
       address_line1?: string | null;
       address_line2?: string | null;
@@ -135,6 +136,7 @@ const InvoicePublicPage: React.FC = () => {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [billingName, setBillingName] = useState('');
+  const [billingContactName, setBillingContactName] = useState('');
   const [billingEmail, setBillingEmail] = useState('');
   const [billingAddressLines, setBillingAddressLines] = useState<string[]>([]);
   const [isCollectingDetails, setIsCollectingDetails] = useState(false);
@@ -234,11 +236,13 @@ const InvoicePublicPage: React.FC = () => {
             }
           }
 
+          const resolvedContactName = candidateClient?.contact_name?.trim() || '';
           const resolvedAddressLines = formatClientAddressLines(candidateClient);
           setBillingAddressLines(resolvedAddressLines);
 
           setInvoice(data as Invoice);
           setBillingName(resolvedClientName);
+          setBillingContactName(resolvedContactName);
           setBillingEmail(resolvedClientEmail);
           setIsNotFound(false);
           if (searchParams.get('receipt') === 'true' || searchParams.get('success') === 'true') {
@@ -513,9 +517,20 @@ const InvoicePublicPage: React.FC = () => {
                           <div>
                               <p className="text-sm text-slate-400 mb-1 font-medium">Billed To</p>
                               <div className="space-y-0.5">
-                                <p className="font-semibold text-white">
-                                  {billingName || invoice.projects?.client_name?.trim() || invoice.projects?.clients?.name?.trim() || 'Valued Client'}
-                                </p>
+                                {billingContactName && billingContactName.toLowerCase() !== (billingName || '').toLowerCase() ? (
+                                  <>
+                                    <p className="font-semibold text-white leading-snug">
+                                      {billingContactName}
+                                    </p>
+                                    <p className="text-sm font-medium text-slate-200 leading-snug">
+                                      {billingName || invoice.projects?.client_name?.trim() || invoice.projects?.clients?.name?.trim()}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <p className="font-semibold text-white leading-snug">
+                                    {billingName || invoice.projects?.client_name?.trim() || invoice.projects?.clients?.name?.trim() || 'Valued Client'}
+                                  </p>
+                                )}
                                 {billingAddressLines.length > 0 && (
                                   <div className="text-sm text-slate-300 font-normal leading-snug pt-0.5 space-y-0.5">
                                     {billingAddressLines.map((line, idx) => (
