@@ -17,6 +17,13 @@ export interface Client {
   password?: string | null;
   password_set_at?: string | null;
   stripe_customer_id?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  county?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+  address?: string | null;
 }
 
 const formatCurrency = (amount: number) =>
@@ -28,6 +35,48 @@ const formatDate = (dateStr: string) => {
   } catch {
     return dateStr;
   }
+};
+
+const formatInlineAddress = (client: Client): string => {
+  const parts = [
+    client.address_line1,
+    client.address_line2,
+    client.city,
+    client.county,
+    client.postcode,
+    client.country,
+  ]
+    .map((p) => p?.trim())
+    .filter(Boolean);
+
+  if (parts.length > 0) return parts.join(', ');
+  if (client.address?.trim()) return client.address.trim().replace(/\n+/g, ', ');
+  return '';
+};
+
+const formatAddressLines = (client: Client): string[] => {
+  const lines: string[] = [];
+  if (client.address_line1?.trim()) lines.push(client.address_line1.trim());
+  if (client.address_line2?.trim()) lines.push(client.address_line2.trim());
+  if (client.city?.trim()) lines.push(client.city.trim());
+  if (client.county?.trim()) lines.push(client.county.trim());
+  if (client.postcode?.trim()) lines.push(client.postcode.trim());
+  if (client.country?.trim()) lines.push(client.country.trim());
+
+  if (lines.length === 0 && client.address?.trim()) {
+    const raw = client.address.split('\n').map((l) => l.trim()).filter(Boolean);
+    lines.push(...raw);
+  }
+  return lines;
+};
+
+const hasAddressOnFile = (client: Client): boolean => {
+  return Boolean(
+    (client.address_line1 && client.address_line1.trim().length > 0) ||
+    (client.city && client.city.trim().length > 0) ||
+    (client.postcode && client.postcode.trim().length > 0) ||
+    (client.address && client.address.trim().length > 0)
+  );
 };
 
 const hasClientLoggedIn = (client: Client): boolean => {
@@ -51,7 +100,16 @@ const ClientsPage: React.FC = () => {
   // Client modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [formData, setFormData] = useState({ name: '', email: '' });
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    county: '',
+    postcode: '',
+    country: 'United Kingdom',
+  });
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
   const [showEmailTestingModal, setShowEmailTestingModal] = useState(false);
@@ -66,6 +124,24 @@ const ClientsPage: React.FC = () => {
   const [quotesModalClient, setQuotesModalClient] = useState<Client | null>(null);
   const [calibratingEstimate, setCalibratingEstimate] = useState<Estimate | null>(null);
   const [invoicingEstimate, setInvoicingEstimate] = useState<Estimate | null>(null);
+
+  // Mobile card expand state
+  const [expandedCardIds, setExpandedCardIds] = useState<Record<string, boolean>>({});
+
+  const toggleCardExpand = (id: string) => {
+    setExpandedCardIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const getInitials = (name: string) => {
+    return (
+      name
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0].toUpperCase())
+        .join('') || name.slice(0, 2).toUpperCase()
+    );
+  };
 
   const fetchClientsAndEstimates = async () => {
     setLoading(true);
@@ -103,10 +179,28 @@ const ClientsPage: React.FC = () => {
   const handleOpenModal = (client?: Client) => {
     if (client) {
       setEditingClient(client);
-      setFormData({ name: client.name, email: client.email || '' });
+      setFormData({
+        name: client.name || '',
+        email: client.email || '',
+        address_line1: client.address_line1 || '',
+        address_line2: client.address_line2 || '',
+        city: client.city || '',
+        county: client.county || '',
+        postcode: client.postcode || '',
+        country: client.country || 'United Kingdom',
+      });
     } else {
       setEditingClient(null);
-      setFormData({ name: '', email: '' });
+      setFormData({
+        name: '',
+        email: '',
+        address_line1: '',
+        address_line2: '',
+        city: '',
+        county: '',
+        postcode: '',
+        country: 'United Kingdom',
+      });
     }
     setIsModalOpen(true);
   };
@@ -114,25 +208,69 @@ const ClientsPage: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingClient(null);
-    setFormData({ name: '', email: '' });
+    setFormData({
+      name: '',
+      email: '',
+      address_line1: '',
+      address_line2: '',
+      city: '',
+      county: '',
+      postcode: '',
+      country: 'United Kingdom',
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload: Record<string, any> = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        address_line1: formData.address_line1.trim() || null,
+        address_line2: formData.address_line2.trim() || null,
+        city: formData.city.trim() || null,
+        county: formData.county.trim() || null,
+        postcode: formData.postcode.trim() || null,
+        country: formData.country.trim() || null,
+      };
+
       if (editingClient) {
-        const { error } = await supabase
+        let updateRes = await supabase
           .from('clients')
-          .update(formData)
+          .update(payload)
           .eq('id', editingClient.id);
-        if (error) throw error;
-        showToast('Client profile updated successfully.', 'success');
+
+        if (updateRes.error && updateRes.error.code === '42703') {
+          // Columns not yet added to Supabase
+          console.warn('Address columns do not exist in clients table yet. Falling back to basic fields.');
+          const fallbackRes = await supabase
+            .from('clients')
+            .update({ name: payload.name, email: payload.email })
+            .eq('id', editingClient.id);
+          if (fallbackRes.error) throw fallbackRes.error;
+          showToast('Saved name & email. Note: Address columns must be added to Supabase SQL first!', 'info');
+        } else if (updateRes.error) {
+          throw updateRes.error;
+        } else {
+          showToast('Client profile & address updated successfully.', 'success');
+        }
       } else {
-        const { error } = await supabase
+        let insertRes = await supabase
           .from('clients')
-          .insert([formData]);
-        if (error) throw error;
-        showToast('New client created successfully.', 'success');
+          .insert([payload]);
+
+        if (insertRes.error && insertRes.error.code === '42703') {
+          console.warn('Address columns do not exist in clients table yet. Falling back to basic fields.');
+          const fallbackRes = await supabase
+            .from('clients')
+            .insert([{ name: payload.name, email: payload.email }]);
+          if (fallbackRes.error) throw fallbackRes.error;
+          showToast('Client created. Note: Address columns must be added to Supabase SQL first!', 'info');
+        } else if (insertRes.error) {
+          throw insertRes.error;
+        } else {
+          showToast('New client created successfully with address on file.', 'success');
+        }
       }
       handleCloseModal();
       fetchClientsAndEstimates();
@@ -284,27 +422,26 @@ const ClientsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Clients</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Clients</h2>
           <p className="text-xs text-slate-400 mt-0.5 sm:mt-1">
             Manage client profiles, customer portal access, attached quotes, and 1-click invoice conversions.
           </p>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setShowEmailTestingModal(true)}
             title="Preview & test transactional emails"
-            className="bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700/80 font-medium py-2 sm:py-2 px-2.5 sm:px-3 rounded-lg transition-colors text-xs flex items-center gap-1.5 shadow-sm min-h-[38px]"
+            className="flex-1 sm:flex-initial bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700/80 font-medium py-2 px-3 rounded-xl transition-colors text-xs flex items-center justify-center gap-1.5 shadow-sm min-h-[40px]"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            <span className="hidden xs:inline">Email Templates</span>
-            <span className="xs:hidden">Emails</span>
+            <span>Emails</span>
           </button>
           <button
             onClick={() => fetchClientsAndEstimates()}
             title="Refresh Clients"
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center justify-center border border-slate-700/60 min-h-[38px] min-w-[38px]"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center justify-center border border-slate-700/60 min-h-[40px] min-w-[40px]"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path
@@ -316,14 +453,14 @@ const ClientsPage: React.FC = () => {
           </button>
           <button
             onClick={() => handleOpenModal()}
-            className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-3.5 sm:px-4 rounded-lg transition-colors text-xs sm:text-sm shadow-sm flex items-center gap-1.5 min-h-[38px]"
+            className="flex-1 sm:flex-initial bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-3.5 sm:px-4 rounded-xl transition-colors text-xs sm:text-sm shadow-sm flex items-center justify-center gap-1.5 min-h-[40px]"
           >
             <span>+ Add Client</span>
           </button>
         </div>
       </div>
 
-      {/* Portal Login Status Metric Cards (Compact 3-column grid on mobile) */}
+      {/* Portal Login Status Metric Cards (Responsive 3-column grid) */}
       <div className="grid grid-cols-3 gap-2 sm:gap-3.5">
         <button
           onClick={() => setStatusFilter('all')}
@@ -385,41 +522,43 @@ const ClientsPage: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-slate-850 p-2.5 sm:p-3 rounded-xl border border-slate-750 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2.5 sm:gap-3">
+      <div className="bg-slate-850 p-2 sm:p-3 rounded-2xl border border-slate-750 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2.5 sm:gap-3">
         {/* Filter Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
-          <span className="text-xs font-medium text-slate-400 mr-1 hidden sm:inline shrink-0">Portal:</span>
           <button
             onClick={() => setStatusFilter('all')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shrink-0 min-h-[36px] flex items-center gap-1.5 ${
               statusFilter === 'all'
                 ? 'bg-cyan-600 text-white shadow-sm'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700/60'
             }`}
           >
-            All ({totalCount})
+            <span>All</span>
+            <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded-full font-mono">{totalCount}</span>
           </button>
           <button
             onClick={() => setStatusFilter('logged_in')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 min-h-[36px] ${
               statusFilter === 'logged_in'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'bg-slate-800 text-emerald-300 hover:bg-slate-750 border border-emerald-800/40'
             }`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            Logged In ({loggedInCount})
+            <span>Active</span>
+            <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded-full font-mono">{loggedInCount}</span>
           </button>
           <button
             onClick={() => setStatusFilter('not_logged_in')}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 min-h-[36px] ${
               statusFilter === 'not_logged_in'
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'bg-slate-800 text-amber-300 hover:bg-slate-750 border border-amber-800/40'
             }`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            Not Logged In ({notLoggedInCount})
+            <span>Pending</span>
+            <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded-full font-mono">{notLoggedInCount}</span>
           </button>
         </div>
 
@@ -430,7 +569,7 @@ const ClientsPage: React.FC = () => {
             placeholder="Search clients..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 min-h-[38px]"
           />
           {searchQuery && (
             <button
@@ -471,8 +610,8 @@ const ClientsPage: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* MOBILE CARD VIEW (Block on mobile, hidden on md+) */}
-          <div className="block md:hidden space-y-3.5">
+          {/* MOBILE CARD VIEW (Optimized for mobile touch screens) */}
+          <div className="block md:hidden space-y-3">
             {filteredClients.map((client) => {
               const clientQuotes = getClientEstimates(client);
               const hasQuotes = clientQuotes.length > 0;
@@ -480,56 +619,74 @@ const ClientsPage: React.FC = () => {
               const loggedIn = hasClientLoggedIn(client);
               const linkKey = `link-${client.id}`;
               const textKey = `text-${client.id}`;
+              const isExpanded = Boolean(expandedCardIds[client.id]);
 
               return (
                 <div
                   key={client.id}
-                  className="bg-slate-850/95 border border-slate-750 rounded-xl p-4 space-y-3.5 shadow-sm"
+                  className="bg-slate-850/95 border border-slate-750/80 rounded-2xl p-3.5 space-y-3 shadow-sm hover:border-slate-700 transition-all"
                 >
-                  {/* Card Header: Client Name, Status Chip, Edit & Delete */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-base font-bold text-white truncate">{client.name}</h3>
-                        {loggedIn ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>Logged In</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/35 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
-                            <span>Not Logged In</span>
-                          </span>
-                        )}
+                  {/* Card Header: Avatar + Client Name + Status Chip + Edit & Delete */}
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {/* Initials Avatar */}
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-600/30 to-blue-600/30 border border-cyan-500/30 flex items-center justify-center font-bold text-cyan-300 text-sm shrink-0">
+                        {getInitials(client.name)}
                       </div>
 
-                      {/* Email + Created date */}
-                      <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                        {client.email ? (
-                          <a
-                            href={`mailto:${client.email}`}
-                            className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 truncate max-w-[200px]"
-                          >
-                            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3 className="text-base font-bold text-white truncate leading-snug">{client.name}</h3>
+                          {loggedIn ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
+                              <span>Pending</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Email & Creation info */}
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                          {client.email ? (
+                            <a
+                              href={`mailto:${client.email}`}
+                              className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 truncate max-w-[170px]"
+                            >
+                              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                              <span className="truncate">{client.email}</span>
+                            </a>
+                          ) : (
+                            <span className="text-slate-500 italic text-[11px]">No email set</span>
+                          )}
+                          <span className="text-slate-600">&bull;</span>
+                          <span className="text-[11px] text-slate-500">{formatDate(client.created_at)}</span>
+                        </div>
+
+                        {hasAddressOnFile(client) && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-cyan-300/90 font-mono pt-0.5" title={formatAddressLines(client).join(', ')}>
+                            <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             </svg>
-                            <span className="truncate">{client.email}</span>
-                          </a>
-                        ) : (
-                          <span className="text-slate-500 italic">No email set</span>
+                            <span className="truncate max-w-[220px]">{formatInlineAddress(client)}</span>
+                          </div>
                         )}
-                        <span className="text-slate-600">&bull;</span>
-                        <span className="text-[11px] text-slate-500">Created {formatDate(client.created_at)}</span>
                       </div>
                     </div>
 
-                    {/* Quick Edit button */}
+                    {/* Quick Edit and Delete buttons */}
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => handleOpenModal(client)}
-                        className="p-1.5 text-cyan-400 hover:text-cyan-300 bg-slate-800 border border-slate-700/80 rounded-lg text-xs"
+                        className="p-1.5 text-slate-300 hover:text-cyan-300 bg-slate-800 hover:bg-slate-750 border border-slate-700/80 rounded-lg text-xs min-h-[34px] min-w-[34px] flex items-center justify-center transition-colors"
                         title="Edit Client"
+                        aria-label="Edit Client"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -537,8 +694,9 @@ const ClientsPage: React.FC = () => {
                       </button>
                       <button
                         onClick={() => handleDelete(client.id)}
-                        className="p-1.5 text-red-400 hover:text-red-300 bg-slate-800 border border-slate-700/80 rounded-lg text-xs"
+                        className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-800 hover:bg-slate-750 border border-slate-700/80 rounded-lg text-xs min-h-[34px] min-w-[34px] flex items-center justify-center transition-colors"
                         title="Delete Client"
+                        aria-label="Delete Client"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -547,129 +705,178 @@ const ClientsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Section 1: Attached Project Quotes & Invoicing */}
-                  <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-3 space-y-2">
-                    <div className="flex justify-between items-center text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                      <span>Project Quotes &amp; Invoices</span>
-                      {hasQuotes && (
-                        <span className="text-emerald-400 lowercase font-normal">
-                          {clientQuotes.length} {clientQuotes.length === 1 ? 'quote' : 'quotes'}
-                        </span>
-                      )}
+                  {/* Summary Status Strip: Portal Access & Quotes Overview */}
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    {/* Portal Access Pill */}
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
+                      loggedIn 
+                        ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' 
+                        : 'bg-amber-950/30 border-amber-500/30 text-amber-300'
+                    }`}>
+                      <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">Portal</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${loggedIn ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                        <span className="text-xs font-bold truncate">{loggedIn ? 'Active' : 'Pending'}</span>
+                      </div>
                     </div>
 
-                    {hasQuotes ? (
-                      <div className="space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => setQuotesModalClient(client)}
-                          className="w-full bg-emerald-950/50 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-300 text-xs p-2.5 rounded-lg font-semibold flex items-center justify-between transition-colors shadow-sm"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                            <span>
-                              {clientQuotes.length} {clientQuotes.length === 1 ? 'Quote Attached' : 'Quotes Attached'}
-                            </span>
-                          </div>
-                          {clientQuotes[0].quoted_amount && (
-                            <span className="text-white font-bold bg-emerald-900/80 px-2 py-0.5 rounded text-[11px]">
-                              {formatCurrency(clientQuotes[0].quoted_amount)}
-                            </span>
-                          )}
-                        </button>
-                        <div className="flex justify-between items-center px-1 text-xs">
-                          <button
-                            type="button"
-                            onClick={() => setQuotesModalClient(client)}
-                            className="text-cyan-400 hover:text-cyan-300 font-medium underline text-[11px]"
-                          >
-                            View &amp; Convert to Invoice &rarr;
-                          </button>
-                          <Link
-                            to={`/dashboard/calculator?clientId=${client.id}`}
-                            className="text-slate-400 hover:text-emerald-300 text-[11px]"
-                          >
-                            + New quote
-                          </Link>
-                        </div>
+                    {/* Quotes Pill */}
+                    <button
+                      type="button"
+                      onClick={() => hasQuotes ? setQuotesModalClient(client) : undefined}
+                      className={`p-2 rounded-xl border text-left flex flex-col justify-between transition-colors ${
+                        hasQuotes 
+                          ? 'bg-cyan-950/30 border-cyan-500/30 hover:bg-cyan-950/50 cursor-pointer text-cyan-300' 
+                          : 'bg-slate-900/60 border-slate-750 text-slate-400 cursor-default'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">Quotes</span>
+                        {hasQuotes && <span className="text-[10px] text-cyan-400 font-semibold underline">Manage &rarr;</span>}
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between pt-0.5">
-                        <span className="text-xs text-slate-500 italic">No quotes attached yet</span>
-                        <Link
-                          to={`/dashboard/calculator?clientId=${client.id}`}
-                          className="text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-700/50 bg-emerald-950/40 px-2.5 py-1 rounded-lg font-semibold inline-flex items-center gap-1"
-                        >
-                          + Create Quote
-                        </Link>
+                      <div className="flex items-center gap-1 mt-0.5 truncate">
+                        {hasQuotes ? (
+                          <span className="text-xs font-bold text-white truncate">
+                            {clientQuotes.length} {clientQuotes.length === 1 ? 'Quote' : 'Quotes'}
+                            {clientQuotes[0].quoted_amount ? ` • ${formatCurrency(clientQuotes[0].quoted_amount)}` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500 italic">No quotes</span>
+                        )}
                       </div>
-                    )}
+                    </button>
                   </div>
 
-                  {/* Section 2: Customer Portal Access & Link Sharing */}
-                  <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-3 space-y-2.5">
-                    <div className="flex justify-between items-center text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                      <span>Customer Portal</span>
-                      {loggedIn ? (
-                        <span className="text-emerald-400 font-normal lowercase flex items-center gap-1">
-                          <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                          </svg>
-                          active
-                        </span>
-                      ) : (
-                        <span className="text-amber-400 font-normal lowercase">pending setup</span>
-                      )}
-                    </div>
-
-                    {/* Copy Link Row */}
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        readOnly
-                        value={portalLink}
-                        className="bg-slate-950 border border-slate-750 text-slate-400 text-xs rounded-lg px-2.5 py-1.5 flex-1 font-mono truncate"
-                      />
+                  {/* Primary Mobile Action Buttons */}
+                  <div className="space-y-2 pt-0.5">
+                    {hasQuotes ? (
                       <button
-                        onClick={() => copyToClipboard(portalLink, 'Portal link copied to clipboard!', linkKey)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700 rounded-lg text-xs font-semibold shrink-0 transition-colors min-h-[32px]"
+                        type="button"
+                        onClick={() => setQuotesModalClient(client)}
+                        className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-between shadow-sm transition-all min-h-[42px]"
                       >
-                        {copiedKey === linkKey ? '✓ Copied' : 'Copy Link'}
+                        <span className="flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span>Quotes &amp; Invoice Conversion</span>
+                        </span>
+                        <span className="text-[11px] font-bold bg-black/25 px-2 py-0.5 rounded-md">
+                          {clientQuotes.length} {clientQuotes.length === 1 ? 'quote' : 'quotes'} &rarr;
+                        </span>
                       </button>
-                    </div>
+                    ) : (
+                      <Link
+                        to={`/dashboard/calculator?clientId=${client.id}`}
+                        className="w-full bg-slate-800 hover:bg-slate-750 border border-cyan-500/40 text-cyan-300 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition-colors min-h-[42px]"
+                      >
+                        <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span>Build Quote in Calculator</span>
+                      </Link>
+                    )}
 
-                    {/* Portal Actions */}
-                    <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
+                    {/* Quick Portal Share & Actions Grid */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(portalLink, 'Portal link copied to clipboard!', linkKey)}
+                        className="bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700/80 rounded-xl py-2 px-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors min-h-[40px]"
+                      >
+                        <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                        <span className="truncate">{copiedKey === linkKey ? '✓ Copied' : 'Copy Link'}</span>
+                      </button>
+
                       {!loggedIn ? (
                         <button
                           type="button"
                           onClick={() => handleSendPortalInviteEmail(client)}
                           disabled={sendingInviteId === client.id}
-                          className="w-full bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 min-h-[36px]"
+                          className="bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl py-2 px-2.5 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 min-h-[40px]"
                         >
                           <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                           </svg>
-                          <span>
-                            {sendingInviteId === client.id ? 'Sending Invite...' : 'Send Invite Email'}
-                          </span>
+                          <span className="truncate">{sendingInviteId === client.id ? 'Sending...' : 'Send Invite'}</span>
                         </button>
                       ) : (
-                        <div className="w-full text-center text-[11px] text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 py-1.5 px-2 rounded-lg">
-                          ✓ Client has set password &amp; logged in
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyPortalInvite(client, textKey)}
+                          className="bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/80 rounded-xl py-2 px-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors min-h-[40px]"
+                        >
+                          <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          <span className="truncate">{copiedKey === textKey ? '✓ Text Copied' : 'Invite Text'}</span>
+                        </button>
                       )}
+                    </div>
 
+                    {/* Expandable Extra Details Toggle */}
+                    <div className="pt-0.5">
                       <button
                         type="button"
-                        onClick={() => copyPortalInvite(client, textKey)}
-                        className="w-full bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs font-medium py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors min-h-[34px]"
+                        onClick={() => toggleCardExpand(client.id)}
+                        className="w-full text-center text-[11px] text-slate-400 hover:text-slate-200 py-1 flex items-center justify-center gap-1 transition-colors"
                       >
-                        <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        <span>{isExpanded ? 'Hide link & options' : 'Show full link & options'}</span>
+                        <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
-                        <span>{copiedKey === textKey ? '✓ Text Copied' : 'Copy Text Invite'}</span>
                       </button>
+
+                      {isExpanded && (
+                        <div className="mt-2 p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2.5 animate-fade-in text-xs">
+                          <div>
+                            <span className="text-[10px] uppercase font-semibold text-slate-500 block mb-1">Direct Portal URL:</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                readOnly
+                                value={portalLink}
+                                className="bg-slate-950 border border-slate-750 text-slate-400 text-xs rounded-lg px-2.5 py-1.5 flex-1 font-mono truncate"
+                              />
+                              <button
+                                onClick={() => copyToClipboard(portalLink, 'Portal link copied!', linkKey)}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700 rounded-lg text-xs font-semibold shrink-0"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                            <button
+                              type="button"
+                              onClick={() => copyPortalInvite(client, textKey)}
+                              className="text-cyan-400 hover:text-cyan-300 text-xs font-medium flex items-center gap-1"
+                            >
+                              <span>📋 Copy text invite</span>
+                            </button>
+                            <Link
+                              to={`/dashboard/calculator?clientId=${client.id}`}
+                              className="text-emerald-400 hover:text-emerald-300 text-xs font-medium"
+                            >
+                              + New quote
+                            </Link>
+                          </div>
+
+                          {hasAddressOnFile(client) && (
+                            <div className="pt-2 border-t border-slate-800/80">
+                              <span className="text-[10px] uppercase font-semibold text-slate-400 block mb-1">Invoice Address:</span>
+                              <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-300 space-y-0.5">
+                                {formatAddressLines(client).map((line, idx) => (
+                                  <p key={idx}>{line}</p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -725,8 +932,16 @@ const ClientsPage: React.FC = () => {
                             )}
                           </div>
 
-                          <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                          <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
                             <span>Created {formatDate(client.created_at)}</span>
+                            {hasAddressOnFile(client) ? (
+                              <span className="inline-flex items-center gap-1 text-cyan-300/90 font-mono" title={formatAddressLines(client).join(', ')}>
+                                <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                </svg>
+                                <span className="truncate max-w-[200px]">{formatInlineAddress(client)}</span>
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       </td>
@@ -1029,22 +1244,22 @@ const ClientsPage: React.FC = () => {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-800/80">
                           <button
                             type="button"
                             onClick={() => setCalibratingEstimate(est)}
-                            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold rounded-lg border border-slate-700 transition-colors text-center"
+                            className="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold rounded-xl border border-slate-700 transition-colors text-center min-h-[42px] flex items-center justify-center"
                           >
                             {est.quoted_amount ? 'Edit Exact Quote' : 'Set Exact Quote'}
                           </button>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
                             {isInvoiced ? (
                               <a
                                 href={`/#/invoice/${est.invoice_id}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="w-full sm:w-auto px-3 py-2 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 text-xs font-bold rounded-lg border border-emerald-800/40 text-center"
+                                className="w-full sm:w-auto px-4 py-2.5 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 text-xs font-bold rounded-xl border border-emerald-800/40 text-center min-h-[42px] flex items-center justify-center"
                               >
                                 ✓ Invoiced ({est.invoice_number})
                               </a>
@@ -1052,7 +1267,7 @@ const ClientsPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => setInvoicingEstimate(est)}
-                                className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5"
+                                className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 min-h-[42px]"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path
@@ -1158,6 +1373,88 @@ const ClientsPage: React.FC = () => {
                   className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2.5 sm:py-2 text-white focus:outline-none focus:border-cyan-500 text-sm"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">Used for portal notifications, invites, and invoices.</p>
+              </div>
+
+              {/* Customer Address section */}
+              <div className="pt-3 border-t border-slate-750 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Customer Address
+                  </label>
+                  <span className="text-[10px] text-slate-400">Printed on invoices when on file</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-400 mb-1">First Line of Address</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 12 High Street / Unit 4"
+                    value={formData.address_line1}
+                    onChange={(e) => setFormData({ ...formData, address_line1: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-400 mb-1">Second Line of Address (optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Innovation Park / Suite 2"
+                    value={formData.address_line2}
+                    onChange={(e) => setFormData({ ...formData, address_line2: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">City / Town</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. London"
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">County / Region (optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Greater London"
+                      value={formData.county}
+                      onChange={(e) => setFormData({ ...formData, county: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">Postcode</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. EC1A 1BB"
+                      value={formData.postcode}
+                      onChange={(e) => setFormData({ ...formData, postcode: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600 uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">Country</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. United Kingdom"
+                      value={formData.country}
+                      onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-750 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500 text-sm placeholder:text-slate-600"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Portal Info section if editing */}

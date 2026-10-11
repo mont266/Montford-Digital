@@ -55,7 +55,20 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
   const [exactAmount, setExactAmount] = useState<number>(estimate.quoted_amount || mid);
 
   // Client state (loaded from estimate or selectable inside modal)
-  const [availableClients, setAvailableClients] = useState<{ id: string; name: string; email?: string }[]>([]);
+  const [availableClients, setAvailableClients] = useState<
+    {
+      id: string;
+      name: string;
+      email?: string;
+      address_line1?: string | null;
+      address_line2?: string | null;
+      city?: string | null;
+      county?: string | null;
+      postcode?: string | null;
+      country?: string | null;
+      address?: string | null;
+    }[]
+  >([]);
   const [clientId, setClientId] = useState<string>(estimate.client_id || '');
   const [clientName, setClientName] = useState<string>(estimate.client_name || '');
   const [clientEmail, setClientEmail] = useState<string>(estimate.client_email || '');
@@ -115,11 +128,11 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
 
     supabase
       .from('clients')
-      .select('id, name, email')
+      .select('*')
       .order('name')
       .then(({ data }) => {
         if (data) {
-          setAvailableClients(data);
+          setAvailableClients(data as any);
           // If we have clientId, preselect
           if (estimate.client_id) {
             const found = data.find((c) => c.id === estimate.client_id);
@@ -555,6 +568,40 @@ export const ConvertToInvoiceModal: React.FC<ConvertToInvoiceModalProps> = ({
                 />
               </div>
             )}
+
+            {clientId && clientId !== 'custom' && (() => {
+              const selectedClient = availableClients.find((c) => c.id === clientId);
+              if (!selectedClient) return null;
+              const addrParts = [
+                selectedClient.address_line1,
+                selectedClient.address_line2,
+                selectedClient.city,
+                selectedClient.county,
+                selectedClient.postcode,
+                selectedClient.country,
+              ].map(p => p?.trim()).filter(Boolean);
+              const hasAddr = addrParts.length > 0 || Boolean(selectedClient.address?.trim());
+
+              return (
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    </svg>
+                    <span>Invoice Address:</span>
+                  </span>
+                  {hasAddr ? (
+                    <span className="text-emerald-300 font-mono text-[11px] truncate max-w-[280px]" title={addrParts.join(', ') || selectedClient.address || ''}>
+                      {addrParts.join(', ') || selectedClient.address}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 italic text-[11px]">
+                      No address on file (can be added in Clients directory)
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* STEP 2: Exact Quoted Amount Selection */}

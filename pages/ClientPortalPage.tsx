@@ -1337,11 +1337,22 @@ const ClientPortalPage: React.FC = () => {
                             </div>
                            )}
 
-                           {/* Task Board */}
+                           {/* Task Board (Read-only, synced via Trello) */}
                            <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sm:p-5 shadow-lg flex flex-col min-h-[300px] md:h-[400px]">
-                            <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
-                              Task Board
+                            <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wider font-bold text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+                                <span>Task Board</span>
+                                {todos[project.id] && todos[project.id].length > 0 && (
+                                  <span className="text-[11px] font-mono text-slate-400 font-normal lowercase">
+                                    ({todos[project.id].filter(t => t.is_completed).length}/{todos[project.id].length})
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 bg-slate-900/60 px-2 py-0.5 rounded-full border border-slate-700/60 normal-case">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                                <span>Trello Sync</span>
+                              </span>
                             </div>
                             
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
@@ -1349,20 +1360,34 @@ const ClientPortalPage: React.FC = () => {
                                   [...todos[project.id]].sort((a, b) => (a.is_completed === b.is_completed ? 0 : a.is_completed ? 1 : -1)).map(todo => (
                                     <div 
                                       key={todo.id} 
-                                      onClick={() => handleToggleTodo(todo)}
-                                      className="flex items-start gap-3 bg-slate-900/40 p-3 rounded-lg border border-slate-700/50 hover:bg-slate-800/80 transition-colors cursor-pointer"
+                                      className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                                        todo.is_completed
+                                          ? 'bg-slate-900/30 border-slate-800/80'
+                                          : 'bg-slate-900/60 border-slate-750'
+                                      }`}
                                     >
                                       <div className="mt-0.5 shrink-0">
                                         {todo.is_completed ? (
-                                          <div className="w-5 h-5 rounded-md bg-cyan-500/20 border border-cyan-500/50 flex flex-col items-center justify-center">
-                                            <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                          <div className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center" title="Completed on Trello board">
+                                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                           </div>
                                         ) : (
-                                          <div className="w-5 h-5 rounded-md border-2 border-slate-600 bg-slate-800"></div>
+                                          <div className="w-5 h-5 rounded-md border border-slate-600 bg-slate-800/80 flex items-center justify-center" title="In progress on Trello board">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400/80"></div>
+                                          </div>
                                         )}
                                       </div>
-                                      <span className={`text-sm ${todo.is_completed ? 'line-through text-slate-500' : 'text-slate-300'}`}>
-                                        {todo.description}
+                                      <div className="flex-1 min-w-0">
+                                        <span className={`text-sm block leading-snug ${todo.is_completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                                          {todo.description}
+                                        </span>
+                                      </div>
+                                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded shrink-0 ${
+                                        todo.is_completed 
+                                          ? 'bg-emerald-950/60 text-emerald-400/90 border border-emerald-800/40' 
+                                          : 'bg-slate-800 text-slate-400 border border-slate-700/60'
+                                      }`}>
+                                        {todo.is_completed ? 'Completed' : 'In Progress'}
                                       </span>
                                     </div>
                                   ))

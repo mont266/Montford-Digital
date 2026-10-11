@@ -35,6 +35,13 @@ interface Invoice {
       id?: string;
       name?: string;
       email?: string;
+      address_line1?: string | null;
+      address_line2?: string | null;
+      city?: string | null;
+      county?: string | null;
+      postcode?: string | null;
+      country?: string | null;
+      address?: string | null;
     } | null;
   } | null;
   invoice_items: InvoiceItem[];
@@ -60,6 +67,60 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void; title: s
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
 const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-GB');
 
+export const formatClientAddressLines = (client?: {
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  county?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+  address?: string | null;
+} | null): string[] => {
+  if (!client) return [];
+
+  const lines: string[] = [];
+
+  // Line 1: First line of address
+  if (client.address_line1?.trim()) {
+    lines.push(client.address_line1.trim());
+  }
+
+  // Line 2: Second line of address (optional)
+  if (client.address_line2?.trim()) {
+    lines.push(client.address_line2.trim());
+  }
+
+  // Line 3: City
+  if (client.city?.trim()) {
+    lines.push(client.city.trim());
+  }
+
+  // Line 4: County / Region (optional)
+  if (client.county?.trim()) {
+    lines.push(client.county.trim());
+  }
+
+  // Line 5: Postcode
+  if (client.postcode?.trim()) {
+    lines.push(client.postcode.trim());
+  }
+
+  // Line 6: Country (if provided)
+  if (client.country?.trim()) {
+    lines.push(client.country.trim());
+  }
+
+  // Fallback to multiline text address if structured columns are empty
+  if (lines.length === 0 && client.address?.trim()) {
+    const rawLines = client.address
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    lines.push(...rawLines);
+  }
+
+  return lines;
+};
 
 const InvoicePublicPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -75,6 +136,7 @@ const InvoicePublicPage: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [billingName, setBillingName] = useState('');
   const [billingEmail, setBillingEmail] = useState('');
+  const [billingAddressLines, setBillingAddressLines] = useState<string[]>([]);
   const [isCollectingDetails, setIsCollectingDetails] = useState(false);
 
   const fetchInvoice = useCallback(async () => {
@@ -102,7 +164,7 @@ const InvoicePublicPage: React.FC = () => {
 
       const { data, error: dbError } = await supabase
         .from('invoices')
-        .select(`*, projects ( name, client_name, client_id, clients ( id, name, email ) ), invoice_items ( * )`)
+        .select(`*, projects ( name, client_name, client_id, clients ( * ) ), invoice_items ( * )`)
         .eq('id', id)
         .single();
 
@@ -131,16 +193,19 @@ const InvoicePublicPage: React.FC = () => {
             (data.projects as any)?.client_email?.trim(),
           ].filter((e): e is string => Boolean(e && e.length > 0));
 
+          let candidateClient = (data.projects?.clients as any) || null;
+
           // If neither client_name nor clients was loaded via join, try direct lookup by client_id
-          if (candidateNames.length === 0 && data.projects?.client_id) {
+          if ((!candidateClient || (!candidateClient.address_line1 && !candidateClient.address)) && data.projects?.client_id) {
             try {
               const { data: directClient } = await supabase
                 .from('clients')
-                .select('id, name, email')
+                .select('*')
                 .eq('id', data.projects.client_id)
                 .single();
-              if (directClient?.name) {
-                candidateNames.push(directClient.name.trim());
+              if (directClient) {
+                candidateClient = { ...directClient, ...candidateClient };
+                if (directClient.name) candidateNames.push(directClient.name.trim());
                 if (directClient.email) candidateEmails.push(directClient.email.trim());
               }
             } catch (e) {
@@ -151,6 +216,26 @@ const InvoicePublicPage: React.FC = () => {
           // Pick the most complete full name (e.g. "Blue Whippet Heating" over "Blue")
           const resolvedClientName = candidateNames.sort((a, b) => b.length - a.length)[0] || '';
           const resolvedClientEmail = candidateEmails[0] || '';
+
+          // If address is still missing and we have client name, try fallback lookup by name
+          if ((!candidateClient || (!candidateClient.address_line1 && !candidateClient.address)) && resolvedClientName) {
+            try {
+              const { data: matchedClient } = await supabase
+                .from('clients')
+                .select('*')
+                .ilike('name', resolvedClientName)
+                .limit(1)
+                .maybeSingle();
+              if (matchedClient) {
+                candidateClient = { ...matchedClient, ...candidateClient };
+              }
+            } catch (e) {
+              console.warn('Direct client lookup by name notice:', e);
+            }
+          }
+
+          const resolvedAddressLines = formatClientAddressLines(candidateClient);
+          setBillingAddressLines(resolvedAddressLines);
 
           setInvoice(data as Invoice);
           setBillingName(resolvedClientName);
@@ -424,12 +509,21 @@ const InvoicePublicPage: React.FC = () => {
                             </p>
                         </div>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 items-start">
                           <div>
-                              <p className="text-sm text-slate-400 mb-1">Billed To</p>
-                              <p className="font-semibold text-white">
-                                {billingName || invoice.projects?.client_name?.trim() || invoice.projects?.clients?.name?.trim() || 'Valued Client'}
-                              </p>
+                              <p className="text-sm text-slate-400 mb-1 font-medium">Billed To</p>
+                              <div className="space-y-0.5">
+                                <p className="font-semibold text-white">
+                                  {billingName || invoice.projects?.client_name?.trim() || invoice.projects?.clients?.name?.trim() || 'Valued Client'}
+                                </p>
+                                {billingAddressLines.length > 0 && (
+                                  <div className="text-sm text-slate-300 font-normal leading-snug pt-0.5 space-y-0.5">
+                                    {billingAddressLines.map((line, idx) => (
+                                      <p key={idx}>{line}</p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                           </div>
                            <div>
                               <p className="text-sm text-slate-400 mb-1">Invoice Number</p>

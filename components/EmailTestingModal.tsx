@@ -101,8 +101,8 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="bg-slate-900 border border-slate-750 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+      <div className="bg-slate-900 border border-slate-750 rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between pb-4 border-b border-slate-800">
           <div>
             <div className="flex items-center gap-2">
@@ -181,11 +181,11 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0 w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => setQuickPreviewType(tpl.id)}
-                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 hover:text-white rounded-lg transition-colors flex items-center gap-1"
+                    className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 hover:text-white rounded-lg transition-colors flex items-center justify-center gap-1 min-h-[36px]"
                     title="Quick preview in modal"
                   >
                     <span>👁 Quick View</span>
@@ -195,7 +195,7 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
                     href={tpl.previewUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors flex items-center gap-1"
+                    className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors flex items-center justify-center gap-1 min-h-[36px]"
                     title="Open dedicated preview page in new tab"
                   >
                     <span>↗ Full Tab</span>
@@ -205,7 +205,7 @@ export const EmailTestingModal: React.FC<EmailTestingModalProps> = ({ isOpen, on
                     type="button"
                     onClick={() => handleSendTest(tpl.id)}
                     disabled={sendingType === tpl.id}
-                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                    className="w-full sm:w-auto px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 min-h-[36px]"
                   >
                     {sendingType === tpl.id ? (
                       <span>Sending...</span>
