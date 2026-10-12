@@ -4,6 +4,14 @@ import { supabase } from '../lib/supabaseClient';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { CheckoutForm } from '../src/components/CheckoutForm';
+import { FileViewerModal } from '../components/FileViewerModal';
+import {
+  getFileCategory,
+  getFileExtension,
+  getFileCategoryLabel,
+  downloadFile,
+  downloadFilesAsZip,
+} from '../lib/fileUtils';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
@@ -114,6 +122,11 @@ const ClientPortalPage: React.FC = () => {
   const [activities, setActivities] = useState<Record<string, ProjectActivity[]>>({});
   const [tickets, setTickets] = useState<Record<string, SupportTicket[]>>({});
   const [files, setFiles] = useState<Record<string, ProjectFile[]>>({});
+  const [activePreviewFile, setActivePreviewFile] = useState<ProjectFile | null>(null);
+  const [activePreviewProject, setActivePreviewProject] = useState<Project | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [zippingProjectId, setZippingProjectId] = useState<string | null>(null);
+  const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
   const [subscriptionDetails, setSubscriptionDetails] = useState<Record<string, SubscriptionDetails>>({});
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -855,6 +868,46 @@ const ClientPortalPage: React.FC = () => {
       }
   };
 
+  const handleOpenFilePreview = (file: ProjectFile, project: Project) => {
+    setActivePreviewFile(file);
+    setActivePreviewProject(project);
+  };
+
+  const handleDownloadSingleFile = async (e: React.MouseEvent, file: ProjectFile) => {
+    e.stopPropagation();
+    const url = supabase.storage.from('project_files').getPublicUrl(file.file_path).data.publicUrl;
+    setDownloadingFileId(file.id);
+    try {
+      await downloadFile(url, file.file_name);
+    } catch (err: any) {
+      console.error('Download error:', err);
+      alert('Could not download file: ' + (err.message || 'Unknown error'));
+    } finally {
+      setDownloadingFileId(null);
+    }
+  };
+
+  const handleDownloadProjectZip = async (project: Project, projectFiles: ProjectFile[]) => {
+    if (projectFiles.length === 0) return;
+    setZippingProjectId(project.id);
+    setZipProgress({ done: 0, total: projectFiles.length });
+    try {
+      const filesWithUrls = projectFiles.map((f) => ({
+        url: supabase.storage.from('project_files').getPublicUrl(f.file_path).data.publicUrl,
+        fileName: f.file_name,
+      }));
+      await downloadFilesAsZip(filesWithUrls, `${project.name}_deliverables.zip`, (done, total) => {
+        setZipProgress({ done, total });
+      });
+    } catch (err: any) {
+      console.error('ZIP download error:', err);
+      alert('Could not download ZIP archive: ' + (err.message || 'Unknown error'));
+    } finally {
+      setZippingProjectId(null);
+      setZipProgress(null);
+    }
+  };
+
   const outstandingInvoices = invoices.filter(i => i.status === 'sent' || i.status === 'overdue');
   const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
@@ -1047,71 +1100,281 @@ const ClientPortalPage: React.FC = () => {
 
         {activeView === 'files' && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 md:p-6 shadow-lg animate-in fade-in duration-300">
-            <h2 className="text-xl font-bold text-white mb-6">File Hub</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6 pb-4 border-b border-slate-700/60">
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">File Hub &amp; Deliverables</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Preview deliverables directly in-website or download original files to your device.
+                </p>
+              </div>
+            </div>
+
             {projects.length === 0 ? (
-               <p className="text-slate-400 text-sm italic">No active projects found.</p>
+              <p className="text-slate-400 text-sm italic">No active projects found.</p>
             ) : (
-                <div className="space-y-8">
-                   {projects.map(project => {
-                     const projectFiles = files[project.id] || [];
-                     return (
-                         <div key={project.id} className="space-y-4">
-                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-slate-900/50 p-4 rounded-lg border border-slate-700">
-                                 <div>
-                                     <h3 className="text-lg font-bold text-cyan-400">{project.name}</h3>
-                                     <p className="text-sm text-slate-400 mt-1">Upload files related to this project (Max 50MB).</p>
-                                 </div>
-                                 <label className={`cursor-pointer justify-center sm:w-auto w-full px-5 py-2 inline-flex items-center gap-2 rounded-md font-bold transition-all border ${uploadingFile === project.id ? 'bg-slate-700 border-slate-600 text-slate-300' : 'bg-cyan-600/20 border-cyan-500 text-cyan-400 hover:bg-cyan-600/30'}`}>
-                                      {uploadingFile === project.id ? (
-                                          <><span className="w-4 h-4 border-2 border-slate-400/30 border-t-slate-300 rounded-full animate-spin"></span> Uploading...</>
+              <div className="space-y-8">
+                {projects.map((project) => {
+                  const projectFiles = files[project.id] || [];
+                  const isZipping = zippingProjectId === project.id;
+
+                  return (
+                    <div key={project.id} className="space-y-4">
+                      {/* Project Header Bar */}
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-700/70">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-base sm:text-lg font-bold text-white truncate">{project.name}</h3>
+                            <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded-md">
+                              {projectFiles.length} {projectFiles.length === 1 ? 'file' : 'files'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Deliverables, assets, and documentation (Uploads up to 50MB).
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
+                          {/* Batch download all files as ZIP */}
+                          {projectFiles.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadProjectZip(project, projectFiles)}
+                              disabled={isZipping}
+                              className="w-full sm:w-auto px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer min-h-[36px]"
+                              title="Download all files in this project as a ZIP archive"
+                            >
+                              {isZipping ? (
+                                <>
+                                  <span className="w-3.5 h-3.5 border-2 border-slate-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                                  <span>
+                                    Zipping {zipProgress ? `(${zipProgress.done}/${zipProgress.total})` : '...'}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                  </svg>
+                                  <span>Download All (.zip)</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {/* Upload File Input */}
+                          <label
+                            className={`cursor-pointer justify-center sm:w-auto w-full px-4 py-2 inline-flex items-center gap-2 rounded-lg text-xs font-bold transition-all border min-h-[36px] ${
+                              uploadingFile === project.id
+                                ? 'bg-slate-700 border-slate-600 text-slate-300'
+                                : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-sm shadow-cyan-950/20'
+                            }`}
+                          >
+                            {uploadingFile === project.id ? (
+                              <>
+                                <span className="w-3.5 h-3.5 border-2 border-slate-400/30 border-t-slate-950 rounded-full animate-spin" />
+                                <span>Uploading...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                                <span>Upload File</span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingFile === project.id}
+                              onChange={(e) => handleFileUpload(e, project.id)}
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* File Grid */}
+                      {projectFiles.length === 0 ? (
+                        <div className="p-8 text-center border border-dashed border-slate-700/80 rounded-xl bg-slate-900/20 space-y-2">
+                          <svg className="w-8 h-8 text-slate-600 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-slate-400 text-sm font-medium">No files uploaded yet for {project.name}.</p>
+                          <p className="text-xs text-slate-500">
+                            Deliverables uploaded by Montford Digital or your team will appear here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                          {projectFiles.map((file) => {
+                            const publicUrl = supabase.storage
+                              .from('project_files')
+                              .getPublicUrl(file.file_path).data.publicUrl;
+                            const category = getFileCategory(file.file_name, file.file_type);
+                            const ext = getFileExtension(file.file_name);
+                            const isThisDownloading = downloadingFileId === file.id;
+
+                            return (
+                              <div
+                                key={file.id}
+                                className="bg-slate-900/60 rounded-xl p-3.5 flex flex-col justify-between group hover:bg-slate-750/30 hover:border-slate-700 transition-all border border-slate-800 shadow-sm"
+                              >
+                                {/* Top file preview & info */}
+                                <div className="flex items-start gap-3 min-w-0">
+                                  {/* Icon or Image Thumbnail */}
+                                  {category === 'image' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenFilePreview(file, project)}
+                                      className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-700 bg-slate-950 shrink-0 group/thumb cursor-pointer hover:border-cyan-500 transition-colors"
+                                      title="Click to preview full-screen"
+                                    >
+                                      <img
+                                        src={publicUrl}
+                                        alt={file.file_name}
+                                        loading="lazy"
+                                        className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-200"
+                                      />
+                                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                      </div>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenFilePreview(file, project)}
+                                      className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0 border cursor-pointer hover:border-cyan-500 transition-colors ${
+                                        category === 'pdf'
+                                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/25'
+                                          : category === 'code'
+                                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                          : category === 'video' || category === 'audio'
+                                          ? 'bg-purple-500/10 text-purple-400 border-purple-500/25'
+                                          : 'bg-blue-500/10 text-blue-400 border-blue-500/25'
+                                      }`}
+                                      title="Click to view file"
+                                    >
+                                      {category === 'pdf' ? (
+                                        <>
+                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                          </svg>
+                                          <span className="text-[9px] font-bold font-mono tracking-tighter mt-0.5">PDF</span>
+                                        </>
+                                      ) : category === 'code' ? (
+                                        <>
+                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                          </svg>
+                                          <span className="text-[9px] font-bold font-mono uppercase tracking-tighter mt-0.5">{ext.slice(0, 4) || 'CODE'}</span>
+                                        </>
+                                      ) : category === 'video' ? (
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                      ) : category === 'audio' ? (
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                                        </svg>
                                       ) : (
-                                          <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg> Choose File</>
+                                        <>
+                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <span className="text-[9px] font-bold font-mono uppercase tracking-tighter mt-0.5">{ext.slice(0, 4) || 'DOC'}</span>
+                                        </>
                                       )}
-                                      <input type="file" className="hidden" disabled={uploadingFile === project.id} onChange={(e) => handleFileUpload(e, project.id)} />
-                                 </label>
-                             </div>
-                             
-                             {projectFiles.length === 0 ? (
-                                 <p className="text-slate-500 italic p-6 text-center border border-dashed border-slate-700 rounded-lg">No files uploaded for {project.name}.</p>
-                             ) : (
-                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                     {projectFiles.map(file => (
-                                         <div key={file.id} className="bg-slate-900/40 rounded-lg p-4 flex items-center justify-between group hover:bg-slate-700/40 transition-colors border border-slate-700/50">
-                                            <div className="flex items-center space-x-3 overflow-hidden">
-                                                <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${file.uploaded_by === 'client' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-cyan-900/30 text-cyan-400'}`}>
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <a
-                                                        href={`${supabase.storage.from('project_files').getPublicUrl(file.file_path).data.publicUrl}`}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-white font-medium hover:text-cyan-400 truncate block"
-                                                    >
-                                                        {file.file_name}
-                                                    </a>
-                                                    <div className="flex items-center text-[10px] text-slate-500 space-x-2 mt-1">
-                                                        <span>{formatBytes(file.file_size)}</span>
-                                                        <span>&bull;</span>
-                                                        <span className="capitalize">{file.uploaded_by}</span>
-                                                        <span>&bull;</span>
-                                                        <span>{new Date(file.created_at).toLocaleDateString()}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {file.uploaded_by === 'client' && (
-                                                <button onClick={() => handleFileDelete(file.id, file.file_path)} className="text-slate-500 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 shrink-0 ml-2" title="Delete File">
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            )}
-                                         </div>
-                                     ))}
-                                 </div>
-                             )}
-                         </div>
-                     );
-                   })}
-                </div>
+                                    </button>
+                                  )}
+
+                                  {/* Title & metadata */}
+                                  <div className="min-w-0 flex-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenFilePreview(file, project)}
+                                      className="text-white text-left font-semibold text-xs sm:text-sm hover:text-cyan-400 truncate block w-full transition-colors leading-snug cursor-pointer"
+                                      title={file.file_name}
+                                    >
+                                      {file.file_name}
+                                    </button>
+
+                                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-1 flex-wrap">
+                                      <span className="font-mono text-slate-300">{formatBytes(file.file_size)}</span>
+                                      <span aria-hidden="true" className="text-slate-600">·</span>
+                                      <span>{file.uploaded_by === 'admin' ? 'Scott' : 'You'}</span>
+                                      <span aria-hidden="true" className="text-slate-600">·</span>
+                                      <span>{new Date(file.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Bottom action buttons */}
+                                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 flex-1">
+                                    {/* Preview button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenFilePreview(file, project)}
+                                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-cyan-300 hover:text-cyan-200 border border-slate-700/80 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[32px]"
+                                      title="View in website"
+                                    >
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                      </svg>
+                                      <span>Preview</span>
+                                    </button>
+
+                                    {/* Download button */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDownloadSingleFile(e, file)}
+                                      disabled={isThisDownloading}
+                                      className="px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 min-h-[32px]"
+                                      title="Download file to device"
+                                    >
+                                      {isThisDownloading ? (
+                                        <>
+                                          <span className="w-3.5 h-3.5 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                                          <span>Saving...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                          </svg>
+                                          <span>Download</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {/* Delete button (if uploaded by client) */}
+                                  {file.uploaded_by === 'client' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleFileDelete(file.id, file.file_path)}
+                                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                                      title="Delete uploaded file"
+                                      aria-label="Delete file"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -1698,6 +1961,23 @@ const ClientPortalPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* In-Website File Viewer Modal */}
+      <FileViewerModal
+        isOpen={Boolean(activePreviewFile)}
+        onClose={() => {
+          setActivePreviewFile(null);
+          setActivePreviewProject(null);
+        }}
+        file={activePreviewFile}
+        allFiles={activePreviewProject ? (files[activePreviewProject.id] || []) : []}
+        projectName={activePreviewProject?.name}
+        onNavigateFile={(nextFile) => setActivePreviewFile(nextFile)}
+        onDeleteFile={(id, path) => {
+          handleFileDelete(id, path);
+          setActivePreviewFile(null);
+        }}
+      />
     </div>
   );
 };

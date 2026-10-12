@@ -15,6 +15,8 @@ import { ExactQuoteCalibrationModal } from '../components/ExactQuoteCalibrationM
 import { ConvertToInvoiceModal } from '../components/ConvertToInvoiceModal';
 import { EmailTestingModal } from '../components/EmailTestingModal';
 import { sendInvoiceReadyEmail, sendInvoicePaidEmail } from '../lib/emailService';
+import { FileViewerModal } from '../components/FileViewerModal';
+import { downloadFile, getFileCategory } from '../lib/fileUtils';
 
 // --- Types ---
 interface TradingIdentity {
@@ -2004,6 +2006,8 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
     // Files State
     const [files, setFiles] = useState<ProjectFile[]>([]);
     const [uploadingFile, setUploadingFile] = useState(false);
+    const [previewFile, setPreviewFile] = useState<ProjectFile | null>(null);
+    const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
 
     // Settings State
     const [deadlineDate, setDeadlineDate] = useState('');
@@ -2354,21 +2358,29 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                             
                             {loading && !uploadingFile ? <div className="text-slate-400">Loading files...</div> : files.length === 0 ? <p className="text-slate-500 italic p-4 text-center border border-dashed border-slate-700 rounded-lg">No files uploaded yet.</p> : (
                                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                    {files.map(file => (
-                                        <div key={file.id} className="bg-slate-800 rounded-lg p-3 flex items-center justify-between group hover:bg-slate-700 transition-colors border border-slate-700">
-                                            <div className="flex items-center space-x-3 overflow-hidden">
-                                                <div className="flex-shrink-0 w-10 h-10 bg-slate-900 rounded bg-cyan-900/30 text-cyan-400 flex items-center justify-center">
+                                    {files.map(file => {
+                                        const publicUrl = supabase.storage.from('project_files').getPublicUrl(file.file_path).data.publicUrl;
+                                        const isDownloading = downloadingFileId === file.id;
+                                        return (
+                                        <div key={file.id} className="bg-slate-800 rounded-lg p-3 flex items-center justify-between group hover:bg-slate-700/70 transition-colors border border-slate-700">
+                                            <div className="flex items-center space-x-3 overflow-hidden flex-1 min-w-0 mr-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPreviewFile(file)}
+                                                    className="flex-shrink-0 w-10 h-10 bg-slate-900 rounded bg-cyan-900/30 text-cyan-400 flex items-center justify-center hover:border hover:border-cyan-500 transition-colors cursor-pointer"
+                                                    title="Preview file"
+                                                >
                                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                                                </div>
+                                                </button>
                                                 <div className="min-w-0 flex-1">
-                                                    <a
-                                                        href={`${supabase.storage.from('project_files').getPublicUrl(file.file_path).data.publicUrl}`}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-white font-medium hover:text-cyan-400 truncate block"
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPreviewFile(file)}
+                                                        className="text-white font-medium hover:text-cyan-400 truncate block text-left cursor-pointer text-sm"
+                                                        title="Click to view file"
                                                     >
                                                         {file.file_name}
-                                                    </a>
+                                                    </button>
                                                     <div className="flex items-center text-xs text-slate-400 space-x-2 mt-0.5">
                                                         <span>{formatBytes(file.file_size)}</span>
                                                         <span>&bull;</span>
@@ -2378,11 +2390,39 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                                                     </div>
                                                 </div>
                                             </div>
-                                            <button onClick={() => handleFileDelete(file.id, file.file_path)} className="text-slate-500 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" title="Delete File">
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            </button>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPreviewFile(file)}
+                                                    className="px-2 py-1 text-xs bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                                                    title="View in website"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                                    <span>View</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        setDownloadingFileId(file.id);
+                                                        try {
+                                                            await downloadFile(publicUrl, file.file_name);
+                                                        } finally {
+                                                            setDownloadingFileId(null);
+                                                        }
+                                                    }}
+                                                    disabled={isDownloading}
+                                                    className="px-2 py-1 text-xs bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                                    title="Download file"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                                    <span>{isDownloading ? '...' : 'Download'}</span>
+                                                </button>
+                                                <button onClick={() => handleFileDelete(file.id, file.file_path)} className="text-slate-500 hover:text-red-400 p-1.5 transition-colors" title="Delete File">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </div>
                                         </div>
-                                    ))}
+                                    );})}
                                 </div>
                             )}
                         </div>
@@ -2403,6 +2443,19 @@ const ProjectWorkspaceModal: React.FC<{ project: Project; onClose: () => void; }
                     )}
                 </div>
             )}
+
+            <FileViewerModal
+                isOpen={Boolean(previewFile)}
+                onClose={() => setPreviewFile(null)}
+                file={previewFile}
+                allFiles={files}
+                projectName={project.name}
+                onNavigateFile={(next) => setPreviewFile(next)}
+                onDeleteFile={(id, path) => {
+                    handleFileDelete(id, path);
+                    setPreviewFile(null);
+                }}
+            />
         </Modal>
     );
 };
